@@ -3,7 +3,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { authRedirect } from '@/lib/auth-redirect';
 
 export async function updateSession(request: NextRequest) {
-  if (request.nextUrl.pathname === '/api/health') return NextResponse.next();
+  if (['/api/health', '/api/stripe/webhook'].includes(request.nextUrl.pathname)) return NextResponse.next();
   if (!process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY) {
     return new NextResponse('Authentication is not configured. Please contact the site administrator.', { status: 503 });
   }

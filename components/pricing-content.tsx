@@ -10,6 +10,8 @@ import { Button } from "@/components/ui/button";
 import { RefreshCcw, XCircle } from "lucide-react";
 import { Spinner } from "@/components/ui/spinner";
 import { Product, Price } from "@/types/products";
+import { changePlanAction } from '@/app/billing-actions';
+import { useSearchParams } from 'next/navigation';
 
 interface SubscriptionDetailsState {
   planName: string | null;
@@ -22,14 +24,21 @@ interface SubscriptionDetailsState {
 interface PricingContentProps {
   products: Product[];
   currentProductId: string | null;
+  currentPriceId?: string | null;
+  supportsPlanChanges?: boolean;
+  creditsByPrice?: Record<string, number>;
 }
 
 export default function PricingContent({
   products,
   currentProductId,
+  currentPriceId,
+  supportsPlanChanges,
+  creditsByPrice,
 }: PricingContentProps) {
   const [billingInterval, setBillingInterval] = useState<'monthly' | 'yearly'>('monthly');
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [isLoadingPriceId, setIsLoadingPriceId] = useState<string | null>(null);
 
   const [subscriptionDetails, setSubscriptionDetails] = useState<SubscriptionDetailsState | null>(null);
@@ -66,10 +75,18 @@ export default function PricingContent({
     setActionError(null);
     setActionSuccessMessage(null);
     try {
+      const selected = products.flatMap(product => product.prices).find(price => price.id === priceId);
+      if (currentProductId && selected?.type !== 'one-time' && supportsPlanChanges) {
+        const result = await changePlanAction(priceId);
+        if (!result.success) throw new Error(result.error);
+        setActionSuccessMessage(`Plan change scheduled for ${new Date(result.date!).toLocaleDateString()}. Your current credits remain available until their expiry.`);
+        setIsLoadingPriceId(null);
+        return;
+      }
       await createCheckout(priceId);
     } catch (error) {
       console.error("Checkout error:", error);
-      setActionError("Failed to initiate checkout. Please try again.");
+      setActionError(error instanceof Error ? error.message : "Failed to initiate checkout. Please try again.");
       setIsLoadingPriceId(null);
     }
   }
@@ -120,6 +137,7 @@ export default function PricingContent({
 
   return (
     <div className="w-full bg-white text-stone-900">
+      {searchParams.get('checkout') === 'cancelled' && <p role="status" className="mb-4 rounded-lg bg-amber-50 p-4">Checkout cancelled. Your plan and credits have not changed.</p>}
       <button
         onClick={() => router.push('/')}
         className="fixed top-4 right-4 z-50 w-8 h-8 flex items-center justify-center rounded-full bg-gray-100 hover:bg-gray-200 transition-colors"
@@ -154,7 +172,7 @@ export default function PricingContent({
               const price = product.prices.find(
                 (p: Price) => p.interval === (billingInterval === 'monthly' ? 'month' : 'year')
               ) ?? product.prices.find(p => p.type === 'one-time');
-              const isCurrent = currentProductId === product.id;
+              const isCurrent = currentPriceId ? currentPriceId === price?.id : currentProductId === product.id;
               const isLoadingThis = isLoadingPriceId === price?.id;
               const showManageButton = isCurrent && subscriptionDetails && !isLoadingDetails;
 
@@ -246,6 +264,7 @@ export default function PricingContent({
                       </div>
 
                       <p className="pt-6 border-t text-sm text-gray-600">{product.description}</p>
+                      {price && creditsByPrice?.[price.id] && <p className="text-sm font-medium">{creditsByPrice[price.id].toLocaleString()} credits per {price.type === 'one-time' ? 'purchase' : 'billing period'}</p>}
                     </div>
                   </div>
                 </Card>

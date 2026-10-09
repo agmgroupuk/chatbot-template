@@ -1,6 +1,7 @@
 import { createUpdateClient } from "@/utils/update/server";
 import PricingContent from "@/components/pricing-content";
 import { Product } from '@/types/products';
+import { creditPlans } from '@/lib/credit-config';
 
 // interface Price {
 //   id: string;
@@ -16,7 +17,7 @@ import { Product } from '@/types/products';
 // }
 
 export default async function PricingPage() {
-  if (!process.env.NEXT_PUBLIC_UPDATE_PUBLISHABLE_KEY) return <div className="m-auto p-6" role="alert">Billing is not configured. Please contact the site administrator.</div>;
+  if (process.env.BILLING_PROVIDER !== "stripe" && !process.env.NEXT_PUBLIC_UPDATE_PUBLISHABLE_KEY) return <div className="m-auto p-6" role="alert">Billing is not configured. Please contact the site administrator.</div>;
   const client = await createUpdateClient();
   const { data, error } = await client.billing.getProducts();
   const { data: subscriptionData } = await client.billing.getSubscriptions();
@@ -41,7 +42,10 @@ export default async function PricingPage() {
       <PricingContent
         products={data.products as Product[]}
         currentProductId={currentProductId}
+        currentPriceId={subscriptionData?.subscriptions?.find(sub => sub.status === 'active')?.price.id}
+        supportsPlanChanges={process.env.BILLING_PROVIDER === 'stripe'}
+        creditsByPrice={Object.fromEntries(Object.entries(creditPlans()).map(([id, plan]) => [id, plan.credits]))}
       />
     </div>
   );
-} 
+}

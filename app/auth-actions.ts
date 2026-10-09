@@ -22,7 +22,8 @@ export async function resetPasswordAction(form: FormData) {
   if (!user) return redirect('/forgot-password');
   const { error } = await client.auth.updateUser({ password });
   if (error) return encodedRedirect('error', '/reset-password', 'Unable to update password. Request a new link and try again.');
-  await client.auth.signOut({ scope: 'global' });
+  const { error: signOutError } = await client.auth.signOut({ scope: 'global' });
+  if (signOutError) return encodedRedirect('error', '/account', 'Password updated, but signing out failed. Please sign out and try again.');
   return encodedRedirect('success', '/sign-in', 'Password updated. Please sign in again.');
 }
 

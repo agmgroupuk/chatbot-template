@@ -147,22 +147,8 @@ export function ChatInterface({ chatId }: ChatInterfaceProps) {
           aiContent = result.response;
           messageToSave = { id: uuidv4(), sender: 'ai', content: aiContent };
 
-          // Save AI message ONLY (name is already set)
-          addMessage(chatId, 'ai', aiContent, currentModel)
-             .catch(err => console.error("Error saving initial AI message:", err));
-          
-          // Remove chat name update logic
-          /*
-          Promise.all([
-             addMessage(chatId, 'ai', aiContent, currentModel),
-             // Generate and save name based on initial prompt
-             (() => { 
-                 const generatedName = initialUserMessage.content.substring(0, 40) + (initialUserMessage.content.length > 40 ? '...' : '');
-                 console.log(`Generated chat name: ${generatedName}`);
-                 return updateChatName(chatId, generatedName);
-             })()
-          ]).catch(err => console.error("Error saving initial AI message or chat name:", err));
-          */
+          const saved = await addMessage(chatId, 'ai', aiContent, currentModel);
+          if (!saved.success) setMessageError('Reply generated, but could not be saved. Copy it before refreshing.');
 
         } else {
           aiContent = `Error: ${result.error || 'Failed to get response from AI.'}`;
@@ -298,15 +284,17 @@ export function ChatInterface({ chatId }: ChatInterfaceProps) {
     setAttachedContextItem(null); 
     setAttachedImage(null); 
     
-    // Save user message (only the typed content)
-    addMessage(chatId, 'user', currentPrompt)
-      .catch(err => console.error("Error saving user message:", err));
-
     setIsAiResponding(true); 
     if(textareaRef.current) textareaRef.current.disabled = true;
     
     try {
-      console.log(`Submitting prompt for chat ${chatId} with model ${selectedModel}`);
+      const savedUser = await addMessage(chatId, 'user', currentPrompt);
+      if (!savedUser.success) {
+        setMessageError('Unable to save your message. Please try again.');
+        setMessages(messages);
+        setPrompt(currentPrompt);
+        return;
+      }
       // Pass the updated message list AND the context item ID
       const result = await getAnthropicResponse(
           updatedMessagesForApi, 
@@ -324,8 +312,8 @@ export function ChatInterface({ chatId }: ChatInterfaceProps) {
               sender: 'ai',
               content: aiContent
             };
-        addMessage(chatId, 'ai', aiContent, selectedModel)
-          .catch(err => console.error("Error saving AI message:", err));
+        const saved = await addMessage(chatId, 'ai', aiContent, selectedModel);
+        if (!saved.success) setMessageError('Reply generated, but could not be saved. Copy it before refreshing.');
       } else {
         aiContent = `Error: ${result.error || 'Failed to get response from AI.'}`;
         messageToSave = {

@@ -4,6 +4,7 @@ begin;
 alter table public.profiles alter column enabled_models set default array['claude-sonnet-4-6', 'claude-opus-4-6', 'claude-haiku-4-5-20251001']::text[];
 alter table public.profiles alter column selected_model set default 'claude-sonnet-4-6';
 drop policy if exists "Public profiles are viewable by everyone." on public.profiles;
+drop policy if exists "Users can view own profile" on public.profiles;
 create policy "Users can view own profile" on public.profiles for select to authenticated using (auth.uid() = id);
 drop policy if exists "Allow UPDATE for own messages" on public.messages;
 create policy "Allow UPDATE for own messages" on public.messages for update to authenticated

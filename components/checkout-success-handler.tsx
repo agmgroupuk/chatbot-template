@@ -1,43 +1,35 @@
 "use client";
-
-import { useEffect, useState } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
-import { createUpdateClient } from "@/utils/update/client";
+import { useEffect } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
+import { checkoutStatusAction } from '@/app/billing-actions';
 
 export function CheckoutSuccessHandler() {
   const router = useRouter();
-  const searchParams = useSearchParams();
-  const [synced, setSynced] = useState(false);
-
+  const params = useSearchParams();
   useEffect(() => {
-    const checkoutStatus = searchParams.get('checkout');
-    
-    if (checkoutStatus === 'success' && !synced) {
-      // Set synced to true to prevent multiple executions
-      setSynced(true);
-      
-      const syncSubscription = async () => {
+    if (params.get('checkout') !== 'success') return;
+    let cancelled = false;
+    const session = params.get('session_id');
+    async function reconcile() {
+      for (let attempt = 0; attempt < 6 && !cancelled; attempt++) {
         try {
-          // Use the update client to sync subscription data
-          const client = createUpdateClient();
-          // Refresh subscription data
-          await client.billing.getSubscriptions();
-          
-          // Clean up URL parameters
-          window.history.replaceState({}, document.title, window.location.pathname);
-          
-          // Refresh the page to show updated UI
-          router.refresh();
-          console.log("Subscription synced with Update Client after successful checkout");
-        } catch (error) {
-          console.error("Error syncing subscription data:", error);
+          if (!session || await checkoutStatusAction(session) === 'paid') {
+            if (cancelled) return;
+            const url = new URL(window.location.href);
+            url.searchParams.delete('checkout');
+            url.searchParams.delete('session_id');
+            window.history.replaceState({}, '', url.pathname + url.search);
+            router.refresh();
+            return;
+          }
+        } catch {
+          // Keep the processing message and URL for a later refresh/retry.
         }
-      };
-      
-      syncSubscription();
+        await new Promise(resolve => setTimeout(resolve,2000));
+      }
     }
-  }, [searchParams, synced, router]);
-
-  // This is a utility component with no UI
+    void reconcile();
+    return () => { cancelled = true; };
+  },[params,router]);
   return null;
-} 
+}

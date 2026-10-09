@@ -1,5 +1,6 @@
 "use client";
 
+import { toast } from "sonner";
 import React, { useState, useRef, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
@@ -127,7 +128,8 @@ export function SidebarComponent({ className, onToggleCollapse, collapsed = fals
 
   const handleSignOut = async () => {
     const client = createSupabaseClient();
-    await client.auth.signOut();
+    const { error } = await client.auth.signOut();
+    if (error) { toast.error("Unable to sign out. Please try again."); return; }
     router.push('/sign-in');
     router.refresh();
   };

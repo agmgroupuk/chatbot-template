@@ -3,6 +3,7 @@
 import { createSupabaseClient } from "@/utils/supabase/server";
 import { redirect } from "next/navigation";
 import { availableModels, defaultModel, normalizeModel } from "@/lib/models";
+import { reserveChatCredits, finishChatCredits } from "@/lib/credits";
 import { siteUrl } from "@/lib/site-url";
 import { encodedRedirect } from "@/utils/redirect";
 import { revalidatePath } from "next/cache";
@@ -83,7 +84,8 @@ export const signUpAction = async (formData: FormData) => {
 
 export const signOutAction = async () => {
   const client = await createSupabaseClient();
-  await client.auth.signOut();
+  const { error } = await client.auth.signOut();
+  if (error) return encodedRedirect("error", "/account", "Unable to sign out. Please try again.");
   return redirect("/sign-in");
 };
 
@@ -515,7 +517,7 @@ export async function getAnthropicResponse(
   if (!model) {
      return { success: false, error: "No model selected." };
   }
-  if (messages.length === 0) {
+  if (!Array.isArray(messages) || messages.length === 0) {
      return { success: false, error: "No messages to send." };
   }
 
@@ -527,7 +529,7 @@ export async function getAnthropicResponse(
   }
   const settings = await getUserModelSettings();
   if (!settings.enabledModels.includes(model)) return { success: false, error: 'This model is not enabled.' };
-  const anthropic = new Anthropic({ apiKey });
+  const anthropic = new Anthropic({ apiKey, timeout: 60000, maxRetries: 1 });
 
   // Fetch context content if ID is provided
   let fetchedContextContent: string | null = null;
@@ -570,7 +572,9 @@ export async function getAnthropicResponse(
       }
   }
 
+  let creditRequest: string | undefined;
   try {
+    creditRequest = await reserveChatCredits(user.id);
     console.log(`Calling Anthropic API with model: ${model}`);
     const response = await anthropic.messages.create({
       model: model, 
@@ -586,20 +590,18 @@ export async function getAnthropicResponse(
     const aiTextResponse = textBlocks
       .map((textBlock) => (textBlock as { text: string }).text) 
       .join('\n');
-    if (!aiTextResponse && response.content.length > 0 && textBlocks.length === 0) {
-       console.warn("Anthropic response contained no usable text content.", response.content);
-       return { success: true, response: "" }; 
-    }
-    if (!aiTextResponse && response.content.length === 0) {
-        console.warn("Anthropic API response was empty.", response);
-        return { success: false, error: "Received an empty response from AI." };
-    }
+    if (!aiTextResponse) throw new Error('Received an empty response from AI.');
+    await finishChatCredits(user.id, creditRequest, true);
     return { success: true, response: aiTextResponse };
   } catch (error: unknown) {
-    console.error("Error calling Anthropic API:", error);
+    if (creditRequest) {
+      try { await finishChatCredits(user.id, creditRequest, false); }
+      catch { console.error('Credit refund requires reconciliation', { requestId: creditRequest }); }
+    }
+    console.error("AI request failed", { requestId: creditRequest });
     let errorMessage = "An unexpected error occurred while contacting the AI.";
     if (error instanceof Anthropic.APIError) {
-        errorMessage = `Anthropic API Error (${error.status}): ${error.message}`; 
+        errorMessage = "The AI service is temporarily unavailable. Please try again.";
     } else if (error instanceof Error) { 
         errorMessage = error.message;
     }
