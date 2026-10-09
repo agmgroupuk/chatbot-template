@@ -11,7 +11,7 @@ try {
  await client.query('create table if not exists app_migrations(name text primary key,checksum text not null,applied_at timestamptz not null default now())');
  const directory=new URL('../migrations/railway/',import.meta.url);
  for(const name of readdirSync(directory).filter(name=>name.endsWith('.sql')).sort()) {
-  const sql=readFileSync(new URL(name,directory),'utf8');
+  const sql=readFileSync(new URL(name,directory),'utf8').replace(/\r\n/g,'\n');
   const checksum=createHash('sha256').update(sql).digest('hex');
   const {rows}=await client.query('select checksum from app_migrations where name=$1',[name]);
   if(rows.length) { if(rows[0].checksum!==checksum) throw new Error(`Applied migration changed: ${name}`); continue; }

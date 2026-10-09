@@ -132,26 +132,6 @@ export function SidebarComponent({ className, onToggleCollapse, collapsed = fals
     router.refresh();
   };
 
-  // Custom X Logo Component
-  const XLogo = (props: React.SVGProps<SVGSVGElement>) => (
-    <svg 
-      xmlns="http://www.w3.org/2000/svg" 
-      shapeRendering="geometricPrecision" 
-      textRendering="geometricPrecision" 
-      imageRendering="optimizeQuality" 
-      fillRule="evenodd" 
-      clipRule="evenodd" 
-      viewBox="0 0 512 462.799" 
-      {...props}
-    >
-      <path 
-        fillRule="nonzero" 
-        d="M403.229 0h78.506L310.219 196.04 512 462.799H354.002L230.261 301.007 88.669 462.799h-78.56l183.455-209.683L0 0h161.999l111.856 147.88L403.229 0zm-27.556 415.805h43.505L138.363 44.527h-46.68l283.99 371.278z"
-        fill="currentColor"
-      />
-    </svg>
-  );
-
   // --- Define the callback for settings changes --- 
   const handleSettingsChanged = () => {
     console.log("[Sidebar] Settings changed, refreshing router...");
@@ -354,7 +334,7 @@ export function SidebarComponent({ className, onToggleCollapse, collapsed = fals
           <div className="px-5 py-4">
             <h3 className="text-sm font-medium text-stone-800 mb-3">Feedback? DM us!</h3>
             <div className="space-y-2.5">
-              <SocialLink icon={XLogo} text="@wymi_" href="https://x.com/wymi_" />
+              <SocialLink icon={User} text="Company information" href="/about" />
               <SocialLink icon={Mail} text="Your account" href="/account" />
             </div>
           </div>
