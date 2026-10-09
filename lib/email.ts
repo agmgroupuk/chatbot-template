@@ -1,6 +1,13 @@
 import 'server-only';
 import nodemailer from 'nodemailer';
 import { company } from './company';
+import { createHash } from 'node:crypto';
+export async function sendBillingEmail(email:string,subject:string,text:string,reference:string) {
+  if(!emailConfigured()) throw new Error('Email delivery is not configured.');
+  const transport=nodemailer.createTransport({host:process.env.SMTP_HOST,port:Number(process.env.SMTP_PORT||587),secure:process.env.SMTP_PORT==='465',requireTLS:process.env.SMTP_PORT!=='465',auth:{user:process.env.SMTP_USER!,pass:process.env.SMTP_PASSWORD!},connectionTimeout:10000,socketTimeout:15000});
+  const result=await transport.sendMail({from:process.env.EMAIL_FROM,to:email,subject:`${subject} - One Fin`,text:`${company.name}\n\n${text}`,messageId:`<${createHash('sha256').update(reference).digest('hex')}@onefinsolution.online>`});
+  if(!result.accepted?.length) throw new Error('Email was not accepted.');
+}
 export function emailConfigured() { return Boolean(process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASSWORD && process.env.EMAIL_FROM); }
 export async function sendAuthEmail(email: string, url: string, purpose: 'verify' | 'reset') {
   if (!emailConfigured()) throw new Error('Email delivery is not configured. Please contact the site administrator.');

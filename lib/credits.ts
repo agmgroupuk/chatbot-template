@@ -9,8 +9,13 @@ export async function ensureSignupCredits(userId:string) {
   await query('select grant_credits($1,$2,$3)',[userId,`signup:${userId}`,amount]);
 }
 export async function reserveChatCredits(userId:string) {
-  await ensureSignupCredits(userId);
   const id=randomUUID();
+  // New memberships have unlimited responses while a verified paid period or
+  // card-backed trial remains valid. Legacy credit purchases remain intact.
+  const unlimited=await query(`insert into credit_usage(id,user_id,status)
+    select $1,$2,'reserved' where exists(select 1 from membership_access where user_id=$2 and expires_at>now()) returning id`,[id,userId]);
+  if(unlimited.length) return id;
+  await ensureSignupCredits(userId);
   try { await query('select reserve_credits($1,$2,$3)',[userId,id,chatCreditCost()]); }
   catch(error) { throw new Error(error instanceof Error && error.message.includes('Insufficient credits')?'Not enough credits. Choose a plan or buy a credit pack.':'Unable to reserve credits. Please try again.'); }
   return id;

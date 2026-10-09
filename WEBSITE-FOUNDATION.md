@@ -2,7 +2,7 @@
 
 The public site now includes a homepage, About, Contact, searchable Help Center, Pricing, Privacy, Terms, and Payment/Cancellation/Refund Policy. Shared desktop/mobile navigation and the footer link all primary routes. Password recovery, reset-link validation, sign-in, signup, and email confirmation use the existing secure authentication service.
 
-Pricing always renders without Stripe configuration. All four intervals are visible. Daily/Weekly use pricing inquiries because no approved amounts exist. Monthly/Yearly transparently display the existing test catalog; purchases remain unavailable while custom payments are unfinished. Inquiry links prefill the contact form. Do not interpret these previews as Live commercial prices.
+Pricing shows Daily USD 5, Weekly USD 13, Monthly USD 30, Yearly USD 249, and Business contact sales. Card-backed trials last 1, 2, 3, and 5 days respectively. Personal memberships have unlimited responses; visitor workspace access allows 10 responses per UTC day. See [Plans and workspace](billing/PLANS-AND-WORKSPACE.md) for the custom payment flow, operational prerequisites, and identification limits. Stripe remains sandbox-only.
 
 ## Account features
 
@@ -16,9 +16,11 @@ Pricing always renders without Stripe configuration. All four intervals are visi
 - `/account/security`: current-password-verified password changes and revocation of other sessions. Password changes revoke all sessions and outstanding reset tokens.
 - `/account/privacy`: scoped JSON export, content-management links, and verified-ownership account-deletion request.
 
+The shared header and chat tools read account status and preferences from one uncached, session-scoped GET endpoint. Navigation cancels stale reads, so background account refreshes do not enter the server-action queue used to save forms.
+
 ## Storage and operations
 
-Run `npm run db:migrate` before serving the updated app. Migration `003_website_foundation.sql` adds account settings and support requests, with row-level isolation. It preserves existing user, payment, membership, and chat identities. The health endpoint requires all three migrations.
+Run `npm run db:migrate` before serving the updated app. Migration `003_website_foundation.sql` adds account settings and support requests, with row-level isolation. It preserves existing user, payment, membership, and chat identities. The health endpoint requires all four migrations.
 
 Support requests are stored in `support_requests`, protected by server validation and rate limits. Guest requests are not linked to an existing account merely because the email matches. Authorized database operators can update `status` (`open`, `in_progress`, `resolved`) and `response`; users can only read their own tickets. The UI confirms recording, not email delivery. Staff administration and automated support notifications are not implemented.
 
@@ -30,6 +32,8 @@ Legal content describes the implemented service and keeps mandatory consumer rig
 
 `npm test`, `npm run typecheck`, `npm run lint`, `npm run build`.
 
-After building: `npx playwright install chromium --only-shell`, then `npm run test:website`. The browser suite starts an in-memory PGlite database through the official socket adapter and an isolated local app, seeds synthetic users, and exercises public pages, responsive navigation, account forms, recovery, tenant-scoped exports and support, and real preference behavior. It never uses Railway or payment/AI providers. Screenshots and local logs go to ignored `.test-artifacts/website/`.
+Verified October 10, 2026: 20 backend tests and 41 isolated browser checks passed, along with TypeScript, lint, and the production build. Desktop dashboard and mobile pricing screenshots were visually reviewed. Browser checks cover profile/preference persistence, password reset, support ownership, private exports, conversation deletion, and mobile navigation.
 
-PGlite socket reference: https://pglite.dev/docs/pglite-socket. Real PostgreSQL/provider verification still matters for deployment; a local browser test does not establish inbox delivery or payment processing.
+After building: `npx playwright install chromium --only-shell`, then `npm run test:website`. The browser suite starts an isolated local PostgreSQL 16 database and app, seeds synthetic users, and exercises public pages, responsive navigation, account forms, recovery, tenant-scoped exports and support, and real preference behavior. It never uses Railway or payment/AI providers. Screenshots and local logs go to ignored `.test-artifacts/website/`.
+
+The browser suite uses embedded-postgres to run real PostgreSQL locally. It keeps fixture data in ignored .test-artifacts/website/ and never connects to the production database. A local browser test does not establish inbox delivery or payment processing.

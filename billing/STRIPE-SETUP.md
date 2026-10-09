@@ -1,3 +1,5 @@
+> Update October 10, 2026: personal plans now use custom on-domain Stripe Elements, card-first trials, and next-renewal switching. See [Plans and workspace](PLANS-AND-WORKSPACE.md) for current pricing, runtime prerequisites, and sandbox verification. Earlier hosted Checkout instructions below are historical and must not be used.
+
 # Stripe setup continuation
 
 Superseded architecture: the merchant subsequently required custom checkout on One Fin's domain, no Stripe Checkout or hosted payment pages, One Fin email delivery, and global sales. Follow `STRIPE-INTEGRATION-REVIEW.md` for the current plan. The steps below describe the earlier hosted implementation and must not be treated as the target architecture.

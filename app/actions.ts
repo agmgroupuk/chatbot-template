@@ -14,7 +14,8 @@ import { redirect } from 'next/navigation';
 export async function signInAction(form:FormData) {
   try { await authRequestThrottle(); const id=await authenticate(String(form.get('email')||''),String(form.get('password')||'')); await createSession(id); }
   catch(error) { return encodedRedirect('error','/sign-in',error instanceof Error?error.message:'Unable to sign in.'); }
-  revalidatePath('/'); redirect('/dashboard');
+  const next=String(form.get('next')||'');
+  revalidatePath('/'); redirect(/^\/(?:workspace|subscribe)(?:\?|$)/.test(next)&&!/[\\\r\n]/.test(next)?next:'/dashboard');
 }
 export async function signUpAction(form:FormData) {
   let email='';

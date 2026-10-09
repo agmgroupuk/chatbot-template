@@ -3,7 +3,10 @@ import Stripe from 'stripe';
 import { verifiedStripe } from './stripe';
 import { creditPlans } from './credit-config';
 import { currentUser } from './session';
-import { query } from './db';
+import { query, transaction } from './db';
+import { approvedPrice, managedPlan } from './subscription-catalog';
+import { findPlan } from './plans';
+import { fulfillStripeEvent } from './stripe-fulfillment';
 import { siteUrl } from './site-url';
 import type { Price, Product, ProductWithPrices, Subscription } from '@/types/billing';
 
@@ -14,7 +17,7 @@ function priceView(price: Stripe.Price): Price {
 function productView(product: Stripe.Product): Product {
   return { id: product.id, name: product.name, description: product.description || '', status: product.active ? 'active' : 'inactive' };
 }
-async function currentCustomer(create=false) {
+export async function currentCustomer(create=false) {
   const user=await currentUser();
   if(!user) throw new Error('Please sign in.');
   const [mapping]=await query<{customer_id:string}>('select customer_id from billing_customers where user_id=$1',[user.id]);
@@ -59,39 +62,11 @@ async function subscriptions(): Promise<Subscription[]> {
   });
 }
 async function checkout(priceId: string) {
-  const products = await catalog();
-  const price = products.flatMap(product => product.prices).find(price => price.id === priceId);
-  if (!price) throw new Error('Price not available.');
-  const customer = await currentCustomer(true);
-  const stripe = await verifiedStripe();
-  if (price.type === 'recurring') {
-    const existing = await stripe.subscriptions.list({ customer: customer!, status: 'all', limit: 100 });
-    if (existing.data.some(sub => !['canceled','incomplete_expired'].includes(sub.status))) throw new Error('Manage your existing subscription first.');
-  }
-  const [mapping]=await query('select user_id from billing_customers where customer_id=$1',[customer]);
-  if(!mapping) throw new Error('Billing account unavailable.');
-  for (let retry = 0; retry < 3; retry++) {
-    const [{attempt}]=await query('select begin_billing_checkout($1,$2) as attempt',[mapping.user_id,priceId]);
-    if(!attempt) throw new Error('Unable to reserve checkout.');
-    const pending = products.flatMap(product => product.prices).find(value => value.id === attempt.price_id);
-    if (!pending) throw new Error('The unfinished checkout price is no longer available. Contact support.');
-    const session = attempt.session_id ? await stripe.checkout.sessions.retrieve(attempt.session_id) :
-      await stripe.checkout.sessions.create({ customer: customer!, mode: pending.type === 'recurring' ? 'subscription' : 'payment',
-        line_items: [{ price: pending.id, quantity: 1 }], success_url: `${siteUrl()}/account?checkout=success&session_id={CHECKOUT_SESSION_ID}`, cancel_url: `${siteUrl()}/pricing?checkout=cancelled`,
-        metadata: { app: 'chatbot-template' }, ...(pending.type === 'recurring' ? { subscription_data: { metadata: { app: 'chatbot-template' } } } : {}),
-      }, { idempotencyKey: `chatbot-checkout:${attempt.request_id}` });
-    if (session.livemode || session.customer !== customer) throw new Error('Unexpected checkout account or mode.');
-    if (session.status !== 'open' || attempt.price_id !== priceId) {
-      if (session.status === 'open') await stripe.checkout.sessions.expire(session.id);
-      await query('delete from billing_checkout_attempts where user_id=$1 and request_id=$2',[mapping.user_id,attempt.request_id]);
-      if (pending.type === 'recurring' && price.type === 'recurring' && session.status === 'complete') throw new Error('Your previous checkout completed. Refresh your subscription before purchasing again.');
-      continue;
-    }
-    const saved=await query('update billing_checkout_attempts set session_id=$1 where user_id=$2 and request_id=$3 returning request_id',[session.id,mapping.user_id,attempt.request_id]);
-    if (!saved?.length || !session.url) throw new Error('Checkout changed in another tab. Please try again.');
-    return session.url;
-  }
-  throw new Error('Another checkout is in progress. Please try again.');
+  const stripe=await verifiedStripe();
+  const price=await stripe.prices.retrieve(priceId);
+  const plan=managedPlan(price);
+  if(!plan) throw new Error('This legacy price is no longer sold. Choose a current plan.');
+  return `${siteUrl()}/subscribe?plan=${plan.key}&mode=paid`;
 }
 
 // The same response contract keeps existing pricing and subscription components intact.
@@ -121,42 +96,40 @@ export function createStripeBilling() {
           await stripe.subscriptionSchedules.release(schedule.id);
         }
         await stripe.subscriptions.update(id, settings);
+        if(settings.cancel_at_period_end) await query('update billing_subscriptions set next_plan_key=null,next_plan_at=null where id=$1',[id]);
+        await fulfillStripeEvent(stripe,{type:'customer.subscription.updated',livemode:false,data:{object:{id}}} as Stripe.Event);
         return { data: { subscription: null }, error: null };
       } catch { return { data: { subscription: null }, error: { message: 'Unable to update subscription.' } }; }
     },
   };
 }
 
-export async function schedulePlanChange(priceId: string) {
-  const products = await catalog();
-  const price = products.flatMap(product => product.prices).find(price => price.id === priceId);
-  if (!price || price.type !== 'recurring') throw new Error('Select a subscription price.');
-  const customer = await currentCustomer();
-  if (!customer) throw new Error('No subscription found.');
-  const stripe = await verifiedStripe();
-  const subscriptions = await stripe.subscriptions.list({ customer, status: 'active', limit: 2 });
-  if (subscriptions.data.length !== 1) throw new Error('Unable to identify a single active subscription.');
-  const sub = subscriptions.data[0];
-  if (sub.cancel_at_period_end) throw new Error('Reactivate your subscription before changing plans.');
-  const item = sub.items.data[0];
-  if (sub.items.data.length !== 1 || item.quantity !== 1) throw new Error('This subscription must be managed by support.');
-  if (item.price.id === priceId) throw new Error('This price is already active.');
-  let created = false;
-  const schedule = sub.schedule
-    ? await stripe.subscriptionSchedules.retrieve(typeof sub.schedule === 'string' ? sub.schedule : sub.schedule.id)
-    : await stripe.subscriptionSchedules.create({ from_subscription: sub.id, metadata: { app: 'chatbot-template' } }).then(value => { created = true; return value; });
-  if (!created && schedule.metadata?.app !== 'chatbot-template') throw new Error('The existing schedule is managed outside this app.');
-  try {
-    await stripe.subscriptionSchedules.update(schedule.id, {
-      end_behavior: 'release', proration_behavior: 'none',
-      phases: [
-        { start_date: item.current_period_start, end_date: item.current_period_end, items: [{ price: item.price.id, quantity: 1 }], proration_behavior: 'none' },
-        { items: [{ price: priceId, quantity: 1 }], duration: { interval: price.interval as 'month' | 'year', interval_count: price.interval_count }, proration_behavior: 'none' },
-      ],
-    });
-  } catch (error) {
-    if (created) await stripe.subscriptionSchedules.release(schedule.id);
-    throw error;
-  }
-  return new Date(item.current_period_end * 1000).toISOString();
+export async function schedulePlanChange(planKey: string) {
+  const user=await currentUser();if(!user) throw new Error('Please sign in.');
+  const plan=findPlan(planKey),customer=await currentCustomer();
+  if(!customer) throw new Error('No subscription found.');
+  const stripe=await verifiedStripe(),price=await approvedPrice(stripe,planKey);
+  return transaction(async client=>{
+    await client.query('select id from app_users where id=$1 for update',[user.id]);
+    const list=await stripe.subscriptions.list({customer,status:'all',limit:100});
+    const active=list.data.filter(sub=>!['canceled','incomplete_expired'].includes(sub.status));
+    if(list.has_more||active.length!==1||!['active','trialing'].includes(active[0].status)) throw new Error('Resolve your existing subscription before changing plans.');
+    const sub=active[0],item=sub.items.data[0];
+    if(sub.livemode||sub.metadata.app!=='chatbot-template'||sub.cancel_at_period_end||sub.items.data.length!==1||item.quantity!==1) throw new Error('Reactivate renewal or contact support before switching plans.');
+    const schedule=sub.schedule?await stripe.subscriptionSchedules.retrieve(typeof sub.schedule==='string'?sub.schedule:sub.schedule.id):null;
+    if(schedule&&schedule.metadata?.app!=='chatbot-template') throw new Error('This schedule is managed outside One Fin.');
+    if(item.price.id===price.id) {
+      if(schedule) await stripe.subscriptionSchedules.release(schedule.id);
+      await client.query('update billing_subscriptions set next_plan_key=null,next_plan_at=null where id=$1',[sub.id]);
+      return new Date(item.current_period_end*1000).toISOString();
+    }
+    const target=schedule||await stripe.subscriptionSchedules.create({from_subscription:sub.id,metadata:{app:'chatbot-template'}});
+    await stripe.subscriptionSchedules.update(target.id,{end_behavior:'release',proration_behavior:'none',phases:[
+      {start_date:target.current_phase?.start_date||item.current_period_start,end_date:item.current_period_end,items:[{price:item.price.id,quantity:1}],proration_behavior:'none',...(sub.status==='trialing'?{trial_end:sub.trial_end!}:{})},
+      {items:[{price:price.id,quantity:1}],duration:{interval:plan.interval,interval_count:1},proration_behavior:'none',metadata:{app:'chatbot-template',plan_key:plan.key}},
+    ]});
+    const date=new Date(item.current_period_end*1000).toISOString();
+    await client.query('update billing_subscriptions set next_plan_key=$2,next_plan_at=$3 where id=$1',[sub.id,plan.key,date]);
+    return date;
+  });
 }

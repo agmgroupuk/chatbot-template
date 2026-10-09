@@ -13,8 +13,8 @@ export async function userFromToken(token?: string): Promise<User | null> {
 export const currentUser = cache(async () => userFromToken((await cookies()).get(sessionCookie)?.value));
 export async function createSession(userId: string) {
   const token = randomToken();
-  await query("insert into app_sessions(token_hash,user_id,expires_at) values($1,$2,now()+interval '7 days')",[tokenHash(token),userId]);
-  (await cookies()).set(sessionCookie,token,{httpOnly:true,secure:process.env.NODE_ENV==='production',sameSite:'lax',path:'/',maxAge:7*86400});
+  await query("insert into app_sessions(token_hash,user_id,expires_at) values($1,$2,now()+interval '30 days')",[tokenHash(token),userId]);
+  (await cookies()).set(sessionCookie,token,{httpOnly:true,secure:process.env.NODE_ENV==='production',sameSite:'lax',path:'/',maxAge:30*86400});
 }
 export async function destroySession() {
   const jar = await cookies();

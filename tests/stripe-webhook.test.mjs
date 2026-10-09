@@ -36,6 +36,8 @@ test('webhook rejects missing, modified, stale signatures and every Live Mode ev
 test('only paid packs and paid renewal invoices allocate credits; retries use stable references', async () => {
   const grants = new Map();
   const { fulfillStripeEvent } = load('lib/stripe-fulfillment.ts', {
+    './subscription-catalog':{managedPlan:()=>undefined},
+    './billing-notices':{queueBillingNotice:async()=>{}},
     './db': {query:async (sql,values)=>{
       if(sql.startsWith('select user_id')) return [{user_id:'user-1'}];
       if(sql.startsWith('select grant_credits')) grants.set(values[1],{p_user:values[0],p_reference:values[1],p_amount:values[2],p_expires:values[3]});

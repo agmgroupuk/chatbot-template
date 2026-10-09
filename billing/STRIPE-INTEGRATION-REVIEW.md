@@ -1,3 +1,5 @@
+> Implementation update October 10, 2026: the personal subscription flow now uses custom Elements with SetupIntents, trials, unlimited memberships, renewal-scheduled changes, and One Fin billing-email outbox. The visitor workspace is implemented with 10 responses per UTC day and 30-day account sessions. [Current implementation and remaining configuration](PLANS-AND-WORKSPACE.md). Connect and standalone B2B invoicing remain deferred. The findings below record the earlier review.
+
 # One Fin Stripe integration plan and review
 
 Reviewed 2026-10-10. Business: https://onefinsolution.online. Description supplied by merchant: Activities of maintaining the right to reproduce finished software for sale or distribution.

@@ -13,6 +13,7 @@ export async function changePlanAction(priceId: string): Promise<{ success: bool
     const date = await schedulePlanChange(priceId);
     revalidatePath('/account');
     revalidatePath('/pricing');
+    revalidatePath('/dashboard/billing');
     return { success: true, date };
   } catch (error) {
     return { success: false, error: error instanceof Error ? error.message : 'Unable to change plan.' };
