@@ -2,7 +2,7 @@
 
 import { useSearchParams } from "next/navigation";
 import { useState } from "react";
-import { createSupabaseClient } from "@/utils/supabase/client";
+import { resendConfirmationAction } from "@/app/auth-actions";
 
 export default function EmailConfirmation() {
   const searchParams = useSearchParams();
@@ -15,15 +15,10 @@ export default function EmailConfirmation() {
     setError(null);
     
     try {
-      const client = createSupabaseClient();
-      const { error } = await client.auth.resend({
-        type: 'signup',
-        email,
-        options: { emailRedirectTo: `${process.env.NEXT_PUBLIC_SITE_URL || window.location.origin}/auth/callback` },
-      });
+      const { error } = await resendConfirmationAction(email);
       
       if (error) {
-        setError(error.message);
+        setError(error);
       }
     } catch {
       setError("Failed to resend verification email");
@@ -38,7 +33,7 @@ export default function EmailConfirmation() {
         <div className="text-center mb-8">
           <h1 className="text-[32px] font-normal tracking-tight">Check your inbox</h1>
           <p className="mt-4 text-gray-600">
-            We sent a confirmation email to<br />
+            If this address can be registered, check for a confirmation email at<br />
             <span className="font-medium text-black">{email}</span>
           </p>
           <p className="mt-2 text-gray-600">

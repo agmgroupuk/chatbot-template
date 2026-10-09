@@ -1,99 +1,78 @@
-# Deployment and verification
+# One Fin Solution deployment
 
-The app retains Next.js, Supabase Auth/Postgres, and Anthropic. Billing supports the original Update.dev adapter and a direct Stripe adapter. Railway uses the direct adapter (`BILLING_PROVIDER=stripe`) for the complete credit/payment path. No Update.dev account is required for that path. The separate Railway Postgres service is not a replacement for Supabase Auth.
+The application runs on the existing Railway project `romantic-charm`, application service `chatbot-template`, and its existing PostgreSQL service. The canonical origin is https://onefinsolution.online. No Supabase project is required or used. The Sanbay Stripe account must never be used for this project.
 
-## Required environment
+## Infrastructure and migration
 
-Configure in Railway service `chatbot-template`, project `romantic-charm` (`3c67a3e5-8d96-462c-8ed1-9c2c64a4949f`). Local secrets belong in ignored `.env.local`. Never commit keys.
+The previous integration used Supabase for PostgreSQL queries, Auth passwords and sessions, browser auth listeners, OAuth callbacks, RLS identity, profile triggers, and chat-message functions. All runtime SDK usage has been replaced with `pg`, server-side ownership checks, scoped PostgreSQL RLS, database-backed opaque sessions, and standard Next.js actions/routes. Supabase, Anthropic, and Update.dev packages are removed. Historical SQL files are retained only as source records; deployment applies only `migrations/railway/*.sql`.
 
-| Variable | Purpose |
-| --- | --- |
-| `NEXT_PUBLIC_SITE_URL` | `https://onefinsolution.online` on Railway; localhost only for local development |
-| `NEXT_PUBLIC_SUPABASE_URL` | Intended Supabase project API URL |
-| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Public Supabase anon key |
-| `SUPABASE_SERVICE_ROLE_KEY` | Server-only credit ledger and billing fulfillment access |
-| `ANTHROPIC_API_KEY` | Server-only AI access |
-| `BILLING_PROVIDER` | `stripe` for direct billing; `update` retains the original adapter |
-| `STRIPE_SECRET_KEY` | Intended account's `sk_test_` or `rk_test_` key only |
-| `STRIPE_EXPECTED_ACCOUNT_ID` | Mandatory account identity check before Stripe operations |
-| `STRIPE_WEBHOOK_SECRET` | Signing secret for `/api/stripe/webhook` |
-| `STRIPE_CREDIT_PLANS` | JSON mapping of actual Test Price IDs to credit counts and `subscription`/`pack` kinds |
-| `SIGNUP_CREDITS` | Configured as `10`; granted once per authenticated account |
-| `CHAT_CREDIT_COST` | Configured as `1` per successful AI response |
-| `NEXT_PUBLIC_UPDATE_ENVIRONMENT` | `test`; Live Mode is rejected even on Railway production |
-| `NEXT_PUBLIC_UPDATE_PUBLISHABLE_KEY` | Only needed if selecting the original Update.dev provider |
-| `PORT` | `8080`, matching the existing domain target |
+`DATABASE_URL` points to the existing Railway private PostgreSQL service. No credentials are embedded in the repository. The database was inspected before migration: it contained no application tables or users. A full pre-migration dump was saved on its volume as `/var/lib/postgresql/data/onefin-before-native-migration.sql`. The native schema includes users, sessions, verification/reset tokens, auth rate limits, profiles, chats/messages, contexts, Stripe customer links, subscription snapshots, checkout attempts, credit buckets/allocations/usage, indexes, foreign keys, RLS and atomic credit functions.
 
-`SUPABASE_ACCESS_TOKEN` is optional local deployment tooling access for schema/auth configuration, never an application runtime requirement. A management token can also be used to provision a Supabase project and obtain its app keys. SMTP and Google OAuth credentials belong in the intended Supabase project.
+`npm run db:migrate` checks migration checksums, takes an advisory lock, and applies each new file transactionally. Railway runs it before deployment. The first migration refuses a populated legacy schema rather than overwriting it. No source Supabase credentials/project were supplied; no external historical records were accessible to import. Existing Railway data is preserved.
 
-All `NEXT_PUBLIC_*` values are bundled at build time: redeploy after changes. `/api/health` reports process availability. It does not prove external integrations work. If Supabase is absent, application routes return a deliberate 503 instead of fabricated authentication or placeholder data.
+`.railway/railway.ts` manages only this application's partial and preserves the GitHub main branch and custom domain. Review `railway config plan` before apply. Add `preserve()` declarations for newly supplied provider variables before later IaC applies; undeclared variables are rejected by the CLI. On Windows, the SDK may require `_` to point to `%APPDATA%/npm/node_modules/@railway/cli/bin/railway.exe`, scoped to the command and restored afterwards.
 
-## Supabase setup
+## Authentication
 
-For a new project run `setup_db.sql`, then migrations `001_security.sql` and `002_billing_credits.sql`. For an existing app database apply only the unapplied migrations. Existing users, IDs, profiles, messages, and contexts are preserved. The security migration repairs missing historical profiles.
+Passwords use salted scrypt, minimum 12 and maximum 128 characters. Sessions use 256-bit random opaque tokens; only their SHA-256 hashes are stored. Production cookies use the `__Host-` prefix, HttpOnly, Secure, SameSite=Lax, and a seven-day lifetime. Every protected page and mutation checks the database session; middleware cookie checks are only routing hints. Server Actions enforce Next.js origin checks. Database rate limits cover account and IP attempts. Unknown-account responses avoid enumeration.
 
-With a management token and the intended URL available, `node scripts/migrate-supabase.mjs` previews the target and `--apply` applies the required migrations. It refuses an unrelated database without the Supabase auth schema, tracks migrations, and commits each schema change and its history record together.
+Signup requires email confirmation. Verification links last 24 hours; reset links last 30 minutes. Tokens are hashed, single use, and consumed transactionally. Password reset invalidates all sessions and other reset tokens. Missing SMTP blocks email-dependent operations with a clear error; the app never claims mail was sent when delivery was unavailable. SMTP acceptance does not prove inbox delivery; verify actual receipt with the configured provider. Google OAuth buttons were removed because no Google provider is configured; email callback and redirects are implemented.
 
-Set Auth Site URL to `https://onefinsolution.online`. Allow that domain's `/auth/callback` and `/auth/callback?next=/reset-password`, plus localhost equivalents for development. Configure SMTP for actual signup, resend, and reset delivery. PKCE recovery links must be opened in the browser that requested recovery. Enable Google and configure its provider credentials only if Google sign in will be offered.
+User queries run with a scoped database role inside transactions, using `app.user_id` for RLS. Pool reuse cannot retain another user's identity. Server billing/auth operations remain private and use the database owner connection; no database credentials or billing RPCs are exposed to browsers.
 
-## Initial USD Test catalog
+## Required environment variables
 
-The nonsecret source of truth is `billing/test-catalog.json`. These are initial Test Mode defaults, not approved Live pricing.
+See `.env.example`. Configure actual values in Railway or ignored `.env.local`, never source or Git:
 
-| Product | Price | Credits | Expiry |
-| --- | --- | --- | --- |
-| Basic monthly | $9/month | 100 per paid invoice | Paid billing period end |
-| Basic annual | $90/year | 1200 per paid invoice | Paid billing period end |
-| Pro monthly | $19/month | 300 per paid invoice | Paid billing period end |
-| Pro annual | $190/year | 3600 per paid invoice | Paid billing period end |
-| 50 Credit Pack | $5 once | 50 | No expiry |
+- Existing infrastructure: `DATABASE_URL`, `NEXT_PUBLIC_SITE_URL`, `PORT` (Railway supplies it).
+- Mail: `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASSWORD`, `EMAIL_FROM` with a verified sender.
+- AI: `AI_PROVIDER=openai`, `OPENAI_MODEL=gpt-4.1-mini`, `OPENAI_API_KEY`; alternatively `AI_PROVIDER=xai`, `XAI_MODEL=grok-4.3`, `XAI_API_KEY`.
+- Billing: `BILLING_PROVIDER=stripe`, `STRIPE_MODE=test`, `STRIPE_SECRET_KEY`, `STRIPE_EXPECTED_ACCOUNT_ID`, `STRIPE_WEBHOOK_SECRET`, `STRIPE_CREDIT_PLANS`.
+- Credits: `SIGNUP_CREDITS=10`, `CHAT_CREDIT_COST=1`.
+- Optional `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY` for future embedded Elements. Current hosted Checkout does not use a browser key.
 
-Annual credits are allocated once for the annual invoice, rather than refilled each month. Signup credits do not expire. Existing grants remain unchanged if signup allowance configuration later changes.
+Opaque sessions require no JWT/signing secret. No Supabase, Update.dev, or Anthropic configuration is required. Never supply the Sanbay account's credentials.
 
-`node scripts/provision-stripe.mjs` verifies the Test key and expected account and previews the catalog. `--apply` creates only this app's marked Test products, prices, and webhook. Reruns verify exact names, descriptions, amounts, currency, intervals, and credits. Conflicting objects fail closed. Unrelated Stripe objects are untouched.
+## AI providers
 
-The script records real IDs in `billing/stripe-test-ids.json`; this file contains no keys. A newly generated webhook secret is stored only in ignored `.env.stripe-generated` and is never printed. If an existing endpoint's signing secret is needed, obtain it through the authorized Stripe account.
+OpenAI uses the official SDK's Responses API with `store:false`; xAI uses its compatible Chat Completions endpoint at `https://api.x.ai/v1`. Provider/model settings are server-only. Saved legacy model preferences resolve to the configured provider without changing historical chats. API timeouts, rate limits, unavailable credentials, empty responses, and provider failures return safe errors. Each successful response costs one credit; failures refund the reservation once. No valid AI key is currently available, so real inference is not yet verified.
 
-`node scripts/configure-railway.mjs` validates the linked project and required inputs. `--apply` transfers whitelisted variables through stdin with values suppressed. It can read the generated catalog and signing secret. No real products or Price IDs can be generated until the intended Stripe account is accessible. The locally logged-in CLI Sandbox is named for Sanbay Fusion; do not use it without confirmation that it is intended for this app.
+## Stripe Test catalog
 
-## Payments and credits
+These initial USD test amounts are implementation defaults, not approved Live business prices:
 
-`/api/stripe/webhook` verifies the raw request signature and rejects Live events. Its events are `invoice.paid`, `checkout.session.completed`, `checkout.session.async_payment_succeeded`, `checkout.session.async_payment_failed`, and subscription created/updated/deleted. Failed/unpaid payments grant nothing. Subscription allowances come only from paid invoice lines. One-time credits come only from paid checkout line items. Stable grant references prevent duplicate delivery from granting twice.
+| Plan | Price | Allowance |
+| --- | --- | --- |
+| Basic monthly | $9/month | 100 credits/month |
+| Basic annual | $90/year | 1,200 credits per paid year |
+| Pro monthly | $19/month | 300 credits/month |
+| Pro annual | $190/year | 3,600 credits per paid year |
+| Credit pack | $5 once | 50 credits |
 
-The checkout return is also reconciled against the authenticated user's stored Stripe customer and the actual Stripe payment state; a URL query alone cannot grant credits. This makes delayed webhook delivery recoverable. Every Stripe operation validates the configured account and Test Mode. Customer identity is linked by authenticated user ID, never email alone.
+`node scripts/provision-stripe.mjs` verifies the intended account and Test Mode before any write. Its default is dry-run; `--apply` creates only app-marked/idempotent Test products, prices and webhook. IDs go to `billing/stripe-test-ids.json`; a new signing secret goes only to ignored `.env.stripe-generated`. Existing unmanaged/mismatched objects fail closed. `node scripts/configure-railway.mjs --apply` transfers available configuration through stdin, suppressing values. No actual Stripe products or Price IDs have been created without the correct account credentials.
 
-The database serializes checkout attempts per user. Retries reuse the same Stripe idempotency key and session; changing a pending selection expires the previous session. An existing recurring subscription blocks another recurring purchase. Credit packs remain available to subscribers.
+The raw-body webhook `/api/stripe/webhook` verifies signatures, rejects Live events and grants only paid configured prices. Checkout reconciliation verifies the authenticated owner's Stripe customer and actual payment state. Stable references prevent duplicate credits. Subscription state is fetched from Stripe, not trusted from stale events. Plan changes take effect at renewal without proration. Cancellation preserves access through the paid period; immediate cancellation expires subscription allowances. Packs and signup credits do not expire; subscription buckets expire at their paid period end.
 
-Upgrades and downgrades are scheduled for the next renewal with no prorated credit grant. The current paid allowance keeps its original expiry, and the next paid invoice allocates the new plan's allowance. Cancellation releases an app-owned pending schedule before scheduling cancellation at period end. Immediate subscription cancellation expires its subscription buckets; purchased packs remain intact. Subscription records are synchronized from Stripe's current state, not a stale webhook snapshot.
-
-Before an AI call, the server reserves credits atomically. Spending uses the earliest-expiring available buckets first and never consumes expired balances. Successful responses finalize the reservation; failed/empty AI calls refund it once. Requests abandoned by a crashed worker are refunded after ten minutes, on the next balance read or reservation. AI requests have a one-minute per-attempt timeout and at most one retry. Browser roles cannot grant, reserve, or refund credits. Profile/account pages display the database balance.
-
-## Railway configuration
-
-`.railway/railway.ts` manages only the chatbot service partial, with its existing GitHub main branch and custom domain. It sets build/start/healthcheck configuration and preserves existing environment values without embedding secrets. The old deprecated `railway.json` was removed. Update preserved variable declarations before applying IaC after adding new variables; the CLI fails closed on undeclared variables.
-
-On Windows, the current Railway SDK needs its real executable for the CLI version check. If needed, set the command's `_` environment variable to `%APPDATA%/npm/node_modules/@railway/cli/bin/railway.exe` for `railway config plan/apply`, restoring it afterwards. Review a plan before applying. Do not take ownership of the separate Postgres resource.
+Credit reservations serialize on the user row, consume expiring allowances first, reject overspending, and refund failures exactly once. Abandoned reservations are reconciled after ten minutes. Browser roles cannot mint, spend, or refund directly.
 
 ## Verification
 
-Run `npm ci`, `npm test`, `npm run typecheck`, `npm run lint`, `npm run build`, and `npm start`. Tests exercise the actual SQL using a local PostgreSQL engine, including full schema migration, identity preservation, RLS, credit expiry, duplicate grants, refunds, crash recovery, concurrent spending, and webhook signature/fulfillment rules. These local tests do not replace real provider end-to-end tests.
+Commands: `npm ci`, `npm test`, `npm run typecheck`, `npm run lint`, `npm run build`, `npm run db:migrate`, `npm start`.
 
-After credentials are supplied, verify the deployed domain on desktop/tablet/mobile: signup and confirmation delivery, sign in, profile editing, context CRUD, chat creation/reload and credit deduction, recovery/reset, logout, protected routes, and Google callback when configured. Complete Stripe Test checkout, cancelled and declined payments, async success/failure, duplicate webhooks, re-login, scheduled plan changes, cancellation/reactivation, and credit expiry. Read Railway runtime logs after testing.
+Tests use actual PostgreSQL SQL through PGlite for native schema/RLS, atomic credits, auth confirmation/reset, expiry, hashing, session revocation, rate limits and concurrency. Stripe signature tests use real signature verification with mocked network fulfillment. Provider mocks do not establish real provider availability.
+
+After credentials arrive, test actual email receipt; signup/confirmation/signin/profile/logout/recovery; session persistence and guest protection; context CRUD and chat persistence; OpenAI/xAI successful and failed requests; paid/declined/cancelled Stripe Test checkout; duplicate/out-of-order webhooks; renewal/plan changes/cancellation; and credit allocation/expiry. Inspect Railway runtime logs afterwards. The custom domain serving HTTP 200 alone does not prove these integrations work.
+
+No repository-owned YAML files exist; deployment uses TypeScript IaC. No extra YAML tooling is needed.
 
 ## Later Live switch
 
-Only after explicit approval and successful end-to-end Test verification:
+1. Approve exact business prices/credits and complete real Test end-to-end verification first.
+2. Use a separate Live environment/account data boundary; create corresponding Live products, prices and webhook. Never reuse Test IDs or customer/subscription records.
+3. Configure that Live account identity/key, webhook signing secret and exact Live Price-to-credit mapping.
+4. Explicitly change and review Test-only guards in `lib/stripe.ts`, `lib/billing-environment.ts`, webhook handling, checkout return validation, fulfillment and provisioning/configuration tools. Production NODE_ENV must never imply Live Mode.
+5. Rebuild/deploy; verify a controlled real charge, signature enforcement, allowance assignment, renewal, cancellation, failure handling and reconciliation before public launch.
 
-1. Review and approve the catalog amounts and credit policy. Keep the Test account/database records isolated.
-2. Create corresponding products, prices, and webhook in the intended Live Stripe account. Never reuse Test Product, Price, Customer, or Subscription IDs.
-3. Set Live account identity, key, signing secret, and exact Live Price-to-credit mapping in a separate environment.
-4. Explicitly update and review the Test-only guards in `lib/stripe.ts`, `lib/billing-environment.ts`, webhook Live rejection, checkout session validation, and tooling. `NODE_ENV=production` must never select Live Mode implicitly.
-5. Rebuild/redeploy with the approved Live configuration. Verify a controlled real transaction, signature enforcement, allowance assignment, renewal, plan change, cancellation, failure handling, and reconciliation before general launch.
+Runtime dependencies audit clean. Seven high development-tool glob/lint findings remain; a forced incompatible downgrade is not used.
 
-No Live Stripe credentials or objects were used or changed.
-
-## Dependency review and references
-
-The runtime audit is clean. Seven high development-tool glob/lint dependency findings remain, including an advisory with no compatible fix; forcing the proposed dependency downgrade is not a safe resolution.
-
-References: [Stripe webhooks](https://docs.stripe.com/webhooks), [Supabase Management API](https://supabase.com/docs/reference/api/introduction), [Anthropic model lifecycle](https://platform.claude.com/docs/en/about-claude/model-deprecations), and [Railway infrastructure configuration](https://docs.railway.com/infrastructure-as-code).
+References: [OpenAI model and supported endpoints](https://developers.openai.com/api/docs/models/gpt-4.1-mini), [xAI API](https://docs.x.ai/developers/rest-api-reference/inference/chat-completions), [Stripe webhooks](https://docs.stripe.com/webhooks), [Railway IaC](https://docs.railway.com/infrastructure-as-code).

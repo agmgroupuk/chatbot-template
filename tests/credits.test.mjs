@@ -8,12 +8,8 @@ const db = new PGlite();
 const user = randomUUID();
 const other = randomUUID();
 before(async () => {
-  await db.exec(`create schema auth; create table auth.users(id uuid primary key);
-    create role anon; create role authenticated; create role service_role;
-    create function auth.uid() returns uuid language sql as $$select nullif(current_setting('app.user_id',true),'')::uuid$$;
-    grant usage on schema auth,public to authenticated,anon,service_role;
-    insert into auth.users values('${user}'),('${other}');`);
-  await db.exec(readFileSync(new URL('../migrations/002_billing_credits.sql', import.meta.url), 'utf8'));
+  for(const file of ['001_schema.sql','002_credits.sql']) await db.exec(readFileSync(new URL(`../migrations/railway/${file}`,import.meta.url),'utf8'));
+  await db.query("insert into app_users(id,email,password_hash,email_verified_at) values($1,'first@example.test','fixture',now()),($2,'other@example.test','fixture',now())",[user,other]);
 });
 after(() => db.close());
 async function grant(owner, ref, amount, expires = null) {
@@ -62,7 +58,7 @@ test('parallel reservations cannot overspend a balance', async () => {
   assert.equal(await balance(user),0);
 });
 test('RLS isolates balances and browser roles cannot mint or refund credits', async () => {
-  await db.exec(`set app.user_id='${other}'; set role authenticated;`);
+  await db.exec(`set app.user_id='${other}'; set role app_user;`);
   try {
     const rows = (await db.query('select distinct user_id from public.credit_buckets')).rows;
     assert.ok(rows.every(row => row.user_id === other));

@@ -21,7 +21,7 @@ function ClientLayoutContent({ children }: ClientLayoutProps) {
   const [logoVisible, setLogoVisible] = useState(true);
   const { isAuthenticated } = useAuth();
   const pathname = usePathname();
-  
+
   const [activePlanName, setActivePlanName] = useState<string | null>(null);
   const [isSubscriptionLoading, setIsSubscriptionLoading] = useState(false);
 
@@ -75,7 +75,7 @@ function ClientLayoutContent({ children }: ClientLayoutProps) {
 
   // Regular layout with sidebar for non-auth pages
   return (
-    <ThemeProvider 
+    <ThemeProvider
       attribute="class"
       defaultTheme="light"
       disableTransitionOnChange
@@ -90,15 +90,15 @@ function ClientLayoutContent({ children }: ClientLayoutProps) {
           isSubscriptionLoading={isSubscriptionLoading}
         />
         <main className="w-full flex-1 relative">
-          <header 
-            className="sticky top-0 z-10 py-6 px-10 flex items-center justify-between flex-shrink-0" 
+          <header
+            className="sticky top-0 z-10 py-6 px-4 sm:px-10 flex items-center justify-between flex-shrink-0"
           >
             <div className="flex items-center gap-3">
               {/* Logo with menu button - conditional rendering based on logoVisible */}
               {logoVisible && (
                 <div className="flex items-center justify-start gap-3 h-[26px]">
-                  <div 
-                    onClick={toggleSidebar} 
+                  <div
+                    onClick={toggleSidebar}
                     className="cursor-pointer transition-transform hover:scale-110 duration-200"
                   >
                     {/* Custom hamburger with thinner lines */}
@@ -108,42 +108,42 @@ function ClientLayoutContent({ children }: ClientLayoutProps) {
                       <div className="w-4 h-[1px] bg-zinc-800 rounded-full"></div>
                     </div>
                   </div>
-                  <span 
-                    className={`font-bold text-2xl text-zinc-900 transition-all duration-200 ease-in-out ${
+                  <span
+                    className={`font-bold text-lg sm:text-2xl text-zinc-900 transition-all duration-200 ease-in-out ${
                       logoVisible ? 'opacity-100 translate-x-0' : 'opacity-0 -translate-x-4'
                     }`}
-                    style={{ 
-                      lineHeight: '26px', 
+                    style={{
+                      lineHeight: '26px',
                       marginTop: '-3px'
                     }}
-                  >start</span>
+                  >One Fin</span>
                 </div>
               )}
             </div>
-            
+
             <div className="flex items-center">
               {/* Show Upgrade Button only when authenticated, not loading, and no active plan */}
-              {isAuthenticated && !isSubscriptionLoading && !activePlanName && <Link 
+              {isAuthenticated && !isSubscriptionLoading && !activePlanName && <Link
                 className="relative inline-flex items-center justify-center gap-1 whitespace-nowrap transition-colors focus-visible:outline-hidden disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:shrink-0 bg-stone-900 text-stone-100 hover:bg-stone-800 px-4 py-2 h-10 rounded-full text-sm font-medium shadow-none"
                 href="/pricing"
               >
-                Upgrade 
+                Upgrade
                 <ArrowUpRight className="h-4 w-4" />
               </Link>}
 
               {/* Only show Login/Signup if not authenticated */}
               {!isAuthenticated && (
-                <div className="flex items-center gap-4">
+                <div className="flex items-center gap-2 sm:gap-4">
                   <Link href="/sign-up">
-                    <button 
+                    <button
                       className="relative inline-flex items-center justify-center gap-1 whitespace-nowrap transition-colors focus-visible:outline-hidden disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:shrink-0 hover:bg-stone-100 text-stone-900 active:bg-stone-200 px-4 py-2 h-10 rounded-full text-sm font-medium shadow-none"
                     >
                       Sign up
                     </button>
                   </Link>
                   <Link href="/sign-in">
-                    <Button 
-                      className="relative inline-flex items-center justify-center gap-1 whitespace-nowrap transition-colors focus-visible:outline-hidden disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:shrink-0 bg-stone-900 text-stone-100 hover:bg-stone-800 px-4 py-2 h-10 rounded-full text-sm font-medium shadow-none" 
+                    <Button
+                      className="relative inline-flex items-center justify-center gap-1 whitespace-nowrap transition-colors focus-visible:outline-hidden disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:shrink-0 bg-stone-900 text-stone-100 hover:bg-stone-800 px-4 py-2 h-10 rounded-full text-sm font-medium shadow-none"
                     >
                       Log in
                     </Button>
@@ -152,11 +152,12 @@ function ClientLayoutContent({ children }: ClientLayoutProps) {
               )}
               {/* If authenticated, show nothing here - handled by sidebar profile */}
             </div>
+            <Link href="/about" className="hidden text-sm underline sm:block">Company</Link>
           </header>
-          <div 
+          <div
             className="absolute inset-0 overflow-y-auto bg-transparent px-6 pt-28"
           >
-             {children} 
+             {children}
           </div>
         </main>
       </div>
@@ -171,4 +172,4 @@ export function ClientLayout({ children }: ClientLayoutProps) {
       <ClientLayoutContent>{children}</ClientLayoutContent>
     </AuthProvider>
   );
-} 
+}

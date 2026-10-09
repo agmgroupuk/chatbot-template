@@ -1,123 +1,37 @@
 "use server";
+import { currentUser, createSession, destroySession } from '@/lib/session';
+import { authenticate, register } from '@/lib/auth-service';
+import { authRequestThrottle } from '@/app/auth-actions';
+import { ownedQuery, transaction } from '@/lib/db';
+import { availableModels, defaultModel, normalizeModel } from '@/lib/models';
+import { generateResponse, aiConfiguration } from '@/lib/ai';
+import { reserveChatCredits, finishChatCredits } from '@/lib/credits';
+import { createBillingClient } from '@/lib/billing';
+import { encodedRedirect } from '@/utils/redirect';
+import { revalidatePath } from 'next/cache';
+import { redirect } from 'next/navigation';
 
-import { createSupabaseClient } from "@/utils/supabase/server";
-import { redirect } from "next/navigation";
-import { availableModels, defaultModel, normalizeModel } from "@/lib/models";
-import { reserveChatCredits, finishChatCredits } from "@/lib/credits";
-import { siteUrl } from "@/lib/site-url";
-import { encodedRedirect } from "@/utils/redirect";
-import { revalidatePath } from "next/cache";
-import { createUpdateClient } from "@/utils/update/server";
-import Anthropic from '@anthropic-ai/sdk';
-import { SupabaseClient } from "@supabase/supabase-js";
-// Assuming MessageParam might not be found by linter yet
-// import { MessageParam } from '@anthropic-ai/sdk/resources/messages'; 
-
-export const signInAction = async (formData: FormData) => {
-  const email = formData.get("email") as string;
-  const password = formData.get("password") as string;
-  const client = await createSupabaseClient();
-
-  const { data, error } = await client.auth.signInWithPassword({
-    email,
-    password,
-  });
-
-  if (error) {
-    // Provide a more user-friendly error message
-    let errorMessage = error.message;
-    
-    if (error.message.includes("Invalid login credentials")) {
-      errorMessage = "We couldn't find an account with these credentials. Please double-check your email and password.";
-    } else if (error.message.includes("Email not confirmed")) {
-      errorMessage = "Your email hasn't been verified yet. Please check your inbox.";
-    }
-    
-    return encodedRedirect("error", "/sign-in", errorMessage);
-  }
-
-  // Check if email is confirmed
-  const user = data.user;
-  if (!user.email_confirmed_at) {
-    // Email not confirmed, redirect to confirmation page
-    return encodedRedirect("success", `/confirmation?email=${encodeURIComponent(email)}`, "Please confirm your email to continue.");
-  }
-
-  // Revalidate the root path to refresh client state
-  revalidatePath("/");
-  
-  // Email confirmed, redirect to home page
-  return redirect("/");
-};
-
-export const signUpAction = async (formData: FormData) => {
-  const email = formData.get("email") as string;
-  const password = formData.get("password") as string;
-  const client = await createSupabaseClient();
-
-  const { data, error } = await client.auth.signUp({
-    email,
-    password,
-    options: {
-      emailRedirectTo: `${siteUrl()}/auth/callback`,
-    },
-  });
-
-  if (error) {
-    // Provide a more user-friendly error message
-    let errorMessage = error.message;
-    
-    if (error.message.includes("already registered")) {
-      errorMessage = "This email is already registered. Please sign in instead.";
-    } else if (error.message.includes("weak password")) {
-      errorMessage = "Please use a stronger password. It should be at least 6 characters long.";
-    }
-    
-    return encodedRedirect("error", "/sign-up", errorMessage);
-  }
-
-  if (data.session) return redirect("/");
-
-  // Redirect to confirmation page with the email
-  return redirect(`/confirmation?email=${encodeURIComponent(email)}`);
-};
-
-export const signOutAction = async () => {
-  const client = await createSupabaseClient();
-  const { error } = await client.auth.signOut();
-  if (error) return encodedRedirect("error", "/account", "Unable to sign out. Please try again.");
-  return redirect("/sign-in");
-};
-
-export async function createCheckout(priceId: string) {
-  "use server";
-  
-  const supabase = await createSupabaseClient();
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) return redirect('/sign-in');
-  const client = await createUpdateClient();
-  const { data: catalog, error: catalogError } = await client.billing.getProducts();
-  if (catalogError || !catalog.products?.some(p => p.prices.some(price => price.id === priceId))) {
-    throw new Error('The selected price is unavailable.');
-  }
-  const selectedPrice = catalog.products.flatMap(product => product.prices).find(price => price.id === priceId)!;
-  const { data: existing, error: subscriptionError } = await client.billing.getSubscriptions();
-  if (subscriptionError) throw new Error('Unable to verify current subscription.');
-  if (selectedPrice.type === 'recurring' && existing.subscriptions.some(sub => sub.status === 'active' || sub.status === 'past_due')) {
-    throw new Error('Manage your existing subscription before purchasing another plan.');
-  }
-  const { data, error } = await client.billing.createCheckoutSession(
-    priceId,
-    { redirect_url: `${siteUrl()}/account?checkout=success` }
-  );
-
-  if (error) {
-    throw new Error("Failed to create checkout session");
-  }
-
-  return redirect(data.url);
+export async function signInAction(form:FormData) {
+  try { await authRequestThrottle(); const id=await authenticate(String(form.get('email')||''),String(form.get('password')||'')); await createSession(id); }
+  catch(error) { return encodedRedirect('error','/sign-in',error instanceof Error?error.message:'Unable to sign in.'); }
+  revalidatePath('/'); redirect('/');
 }
-
+export async function signUpAction(form:FormData) {
+  let email='';
+  try { await authRequestThrottle(); email=await register(String(form.get('email')||''),String(form.get('password')||'')); }
+  catch(error) { return encodedRedirect('error','/sign-up',error instanceof Error?error.message:'Unable to sign up.'); }
+  redirect(`/confirmation?email=${encodeURIComponent(email)}`);
+}
+export async function signOutAction() { await destroySession(); redirect('/sign-in'); }
+export async function getCurrentUserAction() { return currentUser(); }
+export async function logoutAction() { await destroySession(); return {success:true}; }
+export async function createCheckout(priceId:string) {
+  if(!await currentUser()) redirect('/sign-in');
+  const client=await createBillingClient();
+  const result=await client.billing.createCheckoutSession(priceId);
+  if(result.error || !result.data.url) throw new Error(result.error?.message || 'Unable to create checkout.');
+  redirect(result.data.url);
+}
 // Formats UTC date string to Month Day, Year
 function formatRenewalDate(dateString: string | null | undefined): string | null {
   if (!dateString) return null;
@@ -149,6 +63,7 @@ export async function getSubscriptionDetails(): Promise<{
   isCancelled: boolean;
   error?: string;
 }> {
+  if(!process.env.STRIPE_SECRET_KEY) return {planName:null,subscriptionId:null,canUpgrade:false,renewalDate:null,isCancelled:false,error:'Payments are temporarily unavailable.'};
   let planName: string | null = null;
   let subscriptionId: string | null = null;
   let canUpgrade = false;
@@ -157,7 +72,7 @@ export async function getSubscriptionDetails(): Promise<{
   let isCancelled = false;
 
   try {
-    const updateClient = await createUpdateClient();
+    const updateClient = await createBillingClient();
     
     // Fetch current subscription(s)
     const { data: subData, error: subError } = await updateClient.billing.getSubscriptions();
@@ -217,10 +132,9 @@ export async function cancelSubscriptionAction(subscriptionId: string): Promise<
      return { success: false, error: "Subscription ID is required." };
    }
    try {
-    const supabase = await createSupabaseClient();
-    const { data: { user } } = await supabase.auth.getUser();
+    const user = await currentUser();
     if (!user) return { success: false, error: 'Please sign in.' };
-    const updateClient = await createUpdateClient();
+    const updateClient = await createBillingClient();
     const { data: owned, error: ownershipError } = await updateClient.billing.getSubscriptions();
     if (ownershipError || !owned.subscriptions.some(sub => sub.id === subscriptionId)) {
       return { success: false, error: 'Subscription not found.' };
@@ -254,10 +168,9 @@ export async function reactivateSubscriptionAction(subscriptionId: string): Prom
     return { success: false, error: "Subscription ID is required." };
   }
   try {
-    const supabase = await createSupabaseClient();
-    const { data: { user } } = await supabase.auth.getUser();
+    const user = await currentUser();
     if (!user) return { success: false, error: 'Please sign in.' };
-    const updateClient = await createUpdateClient();
+    const updateClient = await createBillingClient();
     const { data: owned, error: ownershipError } = await updateClient.billing.getSubscriptions();
     if (ownershipError || !owned.subscriptions.some(sub => sub.id === subscriptionId)) {
       return { success: false, error: 'Subscription not found.' };
@@ -286,900 +199,120 @@ export async function reactivateSubscriptionAction(subscriptionId: string): Prom
 
 // --- Model Settings Types --- 
 // Keep interface exported
-export interface UserModelSettings {
-  enabledModels: string[];
-  selectedModel: string | null;
+
+export interface UserModelSettings { enabledModels:string[]; selectedModel:string|null }
+export async function getUserModelSettings():Promise<UserModelSettings> {
+  const user=await currentUser();
+  const defaults={enabledModels:availableModels.map(m=>m.id),selectedModel:defaultModel};
+  if(!user) return defaults;
+  const [profile]=await ownedQuery(user.id,'select enabled_models,selected_model from profiles where id=$1',[user.id]);
+  if(!profile) return defaults;
+  const enabledModels=Array.from(new Set<string>((profile.enabled_models || defaults.enabledModels).map(normalizeModel)));
+  return {enabledModels,selectedModel:enabledModels.includes(normalizeModel(profile.selected_model))?normalizeModel(profile.selected_model):enabledModels[0]||null};
 }
-
-// Default settings constant
-const defaultModelSettings: UserModelSettings = {
-  enabledModels: availableModels.map(model => model.id),
-  selectedModel: defaultModel
-};
-
-/**
- * Fetches the user's model settings (enabled models and last selected model).
- * Returns default settings if no user or profile found, or if columns are null.
- */
-export async function getUserModelSettings(): Promise<UserModelSettings> {
-  const supabase = await createSupabaseClient();
-  const { data: { user } } = await supabase.auth.getUser();
-
-  if (!user) {
-    // console.warn("getUserModelSettings: No user found."); // Keep warn?
-    return defaultModelSettings; 
-  }
-
+export async function updateUserModelSettings(ids:string[]) {
+  if(!Array.isArray(ids) || !ids.length || ids.some(id=>!availableModels.some(m=>m.id===id))) return {success:false,error:'Select a supported model.'};
+  const user=await currentUser(); if(!user) return {success:false,error:'Please sign in.'};
+  await ownedQuery(user.id,'update profiles set enabled_models=$1,selected_model=$2,updated_at=now() where id=$3',[ids,ids[0],user.id]);
+  return {success:true};
+}
+export async function updateUserSelectedModel(id:string|null) {
+  if(!id || !availableModels.some(m=>m.id===id)) return {success:false,error:'Invalid model.'};
+  const user=await currentUser(); if(!user) return {success:false,error:'Please sign in.'};
+  await ownedQuery(user.id,'update profiles set selected_model=$1,updated_at=now() where id=$2 and $1=any(enabled_models)',[id,user.id]);
+  return {success:true};
+}
+interface ClientMessage {id:string;sender:'user'|'ai';content:string}
+export async function getAIResponse(messages:ClientMessage[],model:string,contextItemId?:string|null):Promise<{success:boolean;response?:string;error?:string}> {
+  const user=await currentUser(); if(!user) return {success:false,error:'Please sign in to use chat.'};
+  if(!Array.isArray(messages) || !messages.length || messages.length>100 || messages.some(m=>!m || typeof m.content!=='string' || m.content.length>32000 || !['user','ai'].includes(m.sender)) || messages.reduce((n,m)=>n+m.content.length,0)>128000) return {success:false,error:'Invalid or oversized conversation.'};
+  const settings=await getUserModelSettings();
+  if(!settings.enabledModels.includes(model)) return {success:false,error:'This model is not enabled.'};
+  let request:string|undefined;
   try {
-    const { data, error } = await supabase
-      .from('profiles')
-      .select('enabled_models, selected_model') 
-      .eq('id', user.id)
-      .single(); 
-
-    // console.log("[ACTION LOG] Raw data fetched from DB:", data); // Removed log
-
-    if (error) {
-      if (error.code === 'PGRST116') { 
-        // console.warn(`getUserModelSettings: Profile not found for user ${user.id}. Returning default.`); // Keep warn?
-        // console.log("[ACTION LOG] Returning default models (profile not found - PGRST116):", defaultModelSettings); // Removed log
-        return defaultModelSettings;
-      }
-      console.error("Error fetching user model settings:", error);
-      throw error; 
-    }
-
-    // Process the fetched data, providing defaults if columns are null
-    const settings: UserModelSettings = {
-        enabledModels: Array.from(new Set<string>(((data?.enabled_models as string[] | null) ?? defaultModelSettings.enabledModels).map(normalizeModel))).filter(id => availableModels.some(model => model.id === id)),
-        selectedModel: data?.selected_model ? normalizeModel(data.selected_model) : null
-    };
-
-    // Validate if the saved selected model is actually enabled
-    if (settings.selectedModel && !settings.enabledModels.includes(settings.selectedModel)) {
-        // console.log(`[ACTION LOG] Saved selected model '${settings.selectedModel}' is not in enabled list. Resetting selection.`); // Removed log
-        if (defaultModelSettings.selectedModel && settings.enabledModels.includes(defaultModelSettings.selectedModel)) {
-             settings.selectedModel = defaultModelSettings.selectedModel;
-        } else if (settings.enabledModels.length > 0) {
-            settings.selectedModel = settings.enabledModels[0];
-        } else {
-            settings.selectedModel = null;
-        }
-    } else if (!settings.selectedModel && settings.enabledModels.length > 0) {
-        if (defaultModelSettings.selectedModel && settings.enabledModels.includes(defaultModelSettings.selectedModel)) {
-             settings.selectedModel = defaultModelSettings.selectedModel;
-        } else {
-            settings.selectedModel = settings.enabledModels[0];
-        }
-    }
-
-    // console.log("[ACTION LOG] Returning processed user settings:", settings); // Removed log
-    return settings;
-
-  } catch (err) {
-    console.error("Unexpected error in getUserModelSettings:", err);
-    // console.log("[ACTION LOG] Returning default models (due to catch block):", defaultModelSettings); // Removed log
-    return defaultModelSettings;
+    if(!aiConfiguration().apiKey) throw new Error('AI is not configured yet. Please try again later.');
+    const context=contextItemId?await getContextItemById(contextItemId):null;
+    if(contextItemId && !context) throw new Error('Context item was not found.');
+    request=await reserveChatCredits(user.id);
+    const response=await generateResponse(messages,context?.content);
+    await finishChatCredits(user.id,request,true);
+    return {success:true,response};
+  } catch(error) {
+    if(request) { try { await finishChatCredits(user.id,request,false); } catch { console.error('Credit reconciliation required',{requestId:request}); } }
+    return {success:false,error:error instanceof Error?error.message:'Unable to generate a response.'};
   }
 }
-
-// Server Action to update the list of enabled models
-// --- MODIFIED --- Now also handles updating selected_model if it becomes disabled
-export async function updateUserModelSettings(enabledIds: string[]): Promise<{ success: boolean; error?: string }> {
-  if (!Array.isArray(enabledIds) || enabledIds.some(id => !availableModels.some(model => model.id === id))) return { success: false, error: 'Invalid model selection.' };
+const uuid=/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+export async function startNewChat(chatId:string,prompt:string,model:string|null,contextItemId?:string|null) {
+  const user=await currentUser(); if(!user) return {success:false,error:'Please sign in.'};
+  if(!uuid.test(chatId) || !prompt.trim() || prompt.length>32000) return {success:false,error:'Invalid chat request.'};
   try {
-    const supabase = await createSupabaseClient();
-    const { data: { user }, error: authError } = await supabase.auth.getUser();
-
-    if (authError || !user) {
-      console.error("User not authenticated:", authError);
-      return { success: false, error: "User not authenticated." };
-    }
-
-    // 1. Get the current selected model BEFORE updating from the CORRECT table
-    const { data: currentSettings, error: fetchError } = await supabase
-      .from('profiles') 
-      .select('selected_model')
-      .eq('id', user.id) 
-      .single();
-
-    if (fetchError && fetchError.code !== 'PGRST116') { 
-       console.error("Error fetching current settings from profiles:", fetchError);
-       return { success: false, error: "Failed to fetch current settings." };
-    }
-
-    const currentSelectedModel = currentSettings?.selected_model;
-    let newSelectedModel = currentSelectedModel; 
-
-    // 2. Check if the current selected model is being disabled
-    if (currentSelectedModel && !enabledIds.includes(currentSelectedModel)) {
-      // console.log(`Selected model '${currentSelectedModel}' is being disabled.`); // Removed log
-      // 3. Determine the new selected model (first enabled or null)
-      newSelectedModel = enabledIds.length > 0 ? enabledIds[0] : null;
-      // console.log(`Automatically setting new selected model to: '${newSelectedModel}'`); // Removed log
-    } else {
-      // Ensure selected model is valid even if not changed (e.g., on first save or if current was null)
-      if (currentSelectedModel && !enabledIds.includes(currentSelectedModel)) {
-         newSelectedModel = enabledIds.length > 0 ? enabledIds[0] : null;
-      } else if (!currentSelectedModel && enabledIds.length > 0) {
-         newSelectedModel = enabledIds[0];
-      }
-    }
-
-    // 4. Update BOTH enabled_models and selected_model in the CORRECT table
-    const { error: updateError } = await supabase
-      .from('profiles') 
-      .update({ 
-        enabled_models: enabledIds,
-        selected_model: newSelectedModel, 
-        updated_at: new Date().toISOString(),
-      })
-      .eq('id', user.id); 
-
-    if (updateError) {
-      console.error("Error updating user settings in profiles:", updateError);
-      return { success: false, error: "Failed to update model settings." };
-    }
-
-    revalidatePath("/"); 
-
-    return { success: true };
-
-  } catch (err: unknown) {
-    console.error("Unexpected error in updateUserModelSettings:", err);
-    const errorMessage = err instanceof Error ? err.message : "An unexpected error occurred.";
-    return { success: false, error: errorMessage };
-  }
-}
-
-// Server Action to update ONLY the selected model (used by dropdown)
-// --- CORRECTED --- Use 'profiles' table and 'id' column
-export async function updateUserSelectedModel(modelId: string | null): Promise<{ success: boolean; error?: string }> {
-  if (modelId && !availableModels.some(model => model.id === modelId)) return { success: false, error: 'Invalid model selection.' };
-  try {
-    const supabase = await createSupabaseClient();
-    const { data: { user }, error: authError } = await supabase.auth.getUser();
-
-    if (authError || !user) {
-      console.error("User not authenticated:", authError);
-      return { success: false, error: "User not authenticated." };
-    }
-
-    const { error: updateError } = await supabase
-      .from('profiles') 
-      .update({ 
-        selected_model: modelId,
-        updated_at: new Date().toISOString(),
-      })
-       .eq('id', user.id); 
-
-    if (updateError) {
-      console.error("Error updating selected model in profiles:", updateError);
-      return { success: false, error: "Failed to update selected model." };
-    }
-
-    revalidatePath("/");
-
-    return { success: true };
-
-  } catch (err: unknown) {
-    console.error("Unexpected error in updateUserSelectedModel:", err);
-    const errorMessage = err instanceof Error ? err.message : "An unexpected error occurred.";
-    return { success: false, error: errorMessage };
-  }
-}
-
-// Message type used by the chat interface (can be shared or redefined)
-// Ensure this matches the structure expected by the server action
-interface ClientMessage {
-  id: string;
-  sender: 'user' | 'ai';
-  content: string;
-}
-
-// Helper function to fetch context item by ID (reusable)
-async function getContextItemContent(itemId: string | null | undefined, supabase: SupabaseClient): Promise<string | null> {
-  if (!itemId) return null;
-
-  const { data: contextItem, error: contextError } = await supabase
-      .from('context_items')
-      .select('content, name') // Select name for formatting
-      .eq('id', itemId)
-      .maybeSingle(); // Use maybeSingle as it might not exist
-
-  if (contextError) {
-    console.error(`Error fetching context item ${itemId}:`, contextError);
-    // Decide if this should be a critical error or just ignored
-    return null; 
-  }
-  
-  if (!contextItem) {
-    console.warn(`Context item with ID ${itemId} not found.`);
-    return null;
-  }
-
-  // Return formatted content
-  return `--- Context: ${contextItem.name} ---\n${contextItem.content}\n--- End Context ---`;
-}
-
-// --- Server Action for Anthropic API Call (Updated) ---
-export async function getAnthropicResponse(
-  messages: ClientMessage[], 
-  model: string,
-  contextItemId?: string | null // Added optional context item ID
-): Promise<{ success: boolean; response?: string; error?: string }> {
-  
-  const apiKey = process.env.ANTHROPIC_API_KEY;
-  if (!apiKey) {
-    console.error("ANTHROPIC_API_KEY is not set in environment variables.");
-    return { success: false, error: "Server configuration error: API key missing." };
-  }
-  if (!model) {
-     return { success: false, error: "No model selected." };
-  }
-  if (!Array.isArray(messages) || messages.length === 0) {
-     return { success: false, error: "No messages to send." };
-  }
-
-  const supabase = await createSupabaseClient();
-  const { data: { user }, error: authError } = await supabase.auth.getUser();
-  if (authError || !user) return { success: false, error: 'Please sign in to use chat.' };
-  if (!Array.isArray(messages) || messages.length > 100 || messages.some(m => typeof m.content !== 'string' || m.content.length > 32000 || !['user', 'ai'].includes(m.sender))) {
-    return { success: false, error: 'Invalid or oversized conversation.' };
-  }
-  const settings = await getUserModelSettings();
-  if (!settings.enabledModels.includes(model)) return { success: false, error: 'This model is not enabled.' };
-  const anthropic = new Anthropic({ apiKey, timeout: 60000, maxRetries: 1 });
-
-  // Fetch context content if ID is provided
-  let fetchedContextContent: string | null = null;
-  if (contextItemId) {
-    try {
-      fetchedContextContent = await getContextItemContent(contextItemId, supabase);
-      if (fetchedContextContent) {
-         console.log(`Successfully fetched context: ${contextItemId}`);
-      } else {
-         console.log(`Could not fetch or find context: ${contextItemId}`);
-         // Decide if this failure should abort the request or proceed without context
-         // For now, we proceed without context
-      }
-    } catch (fetchErr) {
-       console.error(`Caught error fetching context ${contextItemId}:`, fetchErr);
-       // Proceed without context on fetch error
-    }
-  }
-
-  // Convert client messages
-  const formattedMessages: Anthropic.MessageParam[] = messages.map(msg => ({
-    role: msg.sender === 'user' ? 'user' : 'assistant',
-    content: msg.content
-  }));
-
-  // Prepend context to the *last user message* if fetched
-  // (Alternatively, could add as a separate user message, or system prompt if API supports it)
-  if (fetchedContextContent && formattedMessages.length > 0) {
-      const lastMessageIndex = formattedMessages.length - 1;
-      // Ensure the last message is from the user before modifying
-      if (formattedMessages[lastMessageIndex].role === 'user') {
-          const originalContent = formattedMessages[lastMessageIndex].content;
-          formattedMessages[lastMessageIndex].content = `${fetchedContextContent}\n\n${originalContent}`;
-          console.log(`Prepended context to user message for Anthropic API call.`);
-      } else {
-          // If the last message isn't user, perhaps add context as a new user message?
-          // Or log a warning and proceed without prepending. For simplicity, we log.
-          console.warn("Last message not from user, could not prepend context directly.");
-          // Option: formattedMessages.push({ role: 'user', content: fetchedContextContent });
-      }
-  }
-
-  let creditRequest: string | undefined;
-  try {
-    creditRequest = await reserveChatCredits(user.id);
-    console.log(`Calling Anthropic API with model: ${model}`);
-    const response = await anthropic.messages.create({
-      model: model, 
-      max_tokens: 1024, 
-      messages: formattedMessages,
+    const context=contextItemId?await getContextItemById(contextItemId):null;
+    if(contextItemId && !context) throw new Error('Context item not found.');
+    const finalPrompt=context?`Reference: ${context.name}\n${context.content}\n\n${prompt}`:prompt;
+    await transaction(async client=>{
+      await client.query('insert into chats(id,user_id,model_id,name) values($1,$2,$3,$4)',[chatId,user.id,model,prompt.slice(0,50)]);
+      await client.query("insert into messages(chat_id,user_id,sender,content,model_id) values($1,$2,'user',$3,$4)",[chatId,user.id,finalPrompt,model]);
     });
-    console.log("Anthropic API Response Status:", response.stop_reason);
-    type ContentBlock = { type: string; text?: string }; 
-    const textBlocks = response.content
-      .filter((block: ContentBlock): block is { type: 'text'; text: string } => 
-        block.type === 'text' && typeof block.text === 'string'
-      );
-    const aiTextResponse = textBlocks
-      .map((textBlock) => (textBlock as { text: string }).text) 
-      .join('\n');
-    if (!aiTextResponse) throw new Error('Received an empty response from AI.');
-    await finishChatCredits(user.id, creditRequest, true);
-    return { success: true, response: aiTextResponse };
-  } catch (error: unknown) {
-    if (creditRequest) {
-      try { await finishChatCredits(user.id, creditRequest, false); }
-      catch { console.error('Credit refund requires reconciliation', { requestId: creditRequest }); }
-    }
-    console.error("AI request failed", { requestId: creditRequest });
-    let errorMessage = "An unexpected error occurred while contacting the AI.";
-    if (error instanceof Anthropic.APIError) {
-        errorMessage = "The AI service is temporarily unavailable. Please try again.";
-    } else if (error instanceof Error) { 
-        errorMessage = error.message;
-    }
-    return { success: false, error: errorMessage };
-  }
+    revalidatePath('/'); return {success:true};
+  } catch { return {success:false,error:'Unable to create chat.'}; }
 }
-
-// --- End Model Settings Actions --- 
-
-// --- Chat History Actions --- 
-
-/**
- * Creates a new chat record and saves the initial user message.
- * (Updated to accept contextItemId)
- */
-export async function startNewChat(
-  chatId: string,
-  initialUserPrompt: string,
-  selectedModelId: string | null,
-  contextItemId?: string | null // Added optional context item ID
-): Promise<{ success: boolean; error?: string }> {
+export async function addMessage(chatId:string,sender:'user'|'ai',content:string,modelId?:string|null) {
+  const user=await currentUser(); if(!user) return {success:false,error:'Please sign in.'};
+  if(!uuid.test(chatId) || !['user','ai'].includes(sender) || !content || content.length>128000) return {success:false,error:'Invalid message.'};
   try {
-    const supabase = await createSupabaseClient();
-    const { data: { user }, error: authError } = await supabase.auth.getUser();
-
-    if (authError || !user) {
-      console.error("User not authenticated:", authError);
-      return { success: false, error: "User not authenticated." };
-    }
-
-    // Fetch context content if ID is provided
-    let fetchedContextContent: string | null = null;
-    if (contextItemId) {
-       try {
-         fetchedContextContent = await getContextItemContent(contextItemId, supabase);
-         if (fetchedContextContent) {
-            console.log(`Successfully fetched context for new chat: ${contextItemId}`);
-         } else {
-            console.log(`Could not fetch or find context for new chat: ${contextItemId}`);
-         }
-       } catch (fetchErr) {
-          console.error(`Caught error fetching context ${contextItemId} for new chat:`, fetchErr);
-       }
-    }
-
-    // Prepend context to the initial prompt if fetched
-    const finalUserPrompt = fetchedContextContent
-       ? `${fetchedContextContent}\n\n${initialUserPrompt}`
-       : initialUserPrompt;
-
-    // Generate initial chat name (or maybe generate AFTER first AI response?)
-    const initialChatName = finalUserPrompt.substring(0, 50) + (finalUserPrompt.length > 50 ? '...' : '');
-
-    // Replace RPC call with separate inserts
-    // 1. Create the chat record
-    const { error: chatInsertError } = await supabase
-      .from('chats')
-      .insert({
-        id: chatId, // Use the client-generated ID
-        user_id: user.id,
-        model_id: selectedModelId, // Store initial model
-        name: initialChatName 
-        // created_at and updated_at have defaults
-      });
-
-    if (chatInsertError) {
-      console.error("Error inserting chat record:", chatInsertError);
-       // Check for duplicate chat ID specifically
-       if (chatInsertError.code === '23505') { // PostgreSQL duplicate key error code
-         return { success: false, error: "Chat ID already exists. Please try again." };
-      }
-      return { success: false, error: "Failed to create chat session." };
-    }
-
-    // 2. Save the initial user message
-    const { error: messageInsertError } = await supabase
-      .from('messages')
-      .insert({
-        chat_id: chatId,
-        user_id: user.id,
-        sender: 'user',
-        content: finalUserPrompt, // Use the potentially modified prompt
-        model_id: selectedModelId // Also store the model used for the prompt context if any
-        // created_at has default
-      });
-
-    if (messageInsertError) {
-      console.error("Error inserting initial user message:", messageInsertError);
-      await supabase.from('chats').delete().eq('id', chatId).eq('user_id', user.id);
-      return { success: false, error: "Failed to save initial message." };
-    }
-
-    // Revalidate the root path to update the sidebar
-    revalidatePath("/");
-
-    console.log(`Successfully created chat ${chatId} and saved initial message.`);
-    return { success: true };
-
-  } catch (err: unknown) {
-    console.error("Unexpected error in startNewChat:", err);
-    const errorMessage = err instanceof Error ? err.message : "An unexpected error occurred.";
-    return { success: false, error: errorMessage };
-  }
+    await transaction(async client=>{
+      const {rows}=await client.query('select id from chats where id=$1 and user_id=$2 for update',[chatId,user.id]);
+      if(!rows.length) throw new Error('Chat not found.');
+      await client.query('insert into messages(chat_id,user_id,sender,content,model_id) values($1,$2,$3,$4,$5)',[chatId,user.id,sender,content,modelId]);
+      await client.query('update chats set updated_at=now() where id=$1 and user_id=$2',[chatId,user.id]);
+    });
+    return {success:true};
+  } catch { return {success:false,error:'Unable to save message.'}; }
 }
-
-/**
- * Adds a message (typically AI response) to an existing chat 
- * and updates the chat's updated_at timestamp.
- */
-export async function addMessage(
-   chatId: string, 
-   sender: 'user' | 'ai', // Allow saving user messages later if needed
-   content: string, 
-   modelId?: string | null // Optional model ID for AI messages
- ): Promise<{ success: boolean; error?: string }> {
-   try {
-     const supabase = await createSupabaseClient();
-     const { data: { user }, error: authError } = await supabase.auth.getUser();
- 
-     if (authError || !user) {
-       console.error("User not authenticated for addMessage:", authError);
-       return { success: false, error: "User not authenticated." };
-     }
- 
-     // Use a transaction to ensure both message insert and chat update happen or fail together
-     const { error: transactionError } = await supabase.rpc('add_chat_message', {
-         p_chat_id: chatId,
-         p_user_id: user.id,
-         p_sender: sender,
-         p_content: content,
-         p_model_id: modelId
-     });
- 
-     if (transactionError) {
-       console.error("Error in add_chat_message transaction:", transactionError);
-       return { success: false, error: "Failed to save message and update chat." };
-     }
-     
-    // Revalidate relevant paths
-    // revalidatePath(`/c/${chatId}`); // Revalidate the specific chat page
-    // revalidatePath('/'); // Or broader if sidebar shows updates
-
-     return { success: true };
- 
-   } catch (err: unknown) {
-     console.error("Unexpected error in addMessage:", err);
-     const errorMessage = err instanceof Error ? err.message : "An unexpected error occurred.";
-     return { success: false, error: errorMessage };
-   }
- }
- 
-/**
- * Fetches the chat history list for the authenticated user.
- */
-export async function getChatHistory(): Promise<{ id: string; title: string }[]> {
-  try {
-    const supabase = await createSupabaseClient();
-    const { data: { user }, error: authError } = await supabase.auth.getUser();
-
-    if (authError || !user) {
-      console.error("User not authenticated for getChatHistory:", authError);
-      return []; // Return empty list if not authenticated
-    }
-
-    const { data, error } = await supabase
-      .from('chats')
-      .select('id, name, created_at') // Keep fetching name
-      .eq('user_id', user.id)
-      .order('updated_at', { ascending: false });
-
-    if (error) {
-      console.error("Error fetching chat history:", error);
-      return [];
-    }
-
-    // Format the title: Use saved name first, then fallback
-    return data.map(chat => ({
-      id: chat.id,
-      title: chat.name || `Chat ${chat.id.substring(0, 8)}...` // Use chat.name if available
-    }));
-
-  } catch (err: unknown) {
-    console.error("Unexpected error in getChatHistory:", err);
-    return [];
-  }
+export async function getChatHistory():Promise<{id:string;title:string}[]> {
+  const user=await currentUser(); if(!user) return [];
+  return ownedQuery(user.id,"select id,coalesce(name,'Untitled chat') as title from chats where user_id=$1 order by updated_at desc",[user.id]);
 }
-
-// Define Message type consistent with DB and client needs
-// (Could be moved to a shared types file)
-interface MessageFromDB {
-  id: string;
-  sender: 'user' | 'ai';
-  content: string;
-  created_at: string; // Timestamps from DB are strings
+export async function getMessagesForChat(chatId:string):Promise<{id:string;sender:'user'|'ai';content:string;created_at:string}[]> {
+  const user=await currentUser(); if(!user || !uuid.test(chatId)) return [];
+  return ownedQuery(user.id,'select id,sender,content,created_at::text from messages where chat_id=$1 and user_id=$2 order by created_at,id',[chatId,user.id]);
 }
-
-/**
- * Fetches messages for a specific chat ID belonging to the authenticated user.
- */
-export async function getMessagesForChat(chatId: string): Promise<MessageFromDB[]> {
-  try {
-    const supabase = await createSupabaseClient();
-    const { data: { user }, error: authError } = await supabase.auth.getUser();
-
-    if (authError || !user) {
-      console.error("User not authenticated for getMessagesForChat:", authError);
-      return []; // Return empty list if not authenticated
-    }
-
-    // Fetch messages - RLS policies should ensure user owns the chat
-    const { data, error } = await supabase
-      .from('messages')
-      .select('id, sender, content, created_at')
-      .eq('chat_id', chatId)
-      .order('created_at', { ascending: true }); // Order messages chronologically
-
-    if (error) {
-      // RLS might deny access, resulting in an error or empty data depending on policy
-      console.error("Error fetching messages for chat:", error);
-      return [];
-    }
-
-    // Ensure sender is correctly typed
-    return data.map(msg => ({
-      ...msg,
-      sender: msg.sender as 'user' | 'ai' // Assert type based on DB constraint
-    }));
-
-  } catch (err: unknown) {
-    console.error("Unexpected error in getMessagesForChat:", err);
-    return [];
-  }
+export async function updateChatName(chatId:string,name:string) {
+  const user=await currentUser(); if(!user) return {success:false,error:'Please sign in.'};
+  if(!uuid.test(chatId) || !name.trim() || name.length>200) return {success:false,error:'Invalid chat name.'};
+  const rows=await ownedQuery(user.id,'update chats set name=$1,updated_at=now() where id=$2 and user_id=$3 returning id',[name.trim(),chatId,user.id]);
+  revalidatePath('/'); return {success:!!rows.length,error:rows.length?undefined:'Chat not found.'};
 }
-
-/**
- * Updates the name of a specific chat owned by the authenticated user.
- */
-export async function updateChatName(
-  chatId: string,
-  newName: string
-): Promise<{ success: boolean; error?: string }> {
-  try {
-    const supabase = await createSupabaseClient();
-    const { data: { user }, error: authError } = await supabase.auth.getUser();
-
-    if (authError || !user) {
-      console.error("User not authenticated for updateChatName:", authError);
-      return { success: false, error: "User not authenticated." };
-    }
-
-    // Ensure the new name is not empty (optional, but good practice)
-    if (!newName || newName.trim().length === 0) {
-      return { success: false, error: "Chat name cannot be empty." };
-    }
-
-    const { error } = await supabase
-      .from('chats')
-      .update({ 
-          name: newName.trim(), // Trim whitespace
-          updated_at: new Date().toISOString() // Also update timestamp
-      })
-      .eq('id', chatId)
-      .eq('user_id', user.id); // IMPORTANT: Ensure user owns the chat
-
-    if (error) {
-      console.error("Error updating chat name:", error);
-      return { success: false, error: "Failed to update chat name." };
-    }
-    
-    // Revalidate sidebar after name update
-    revalidatePath('/'); 
-
-    return { success: true };
-
-  } catch (err: unknown) {
-    console.error("Unexpected error in updateChatName:", err);
-    const errorMessage = err instanceof Error ? err.message : "An unexpected error occurred.";
-    return { success: false, error: errorMessage };
-  }
+export async function deleteChat(chatId:string) {
+  const user=await currentUser(); if(!user || !uuid.test(chatId)) return {success:false,error:'Chat not found.'};
+  const rows=await ownedQuery(user.id,'delete from chats where id=$1 and user_id=$2 returning id',[chatId,user.id]);
+  revalidatePath('/'); return {success:!!rows.length};
 }
-
-/**
- * Deletes a specific chat and its messages owned by the authenticated user.
- */
-export async function deleteChat(
-  chatId: string
-): Promise<{ success: boolean; error?: string }> {
-  try {
-    const supabase = await createSupabaseClient();
-    const { data: { user }, error: authError } = await supabase.auth.getUser();
-
-    if (authError || !user) {
-      console.error("User not authenticated for deleteChat:", authError);
-      return { success: false, error: "User not authenticated." };
-    }
-
-    // Ensure chatId is provided
-    if (!chatId) {
-      return { success: false, error: "Chat ID is required." };
-    }
-
-    // Delete the chat record. RLS policies on 'chats' table should enforce user_id check.
-    // Assuming CASCADE DELETE is set up on the 'messages' table for 'chat_id' foreign key.
-    // If not, you would need to delete messages first:
-    // const { error: msgError } = await supabase.from('messages').delete().eq('chat_id', chatId);
-    // if (msgError) { /* handle message deletion error */ }
-    
-    const { error } = await supabase
-      .from('chats')
-      .delete()
-      .eq('id', chatId)
-      .eq('user_id', user.id); // Double-check ownership in the action too
-
-    if (error) {
-      console.error("Error deleting chat:", error);
-      // Check if the error is due to the chat not being found (potentially already deleted)
-      // Supabase delete doesn't typically throw an error if the row doesn't exist based on the filter,
-      // but it's good practice to handle potential errors.
-      if (error.code === 'PGRST116') { // Example error code, adjust if needed
-         console.warn(`Chat ${chatId} not found for deletion, might be already deleted.`);
-         // Consider returning success: true if not found is acceptable
-         return { success: true }; 
-      }
-      return { success: false, error: "Failed to delete chat." };
-    }
-
-    // Revalidate the root path to refresh the sidebar
-    revalidatePath('/');
-
-    return { success: true };
-
-  } catch (err: unknown) {
-    console.error("Unexpected error in deleteChat:", err);
-    const errorMessage = err instanceof Error ? err.message : "An unexpected error occurred.";
-    return { success: false, error: errorMessage };
-  }
+export interface ContextItem {id:string;user_id:string;name:string;content:string;created_at:string;updated_at:string}
+export async function getContextItems():Promise<ContextItem[]> {
+  const user=await currentUser(); if(!user) return [];
+  return ownedQuery(user.id,'select id,user_id,name,content,created_at::text,updated_at::text from context_items where user_id=$1 order by updated_at desc',[user.id]);
 }
-
-// --- End Chat History Actions ---
-
-// --- Context Item Actions ---
-
-// Interface for context items (can be shared with client)
-export interface ContextItem {
-  id: string;
-  user_id: string;
-  name: string;
-  content: string;
-  created_at: string;
-  updated_at: string;
+export async function addContextItem(name:string,content:string):Promise<{success:boolean;error?:string;newItem?:ContextItem}> {
+  const user=await currentUser(); if(!user) return {success:false,error:'Please sign in.'};
+  if(!name.trim() || name.length>200 || !content.trim() || content.length>64000) return {success:false,error:'Enter a name and content within the allowed size.'};
+  const [newItem]=await ownedQuery<ContextItem>(user.id,'insert into context_items(user_id,name,content) values($1,$2,$3) returning id,user_id,name,content,created_at::text,updated_at::text',[user.id,name.trim(),content.trim()]);
+  revalidatePath('/context'); return {success:true,newItem};
 }
-
-/**
- * Fetches all context items for the authenticated user.
- */
-export async function getContextItems(): Promise<ContextItem[]> {
-  try {
-    const supabase = await createSupabaseClient();
-    const { data: { user }, error: authError } = await supabase.auth.getUser();
-
-    if (authError || !user) {
-      console.error("User not authenticated for getContextItems:", authError);
-      return []; // Return empty list if not authenticated
-    }
-
-    const { data, error } = await supabase
-      .from('context_items')
-      .select('*') // Select all columns
-      .eq('user_id', user.id)
-      .order('updated_at', { ascending: false });
-
-    if (error) {
-      console.error("Error fetching context items:", error);
-      return []; // Return empty on error
-    }
-
-    return data as ContextItem[]; // Cast data to our interface type
-
-  } catch (err: unknown) {
-    console.error("Unexpected error in getContextItems:", err);
-    return [];
-  }
+export async function updateContextItem(id:string,name:string,content:string):Promise<{success:boolean;error?:string;updatedItem?:ContextItem}> {
+  const user=await currentUser(); if(!user || !uuid.test(id)) return {success:false,error:'Context item not found.'};
+  if(!name.trim() || name.length>200 || !content.trim() || content.length>64000) return {success:false,error:'Enter a valid name and content.'};
+  const [updatedItem]=await ownedQuery<ContextItem>(user.id,'update context_items set name=$1,content=$2,updated_at=now() where id=$3 and user_id=$4 returning id,user_id,name,content,created_at::text,updated_at::text',[name.trim(),content.trim(),id,user.id]);
+  revalidatePath('/context'); return {success:!!updatedItem,updatedItem,error:updatedItem?undefined:'Context item not found.'};
 }
-
-/**
- * Adds a new context item for the authenticated user.
- */
-export async function addContextItem(
-  name: string,
-  content: string
-): Promise<{ success: boolean; error?: string; newItem?: ContextItem }> {
-  try {
-    const supabase = await createSupabaseClient();
-    const { data: { user }, error: authError } = await supabase.auth.getUser();
-
-    if (authError || !user) {
-      console.error("User not authenticated for addContextItem:", authError);
-      return { success: false, error: "User not authenticated." };
-    }
-
-    // Basic validation (Keep for name)
-    if (!name || name.trim().length === 0) {
-      return { success: false, error: "Context item name cannot be empty." };
-    }
-    // Restore content validation
-    if (!content || content.trim().length === 0) {
-      return { success: false, error: "Context item content cannot be empty." };
-    }
-
-    // Insert the new item and return it
-    const { data, error } = await supabase
-      .from('context_items')
-      .insert({
-        user_id: user.id,
-        name: name.trim(),
-        content: content.trim(), 
-        // created_at and updated_at have defaults
-      })
-      .select() // Return the newly inserted row
-      .single(); // Expect only one row back
-
-    if (error) {
-      console.error("Error inserting context item:", error);
-      return { success: false, error: "Failed to add context item." };
-    }
-
-    revalidatePath('/context'); // Revalidate the context page
-
-    return { success: true, newItem: data as ContextItem };
-
-  } catch (err: unknown) {
-    console.error("Unexpected error in addContextItem:", err);
-    const errorMessage = err instanceof Error ? err.message : "An unexpected error occurred.";
-    return { success: false, error: errorMessage };
-  }
+export async function deleteContextItem(id:string) {
+  const user=await currentUser(); if(!user || !uuid.test(id)) return {success:false,error:'Context item not found.'};
+  const rows=await ownedQuery(user.id,'delete from context_items where id=$1 and user_id=$2 returning id',[id,user.id]);
+  revalidatePath('/context'); return {success:!!rows.length};
 }
-
-/**
- * Updates an existing context item owned by the authenticated user.
- */
-export async function updateContextItem(
-  itemId: string,
-  newName: string,
-  newContent: string
-): Promise<{ success: boolean; error?: string; updatedItem?: ContextItem }> {
-  try {
-    const supabase = await createSupabaseClient();
-    const { data: { user }, error: authError } = await supabase.auth.getUser();
-
-    if (authError || !user) {
-      console.error("User not authenticated for updateContextItem:", authError);
-      return { success: false, error: "User not authenticated." };
-    }
-
-    // Basic validation
-    if (!itemId) {
-      return { success: false, error: "Item ID is required." };
-    }
-    if (!newName || newName.trim().length === 0) {
-      return { success: false, error: "Context item name cannot be empty." };
-    }
-    if (!newContent || newContent.trim().length === 0) {
-      return { success: false, error: "Context item content cannot be empty." };
-    }
-
-    // Update the item and return it
-    const { data, error } = await supabase
-      .from('context_items')
-      .update({
-        name: newName.trim(),
-        content: newContent.trim(),
-        // updated_at trigger handles timestamp
-      })
-      .eq('id', itemId)
-      .eq('user_id', user.id) // Ensure user owns the item
-      .select()
-      .single();
-
-    if (error) {
-      console.error("Error updating context item:", error);
-      // Handle case where item might not be found for the user
-      if (error.code === 'PGRST116') { // PostgREST code for zero rows returned
-        return { success: false, error: "Context item not found or you do not have permission to update it." };
-      }
-      return { success: false, error: "Failed to update context item." };
-    }
-
-    revalidatePath('/context');
-
-    return { success: true, updatedItem: data as ContextItem };
-
-  } catch (err: unknown) {
-    console.error("Unexpected error in updateContextItem:", err);
-    const errorMessage = err instanceof Error ? err.message : "An unexpected error occurred.";
-    return { success: false, error: errorMessage };
-  }
+export async function getContextItemById(id:string):Promise<ContextItem|null> {
+  const user=await currentUser(); if(!user || !uuid.test(id)) return null;
+  const [item]=await ownedQuery<ContextItem>(user.id,'select id,user_id,name,content,created_at::text,updated_at::text from context_items where id=$1 and user_id=$2',[id,user.id]);
+  return item||null;
 }
-
-/**
- * Deletes a specific context item owned by the authenticated user.
- */
-export async function deleteContextItem(
-  itemId: string
-): Promise<{ success: boolean; error?: string }> {
-  try {
-    const supabase = await createSupabaseClient();
-    const { data: { user }, error: authError } = await supabase.auth.getUser();
-
-    if (authError || !user) {
-      console.error("User not authenticated for deleteContextItem:", authError);
-      return { success: false, error: "User not authenticated." };
-    }
-
-    if (!itemId) {
-      return { success: false, error: "Item ID is required." };
-    }
-
-    // Delete the item
-    const { error } = await supabase
-      .from('context_items')
-      .delete()
-      .eq('id', itemId)
-      .eq('user_id', user.id); // Ensure user owns the item
-
-    if (error) {
-      console.error("Error deleting context item:", error);
-      // Note: Supabase delete doesn't typically error if row not found with matching filters
-      return { success: false, error: "Failed to delete context item." };
-    }
-
-    revalidatePath('/context');
-
-    return { success: true };
-
-  } catch (err: unknown) {
-    console.error("Unexpected error in deleteContextItem:", err);
-    const errorMessage = err instanceof Error ? err.message : "An unexpected error occurred.";
-    return { success: false, error: errorMessage };
-  }
-}
-
-/**
- * Fetches a single context item by its ID for the authenticated user.
- */
-export async function getContextItemById(itemId: string): Promise<ContextItem | null> {
-  if (!itemId) {
-    console.warn("getContextItemById: No itemId provided.");
-    return null;
-  }
-  try {
-    const supabase = await createSupabaseClient();
-    const { data: { user }, error: authError } = await supabase.auth.getUser();
-
-    if (authError || !user) {
-      console.error("User not authenticated for getContextItemById:", authError);
-      return null; // Return null if not authenticated
-    }
-
-    const { data, error } = await supabase
-      .from('context_items')
-      .select('*')
-      .eq('id', itemId)
-      .eq('user_id', user.id) // Ensure user owns the item
-      .single();
-
-    if (error) {
-      if (error.code !== 'PGRST116') { // Ignore 'No rows found' error, just return null
-         console.error("Error fetching single context item:", error);
-      }
-      return null; // Return null on error or if not found/authorized
-    }
-
-    return data as ContextItem;
-
-  } catch (err: unknown) {
-    console.error("Unexpected error in getContextItemById:", err);
-    return null;
-  }
-}
-
-// --- End Context Item Actions ---

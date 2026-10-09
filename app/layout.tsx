@@ -10,8 +10,8 @@ const inter = Inter({ subsets: ["latin"] });
 export const dynamic = 'force-dynamic';
 
 export const metadata: Metadata = {
-  title: "Chat App",
-  description: "A modern chat application",
+  title: "One Fin Solution",
+  description: "AI chat by ONE FIN SOLUTION COMPANY LIMITED",
 };
 
 export default function RootLayout({

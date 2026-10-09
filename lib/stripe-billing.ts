@@ -2,10 +2,10 @@ import 'server-only';
 import Stripe from 'stripe';
 import { verifiedStripe } from './stripe';
 import { creditPlans } from './credit-config';
-import { createSupabaseClient } from '@/utils/supabase/server';
-import { createAdminClient } from '@/utils/supabase/admin';
+import { currentUser } from './session';
+import { query } from './db';
 import { siteUrl } from './site-url';
-import type { Price, Product, ProductWithPrices, Subscription } from '@updatedev/js/dist/types/types/billing';
+import type { Price, Product, ProductWithPrices, Subscription } from '@/types/billing';
 
 function priceView(price: Stripe.Price): Price {
   return { id: price.id, type: price.recurring ? 'recurring' : 'one-time', currency: price.currency,
@@ -14,21 +14,17 @@ function priceView(price: Stripe.Price): Price {
 function productView(product: Stripe.Product): Product {
   return { id: product.id, name: product.name, description: product.description || '', status: product.active ? 'active' : 'inactive' };
 }
-async function currentCustomer(create = false) {
-  const supabase = await createSupabaseClient();
-  const { data: { user }, error } = await supabase.auth.getUser();
-  if (error || !user) throw new Error('Please sign in.');
-  const admin = createAdminClient();
-  const { data: mapping, error: lookupError } = await admin.from('billing_customers').select('customer_id').eq('user_id', user.id).maybeSingle();
-  if (lookupError) throw new Error('Unable to load billing account.');
-  if (mapping) return mapping.customer_id as string;
-  if (!create) return null;
-  const stripe = await verifiedStripe();
-  const customer = await stripe.customers.create({ email: user.email, metadata: { app: 'chatbot-template', user_id: user.id } }, { idempotencyKey: `chatbot-customer:${user.id}` });
-  const { error: saveError } = await admin.from('billing_customers').upsert({ user_id: user.id, customer_id: customer.id }, { onConflict: 'user_id', ignoreDuplicates: true });
-  if (saveError) throw new Error('Unable to save billing account.');
-  const { data: saved, error: verifyError } = await admin.from('billing_customers').select('customer_id').eq('user_id', user.id).single();
-  if (verifyError || saved.customer_id !== customer.id) throw new Error('Billing account conflict.');
+async function currentCustomer(create=false) {
+  const user=await currentUser();
+  if(!user) throw new Error('Please sign in.');
+  const [mapping]=await query<{customer_id:string}>('select customer_id from billing_customers where user_id=$1',[user.id]);
+  if(mapping) return mapping.customer_id;
+  if(!create) return null;
+  const stripe=await verifiedStripe();
+  const customer=await stripe.customers.create({email:user.email,metadata:{app:'chatbot-template',user_id:user.id}},{idempotencyKey:`chatbot-customer:${user.id}`});
+  await query('insert into billing_customers(user_id,customer_id) values($1,$2) on conflict(user_id) do nothing',[user.id,customer.id]);
+  const [saved]=await query('select customer_id from billing_customers where user_id=$1',[user.id]);
+  if(saved?.customer_id!==customer.id) throw new Error('Billing account conflict.');
   return customer.id;
 }
 
@@ -72,12 +68,11 @@ async function checkout(priceId: string) {
     const existing = await stripe.subscriptions.list({ customer: customer!, status: 'all', limit: 100 });
     if (existing.data.some(sub => !['canceled','incomplete_expired'].includes(sub.status))) throw new Error('Manage your existing subscription first.');
   }
-  const admin = createAdminClient();
-  const { data: mapping, error: mappingError } = await admin.from('billing_customers').select('user_id').eq('customer_id', customer).single();
-  if (mappingError) throw new Error('Billing account unavailable.');
+  const [mapping]=await query('select user_id from billing_customers where customer_id=$1',[customer]);
+  if(!mapping) throw new Error('Billing account unavailable.');
   for (let retry = 0; retry < 3; retry++) {
-    const { data: attempt, error: reservationError } = await admin.rpc('begin_billing_checkout', { p_user: mapping.user_id, p_price: priceId });
-    if (reservationError || !attempt) throw new Error('Unable to reserve checkout.');
+    const [{attempt}]=await query('select begin_billing_checkout($1,$2) as attempt',[mapping.user_id,priceId]);
+    if(!attempt) throw new Error('Unable to reserve checkout.');
     const pending = products.flatMap(product => product.prices).find(value => value.id === attempt.price_id);
     if (!pending) throw new Error('The unfinished checkout price is no longer available. Contact support.');
     const session = attempt.session_id ? await stripe.checkout.sessions.retrieve(attempt.session_id) :
@@ -88,13 +83,12 @@ async function checkout(priceId: string) {
     if (session.livemode || session.customer !== customer) throw new Error('Unexpected checkout account or mode.');
     if (session.status !== 'open' || attempt.price_id !== priceId) {
       if (session.status === 'open') await stripe.checkout.sessions.expire(session.id);
-      const { error } = await admin.from('billing_checkout_attempts').delete().eq('user_id',mapping.user_id).eq('request_id',attempt.request_id);
-      if (error) throw new Error('Unable to close previous checkout.');
+      await query('delete from billing_checkout_attempts where user_id=$1 and request_id=$2',[mapping.user_id,attempt.request_id]);
       if (pending.type === 'recurring' && price.type === 'recurring' && session.status === 'complete') throw new Error('Your previous checkout completed. Refresh your subscription before purchasing again.');
       continue;
     }
-    const { data: saved, error: saveError } = await admin.from('billing_checkout_attempts').update({ session_id: session.id }).eq('user_id', mapping.user_id).eq('request_id',attempt.request_id).select('request_id');
-    if (saveError || !saved?.length || !session.url) throw new Error('Checkout changed in another tab. Please try again.');
+    const saved=await query('update billing_checkout_attempts set session_id=$1 where user_id=$2 and request_id=$3 returning request_id',[session.id,mapping.user_id,attempt.request_id]);
+    if (!saved?.length || !session.url) throw new Error('Checkout changed in another tab. Please try again.');
     return session.url;
   }
   throw new Error('Another checkout is in progress. Please try again.');

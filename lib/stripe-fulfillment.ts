@@ -1,34 +1,26 @@
 import 'server-only';
 import Stripe from 'stripe';
-import { createAdminClient } from '@/utils/supabase/admin';
+import { query } from './db';
 import { creditPlans } from './credit-config';
 
 async function owner(customer: string | Stripe.Customer | Stripe.DeletedCustomer | null) {
   const id = typeof customer === 'string' ? customer : customer?.id;
   if (!id) throw new Error('Missing customer.');
-  const { data, error } = await createAdminClient().from('billing_customers').select('user_id').eq('customer_id', id).maybeSingle();
-  if (error || !data) throw new Error('Customer mapping unavailable.');
+  const [data]=await query('select user_id from billing_customers where customer_id=$1',[id]);
+  if (!data) throw new Error('Customer mapping unavailable.');
   return data.user_id as string;
 }
 async function grant(user: string, reference: string, price: string, quantity: number, kind: 'subscription' | 'pack', expires?: number) {
   const plan = creditPlans()[price];
   if (!plan || plan.kind !== kind || quantity !== 1) throw new Error('Unexpected paid price or quantity.');
-  const { error } = await createAdminClient().rpc('grant_credits', {
-    p_user: user, p_reference: reference, p_amount: plan.credits,
-    p_expires: expires ? new Date(expires * 1000).toISOString() : null,
-  });
-  if (error) throw new Error('Credit grant failed.');
+  await query('select grant_credits($1,$2,$3,$4)',[user,reference,plan.credits,expires?new Date(expires*1000).toISOString():null]);
 }
 async function recordSubscription(user: string, sub: Stripe.Subscription) {
   const item = sub.items.data[0];
   if (!item || sub.livemode) throw new Error('Invalid subscription snapshot.');
-  const { error } = await createAdminClient().from('billing_subscriptions').upsert({
-    id: sub.id, user_id: user, price_id: item.price.id, status: sub.status,
-    period_start: new Date(item.current_period_start * 1000).toISOString(),
-    period_end: new Date(item.current_period_end * 1000).toISOString(),
-    cancel_at_period_end: sub.cancel_at_period_end, observed_at: new Date().toISOString(),
-  });
-  if (error) throw new Error('Unable to synchronize subscription.');
+  await query(`insert into billing_subscriptions(id,user_id,price_id,status,period_start,period_end,cancel_at_period_end,observed_at)
+    values($1,$2,$3,$4,$5,$6,$7,now()) on conflict(id) do update set price_id=excluded.price_id,status=excluded.status,period_start=excluded.period_start,period_end=excluded.period_end,cancel_at_period_end=excluded.cancel_at_period_end,observed_at=excluded.observed_at`,
+    [sub.id,user,item.price.id,sub.status,new Date(item.current_period_start*1000).toISOString(),new Date(item.current_period_end*1000).toISOString(),sub.cancel_at_period_end]);
 }
 export async function fulfillStripeEvent(stripe: Stripe, event: Stripe.Event) {
   if (event.livemode) throw new Error('Live events are disabled.');
@@ -67,8 +59,7 @@ export async function fulfillStripeEvent(stripe: Stripe, event: Stripe.Event) {
     await recordSubscription(user,sub);
     if (sub.status === 'canceled') {
       const expires = new Date((sub.ended_at || Math.floor(Date.now()/1000)) * 1000).toISOString();
-      const { error } = await createAdminClient().from('credit_buckets').update({ expires_at: expires }).eq('user_id',user).like('reference',`subscription:${sub.id}:%`).gt('expires_at',expires);
-      if (error) throw new Error('Unable to expire cancelled subscription credits.');
+      await query('update credit_buckets set expires_at=$1 where user_id=$2 and reference like $3 and expires_at>$1',[expires,user,`subscription:${sub.id}:%`]);
     }
   }
   // Failed/cancelled checkout, unpaid invoice and cancelled subscriptions grant nothing.

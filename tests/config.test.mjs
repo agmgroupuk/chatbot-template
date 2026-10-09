@@ -18,11 +18,11 @@ function load(file, env) {
 
 test('a production build must still select Test Mode billing', () => {
   assert.equal(load('lib/billing-environment.ts', { NODE_ENV: 'production' }).billingEnvironment(), 'test');
-  assert.equal(load('lib/billing-environment.ts', { NODE_ENV: 'production', NEXT_PUBLIC_UPDATE_ENVIRONMENT: 'test' }).billingEnvironment(), 'test');
+  assert.equal(load('lib/billing-environment.ts', { NODE_ENV: 'production', STRIPE_MODE: 'test' }).billingEnvironment(), 'test');
 });
 test('Live Mode and misspelled billing environments fail closed', () => {
   for (const environment of ['live', 'production', 'TEST']) {
-    assert.throws(() => load('lib/billing-environment.ts', { NEXT_PUBLIC_UPDATE_ENVIRONMENT: environment }).billingEnvironment(), /Only Test Mode/);
+    assert.throws(() => load('lib/billing-environment.ts', { STRIPE_MODE: environment }).billingEnvironment(), /Only Test Mode/);
   }
 });
 test('production redirects cannot silently fall back to localhost or HTTP', () => {
@@ -39,11 +39,11 @@ test('retired saved selections resolve to a supported model without rewriting hi
 });
 test('all private pages redirect guests, including nested chat and context routes', () => {
   const { authRedirect } = load('lib/auth-redirect.ts', {});
-  for (const path of ['/account', '/reset-password', '/context', '/context/new', '/context/123', '/c/123']) {
+  for (const path of ['/account', '/context', '/context/new', '/context/123', '/c/123']) {
     assert.equal(authRedirect(path, false), '/sign-in');
     assert.equal(authRedirect(path, true), null);
   }
-  for (const path of ['/', '/pricing', '/forgot-password', '/auth/callback', '/confirmation']) {
+  for (const path of ['/', '/pricing', '/reset-password', '/forgot-password', '/auth/callback', '/confirmation']) {
     assert.equal(authRedirect(path, false), null);
   }
   assert.equal(authRedirect('/sign-in', true), '/');

@@ -17,7 +17,7 @@ import {
   MoreHorizontal,
 } from "lucide-react";
 import { useRouter, usePathname } from "next/navigation";
-import { createSupabaseClient } from "@/utils/supabase/client";
+import { logoutAction } from "@/app/actions";
 import { SettingsModal } from "./settings-modal";
 import { DeleteConfirmationModal } from "./delete-confirmation-modal";
 import { getChatHistory, deleteChat } from "@/app/actions";
@@ -127,9 +127,7 @@ export function SidebarComponent({ className, onToggleCollapse, collapsed = fals
   const toggleHistory = () => setIsHistoryCollapsed(!isHistoryCollapsed);
 
   const handleSignOut = async () => {
-    const client = createSupabaseClient();
-    const { error } = await client.auth.signOut();
-    if (error) { toast.error("Unable to sign out. Please try again."); return; }
+    try { await logoutAction(); } catch { toast.error("Unable to sign out. Please try again."); return; }
     router.push('/sign-in');
     router.refresh();
   };

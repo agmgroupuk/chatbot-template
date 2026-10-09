@@ -1,47 +1,43 @@
 'use server';
-import { createSupabaseClient } from '@/utils/supabase/server';
-import { siteUrl } from '@/lib/site-url';
+import { currentUser, destroySession } from '@/lib/session';
+import { requestEmailToken, resetPassword, throttle } from '@/lib/auth-service';
+import { query } from '@/lib/db';
+import { cookies, headers } from 'next/headers';
 import { encodedRedirect } from '@/utils/redirect';
 import { redirect } from 'next/navigation';
 import { revalidatePath } from 'next/cache';
-
-export async function forgotPasswordAction(form: FormData) {
-  const email = String(form.get('email') || '').trim();
-  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return encodedRedirect('error', '/forgot-password', 'Enter a valid email address.');
-  const client = await createSupabaseClient();
-  const { error } = await client.auth.resetPasswordForEmail(email, { redirectTo: `${siteUrl()}/auth/callback?next=/reset-password` });
-  if (error) return encodedRedirect('error', '/forgot-password', 'Unable to send a reset link. Please try again later.');
-  return encodedRedirect('success', '/forgot-password', 'If an account exists, a reset link has been sent.');
+export async function authRequestThrottle() {
+  const ip=(await headers()).get('x-forwarded-for')?.split(',')[0]?.trim() || 'unknown';
+  await throttle(`auth-ip:${ip}`,50);
 }
-
-export async function resetPasswordAction(form: FormData) {
-  const password = String(form.get('password') || '');
-  if (password.length < 8 || password !== form.get('confirmPassword')) return encodedRedirect('error', '/reset-password', 'Passwords must match and contain at least eight characters.');
-  const client = await createSupabaseClient();
-  const { data: { user } } = await client.auth.getUser();
-  if (!user) return redirect('/forgot-password');
-  const { error } = await client.auth.updateUser({ password });
-  if (error) return encodedRedirect('error', '/reset-password', 'Unable to update password. Request a new link and try again.');
-  const { error: signOutError } = await client.auth.signOut({ scope: 'global' });
-  if (signOutError) return encodedRedirect('error', '/account', 'Password updated, but signing out failed. Please sign out and try again.');
-  return encodedRedirect('success', '/sign-in', 'Password updated. Please sign in again.');
+export async function forgotPasswordAction(form:FormData) {
+  try { await authRequestThrottle(); await requestEmailToken(String(form.get('email')||''),'reset'); }
+  catch(error) { return encodedRedirect('error','/forgot-password',error instanceof Error?error.message:'Unable to send reset email.'); }
+  return encodedRedirect('success','/forgot-password','If an account exists, a reset link has been sent.');
 }
-
-export async function googleSignInAction() {
-  const client = await createSupabaseClient();
-  const { data, error } = await client.auth.signInWithOAuth({ provider: 'google', options: { redirectTo: `${siteUrl()}/auth/callback` } });
-  if (error || !data.url) return encodedRedirect('error', '/sign-in', 'Google sign in is unavailable. Please use email.');
-  return redirect(data.url);
+export async function resendConfirmationAction(email:string) {
+  try { await authRequestThrottle(); await requestEmailToken(email,'verify'); return {success:true}; }
+  catch(error) { return {success:false,error:error instanceof Error?error.message:'Unable to send confirmation email.'}; }
 }
-
-export async function updateProfileAction(form: FormData) {
-  const client = await createSupabaseClient();
-  const { data: { user } } = await client.auth.getUser();
-  if (!user) return redirect('/sign-in');
-  const full_name = String(form.get('full_name') || '').trim();
-  if (full_name.length > 120) return encodedRedirect('error', '/account', 'Name must be at most 120 characters.');
-  const { error } = await client.from('profiles').upsert({ id: user.id, full_name, updated_at: new Date().toISOString() });
-  if (error) return encodedRedirect('error', '/account', 'Unable to save your profile.');
+export async function resetPasswordAction(form:FormData) {
+  try {
+    await authRequestThrottle();
+    const password=String(form.get('password')||'');
+    if(password!==form.get('confirmPassword')) throw new Error('Passwords must match.');
+    const jar=await cookies();
+    await resetPassword(jar.get('onefin-reset')?.value||'',password);
+    jar.delete('onefin-reset');
+    await destroySession();
+  } catch(error) { return encodedRedirect('error','/reset-password',error instanceof Error?error.message:'Unable to reset password.'); }
+  return encodedRedirect('success','/sign-in','Password updated. Please sign in again.');
+}
+export async function updateProfileAction(form:FormData) {
+  const user=await currentUser();
+  if(!user) redirect('/sign-in');
+  const name=String(form.get('full_name')||'').trim();
+  if(name.length>120) return encodedRedirect('error','/account','Name must be at most 120 characters.');
+  try { await query('update profiles set full_name=$1,updated_at=now() where id=$2',[name,user.id]); }
+  catch { return encodedRedirect('error','/account','Unable to save profile.'); }
   revalidatePath('/account');
-  return encodedRedirect('success', '/account', 'Profile saved.');
+  return encodedRedirect('success','/account','Profile saved.');
 }

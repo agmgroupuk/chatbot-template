@@ -1,30 +1,18 @@
 import 'server-only';
 import { randomUUID } from 'node:crypto';
-import { createAdminClient } from '@/utils/supabase/admin';
+import { query } from './db';
 import { chatCreditCost, signupCredits } from './credit-config';
-
-export async function ensureSignupCredits(userId: string) {
-  const amount = signupCredits();
-  if (amount === 0) return;
-  const admin = createAdminClient();
-  const { data: existing, error: lookupError } = await admin.from('credit_buckets').select('user_id').eq('reference', `signup:${userId}`).maybeSingle();
-  if (lookupError) throw new Error('Unable to initialize credits.');
-  if (existing?.user_id === userId) return;
-  const { error } = await admin.rpc('grant_credits', {
-    p_user: userId, p_reference: `signup:${userId}`, p_amount: amount,
-  });
-  if (error) throw new Error('Unable to initialize credits.');
+export async function ensureSignupCredits(userId:string) {
+  const amount=signupCredits(); if(!amount) return;
+  const [existing]=await query('select user_id from credit_buckets where reference=$1',[`signup:${userId}`]);
+  if(existing?.user_id===userId) return;
+  await query('select grant_credits($1,$2,$3)',[userId,`signup:${userId}`,amount]);
 }
-export async function reserveChatCredits(userId: string) {
+export async function reserveChatCredits(userId:string) {
   await ensureSignupCredits(userId);
-  const requestId = randomUUID();
-  const { error } = await createAdminClient().rpc('reserve_credits', {
-    p_user: userId, p_request: requestId, p_cost: chatCreditCost(),
-  });
-  if (error) throw new Error(error.message.includes('Insufficient credits') ? 'Not enough credits. Choose a plan or buy a credit pack.' : 'Unable to reserve credits. Please try again.');
-  return requestId;
+  const id=randomUUID();
+  try { await query('select reserve_credits($1,$2,$3)',[userId,id,chatCreditCost()]); }
+  catch(error) { throw new Error(error instanceof Error && error.message.includes('Insufficient credits')?'Not enough credits. Choose a plan or buy a credit pack.':'Unable to reserve credits. Please try again.'); }
+  return id;
 }
-export async function finishChatCredits(userId: string, requestId: string, success: boolean) {
-  const { error } = await createAdminClient().rpc('finish_credit_usage', { p_user: userId, p_request: requestId, p_success: success });
-  if (error) throw new Error('Unable to finalize credit usage.');
-}
+export async function finishChatCredits(userId:string,id:string,success:boolean) { await query('select finish_credit_usage($1,$2,$3)',[userId,id,success]); }

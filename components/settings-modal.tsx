@@ -4,7 +4,7 @@ import { availableModels } from '@/lib/models';
 import React, { useState, useEffect, Fragment } from 'react';
 import { Button } from '@/components/ui/button';
 import { X, ArrowUpCircle, XCircle, LayoutGrid, RefreshCcw, User, CreditCard, List } from 'lucide-react';
-import { createSupabaseClient } from '@/utils/supabase/client';
+import { getCurrentUserAction } from '@/app/actions';
 import { 
   getSubscriptionDetails, 
   cancelSubscriptionAction, 
@@ -44,7 +44,7 @@ interface ModelSetting {
 }
 
 // Define the available models with display names
-const availableClaudeModels = availableModels;
+const availableConfiguredModels = availableModels;
 
 // Helper function to capitalize first letter
 function capitalizeFirstLetter(string: string | null): string {
@@ -83,12 +83,11 @@ export function SettingsModal({ isOpen, setIsOpen, onSettingsChanged }: Settings
         setModelSaveError(null);
         try {
           // Fetch user email and subscription details (parallel fetch)
-          const supabase = createSupabaseClient();
-          const userPromise = supabase.auth.getUser();
+          const userPromise = getCurrentUserAction();
           const subscriptionPromise = getSubscriptionDetails();
           const modelsPromise = getUserModelSettings();
 
-          const [{ data: { user } }, subscriptionData, userSettings] = await Promise.all([
+          const [user, subscriptionData, userSettings] = await Promise.all([
             userPromise,
             subscriptionPromise,
             modelsPromise
@@ -101,7 +100,7 @@ export function SettingsModal({ isOpen, setIsOpen, onSettingsChanged }: Settings
           
           // Initialize models state using the correct field from the settings object
           setModels(
-            availableClaudeModels.map(model => ({
+            availableConfiguredModels.map(model => ({
               ...model,
               enabled: userSettings.enabledModels.includes(model.id)
             }))
@@ -112,7 +111,7 @@ export function SettingsModal({ isOpen, setIsOpen, onSettingsChanged }: Settings
           // Define fallback settings locally
           const fallbackEnabled = availableModels.map(model => model.id);
           setModels(
-             availableClaudeModels.map(model => ({
+             availableConfiguredModels.map(model => ({
               ...model,
               enabled: fallbackEnabled.includes(model.id) // Use the local fallback array
             }))
@@ -375,7 +374,7 @@ export function SettingsModal({ isOpen, setIsOpen, onSettingsChanged }: Settings
        )}
        <h2 id="models-heading" className="text-lg font-semibold text-gray-900">Model Names</h2>
       <p className="text-sm text-gray-600 mb-6">
-        Select the Claude models you want to enable for use in the application.
+        Select the AI models you want to enable for use in the application.
       </p>
        {isLoadingModels ? (
          <div className="flex justify-center items-center py-8"><Spinner /></div>

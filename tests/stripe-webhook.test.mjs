@@ -35,12 +35,12 @@ test('webhook rejects missing, modified, stale signatures and every Live Mode ev
 });
 test('only paid packs and paid renewal invoices allocate credits; retries use stable references', async () => {
   const grants = new Map();
-  const admin = {
-    from: () => ({ upsert: async () => ({ error: null }), select: () => ({ eq: () => ({ maybeSingle: async () => ({ data: { user_id: 'user-1' }, error: null }) }) }) }),
-    rpc: async (_name, grant) => { grants.set(grant.p_reference, grant); return { error: null }; },
-  };
   const { fulfillStripeEvent } = load('lib/stripe-fulfillment.ts', {
-    '@/utils/supabase/admin': { createAdminClient: () => admin },
+    './db': {query:async (sql,values)=>{
+      if(sql.startsWith('select user_id')) return [{user_id:'user-1'}];
+      if(sql.startsWith('select grant_credits')) grants.set(values[1],{p_user:values[0],p_reference:values[1],p_amount:values[2],p_expires:values[3]});
+      return [];
+    }},
     './credit-config': { creditPlans: () => ({ price_pack: { credits: 50, kind: 'pack' }, price_month: { credits: 100, kind: 'subscription' } }) },
   });
   const session = { id: 'cs_test_1', mode: 'payment', metadata: { app: 'chatbot-template' }, customer: 'cus_test', payment_status: 'unpaid', livemode: false, currency: 'usd' };
