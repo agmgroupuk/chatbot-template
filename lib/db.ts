@@ -4,7 +4,12 @@ import { Pool, type PoolClient, type QueryResultRow } from 'pg';
 const globalDatabase = globalThis as unknown as { databasePool?: Pool };
 export function database() {
   if (!process.env.DATABASE_URL) throw new Error('Database is not configured.');
-  return globalDatabase.databasePool ??= new Pool({ connectionString: process.env.DATABASE_URL, max: 10, connectionTimeoutMillis: 10000, idleTimeoutMillis: 30000 });
+  if (!globalDatabase.databasePool) {
+    const pool = new Pool({ connectionString: process.env.DATABASE_URL, max: 10, connectionTimeoutMillis: 10000, idleTimeoutMillis: 30000 });
+    pool.on('error',()=>console.error('An idle database connection was interrupted.'));
+    globalDatabase.databasePool=pool;
+  }
+  return globalDatabase.databasePool;
 }
 export async function query<T extends QueryResultRow = QueryResultRow>(sql: string, values: unknown[] = []) {
   return (await database().query<T>(sql, values)).rows;
