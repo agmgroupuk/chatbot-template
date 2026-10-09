@@ -2,6 +2,7 @@ export interface Price {
   id: string;
   unit_amount: number;
   currency: string;
+  type?: 'recurring' | 'one-time';
   interval: 'month' | 'year';
   interval_count: number;
   // Add other price properties if needed

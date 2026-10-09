@@ -2,6 +2,8 @@
 
 import { createSupabaseClient } from "@/utils/supabase/server";
 import { redirect } from "next/navigation";
+import { availableModels, defaultModel, normalizeModel } from "@/lib/models";
+import { siteUrl } from "@/lib/site-url";
 import { encodedRedirect } from "@/utils/redirect";
 import { revalidatePath } from "next/cache";
 import { createUpdateClient } from "@/utils/update/server";
@@ -52,11 +54,11 @@ export const signUpAction = async (formData: FormData) => {
   const password = formData.get("password") as string;
   const client = await createSupabaseClient();
 
-  const { error } = await client.auth.signUp({
+  const { data, error } = await client.auth.signUp({
     email,
     password,
     options: {
-      emailRedirectTo: `${new URL(process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000').origin}/auth/callback`,
+      emailRedirectTo: `${siteUrl()}/auth/callback`,
     },
   });
 
@@ -73,6 +75,8 @@ export const signUpAction = async (formData: FormData) => {
     return encodedRedirect("error", "/sign-up", errorMessage);
   }
 
+  if (data.session) return redirect("/");
+
   // Redirect to confirmation page with the email
   return redirect(`/confirmation?email=${encodeURIComponent(email)}`);
 };
@@ -86,10 +90,23 @@ export const signOutAction = async () => {
 export async function createCheckout(priceId: string) {
   "use server";
   
+  const supabase = await createSupabaseClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return redirect('/sign-in');
   const client = await createUpdateClient();
+  const { data: catalog, error: catalogError } = await client.billing.getProducts();
+  if (catalogError || !catalog.products?.some(p => p.prices.some(price => price.id === priceId))) {
+    throw new Error('The selected price is unavailable.');
+  }
+  const selectedPrice = catalog.products.flatMap(product => product.prices).find(price => price.id === priceId)!;
+  const { data: existing, error: subscriptionError } = await client.billing.getSubscriptions();
+  if (subscriptionError) throw new Error('Unable to verify current subscription.');
+  if (selectedPrice.type === 'recurring' && existing.subscriptions.some(sub => sub.status === 'active' || sub.status === 'past_due')) {
+    throw new Error('Manage your existing subscription before purchasing another plan.');
+  }
   const { data, error } = await client.billing.createCheckoutSession(
     priceId,
-    { redirect_url: `${new URL(process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000').origin}/account?checkout=success` }
+    { redirect_url: `${siteUrl()}/account?checkout=success` }
   );
 
   if (error) {
@@ -128,6 +145,7 @@ export async function getSubscriptionDetails(): Promise<{
   canUpgrade: boolean;
   renewalDate: string | null;
   isCancelled: boolean;
+  error?: string;
 }> {
   let planName: string | null = null;
   let subscriptionId: string | null = null;
@@ -143,7 +161,7 @@ export async function getSubscriptionDetails(): Promise<{
     const { data: subData, error: subError } = await updateClient.billing.getSubscriptions();
 
     if (subError) {
-      console.error("Error fetching subscriptions:", subError);
+      throw new Error("Unable to load subscription status.");
     } else {
       const activeSub = subData?.subscriptions?.find(
         (sub) => sub.status === 'active'
@@ -187,7 +205,7 @@ export async function getSubscriptionDetails(): Promise<{
   } catch (err) {
     console.error("Unexpected error checking subscription details:", err);
     // Return defaults including new fields
-    return { planName: null, subscriptionId: null, canUpgrade: false, renewalDate: null, isCancelled: false };
+    return { planName: null, subscriptionId: null, canUpgrade: false, renewalDate: null, isCancelled: false, error: "Subscription status is temporarily unavailable." };
   }
 }
 
@@ -197,9 +215,15 @@ export async function cancelSubscriptionAction(subscriptionId: string): Promise<
      return { success: false, error: "Subscription ID is required." };
    }
    try {
-     const updateClient = await createUpdateClient();
-     // Using the CORRECT method: updateSubscription with cancel_at_period_end
-     const { error } = await updateClient.billing.updateSubscription(subscriptionId, {
+    const supabase = await createSupabaseClient();
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return { success: false, error: 'Please sign in.' };
+    const updateClient = await createUpdateClient();
+    const { data: owned, error: ownershipError } = await updateClient.billing.getSubscriptions();
+    if (ownershipError || !owned.subscriptions.some(sub => sub.id === subscriptionId)) {
+      return { success: false, error: 'Subscription not found.' };
+    }
+    const { error } = await updateClient.billing.updateSubscription(subscriptionId, {
        cancel_at_period_end: true,
      });
 
@@ -228,7 +252,14 @@ export async function reactivateSubscriptionAction(subscriptionId: string): Prom
     return { success: false, error: "Subscription ID is required." };
   }
   try {
+    const supabase = await createSupabaseClient();
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return { success: false, error: 'Please sign in.' };
     const updateClient = await createUpdateClient();
+    const { data: owned, error: ownershipError } = await updateClient.billing.getSubscriptions();
+    if (ownershipError || !owned.subscriptions.some(sub => sub.id === subscriptionId)) {
+      return { success: false, error: 'Subscription not found.' };
+    }
     const { error } = await updateClient.billing.updateSubscription(subscriptionId, {
       cancel_at_period_end: false, // Set to false to reactivate
     });
@@ -260,13 +291,8 @@ export interface UserModelSettings {
 
 // Default settings constant
 const defaultModelSettings: UserModelSettings = {
-  enabledModels: [
-    'claude-3-7-sonnet-20250219', // Added 3.7
-    'claude-3-5-sonnet-20240620', 
-    'claude-3-sonnet-20240229', 
-    'claude-3-haiku-20240307'
-  ],
-  selectedModel: 'claude-3-7-sonnet-20250219' // Make 3.7 default selected
+  enabledModels: availableModels.map(model => model.id),
+  selectedModel: defaultModel
 };
 
 /**
@@ -303,8 +329,8 @@ export async function getUserModelSettings(): Promise<UserModelSettings> {
 
     // Process the fetched data, providing defaults if columns are null
     const settings: UserModelSettings = {
-        enabledModels: data?.enabled_models ?? defaultModelSettings.enabledModels,
-        selectedModel: data?.selected_model ?? null 
+        enabledModels: Array.from(new Set<string>(((data?.enabled_models as string[] | null) ?? defaultModelSettings.enabledModels).map(normalizeModel))).filter(id => availableModels.some(model => model.id === id)),
+        selectedModel: data?.selected_model ? normalizeModel(data.selected_model) : null
     };
 
     // Validate if the saved selected model is actually enabled
@@ -338,6 +364,7 @@ export async function getUserModelSettings(): Promise<UserModelSettings> {
 // Server Action to update the list of enabled models
 // --- MODIFIED --- Now also handles updating selected_model if it becomes disabled
 export async function updateUserModelSettings(enabledIds: string[]): Promise<{ success: boolean; error?: string }> {
+  if (!Array.isArray(enabledIds) || enabledIds.some(id => !availableModels.some(model => model.id === id))) return { success: false, error: 'Invalid model selection.' };
   try {
     const supabase = await createSupabaseClient();
     const { data: { user }, error: authError } = await supabase.auth.getUser();
@@ -406,6 +433,7 @@ export async function updateUserModelSettings(enabledIds: string[]): Promise<{ s
 // Server Action to update ONLY the selected model (used by dropdown)
 // --- CORRECTED --- Use 'profiles' table and 'id' column
 export async function updateUserSelectedModel(modelId: string | null): Promise<{ success: boolean; error?: string }> {
+  if (modelId && !availableModels.some(model => model.id === modelId)) return { success: false, error: 'Invalid model selection.' };
   try {
     const supabase = await createSupabaseClient();
     const { data: { user }, error: authError } = await supabase.auth.getUser();
@@ -491,7 +519,14 @@ export async function getAnthropicResponse(
      return { success: false, error: "No messages to send." };
   }
 
-  const supabase = await createSupabaseClient(); // Create client once
+  const supabase = await createSupabaseClient();
+  const { data: { user }, error: authError } = await supabase.auth.getUser();
+  if (authError || !user) return { success: false, error: 'Please sign in to use chat.' };
+  if (!Array.isArray(messages) || messages.length > 100 || messages.some(m => typeof m.content !== 'string' || m.content.length > 32000 || !['user', 'ai'].includes(m.sender))) {
+    return { success: false, error: 'Invalid or oversized conversation.' };
+  }
+  const settings = await getUserModelSettings();
+  if (!settings.enabledModels.includes(model)) return { success: false, error: 'This model is not enabled.' };
   const anthropic = new Anthropic({ apiKey });
 
   // Fetch context content if ID is provided
@@ -653,8 +688,7 @@ export async function startNewChat(
 
     if (messageInsertError) {
       console.error("Error inserting initial user message:", messageInsertError);
-      // Potentially attempt to clean up the created chat record here if needed
-      // await supabase.from('chats').delete().eq('id', chatId);
+      await supabase.from('chats').delete().eq('id', chatId).eq('user_id', user.id);
       return { success: false, error: "Failed to save initial message." };
     }
 

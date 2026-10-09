@@ -1,8 +1,9 @@
 'use client';
 
+import { availableModels } from '@/lib/models';
 import React, { useState, useEffect, Fragment } from 'react';
 import { Button } from '@/components/ui/button';
-import { X, Check, ArrowUpCircle, XCircle, LayoutGrid, RefreshCcw, User, CreditCard, List } from 'lucide-react';
+import { X, ArrowUpCircle, XCircle, LayoutGrid, RefreshCcw, User, CreditCard, List } from 'lucide-react';
 import { createSupabaseClient } from '@/utils/supabase/client';
 import { 
   getSubscriptionDetails, 
@@ -43,15 +44,7 @@ interface ModelSetting {
 }
 
 // Define the available models with display names
-const availableClaudeModels: Omit<ModelSetting, 'enabled'>[] = [
-  { id: 'claude-3-7-sonnet-20250219', name: 'claude-3-7-sonnet-20250219', displayName: 'Claude 3.7 Sonnet' },
-  { id: 'claude-3-opus-20240229', name: 'claude-3-opus-20240229', displayName: 'Claude 3 Opus' }, 
-  { id: 'claude-3-5-sonnet-20240620', name: 'claude-3-5-sonnet-20240620', displayName: 'Claude 3.5 Sonnet' },
-  { id: 'claude-3-sonnet-20240229', name: 'claude-3-sonnet-20240229', displayName: 'Claude 3 Sonnet' },
-  { id: 'claude-3-haiku-20240307', name: 'claude-3-haiku-20240307', displayName: 'Claude 3 Haiku' },
-  // Add other valid models as needed, remove invalid ones like 'claude-3.7-sonnet'
-  // { id: 'claude-3-sonnet-20240229', name: 'claude-3-sonnet-20240229' }, 
-];
+const availableClaudeModels = availableModels;
 
 // Helper function to capitalize first letter
 function capitalizeFirstLetter(string: string | null): string {
@@ -117,7 +110,7 @@ export function SettingsModal({ isOpen, setIsOpen, onSettingsChanged }: Settings
         } catch (error) {
           console.error("Error fetching settings data:", error);
           // Define fallback settings locally
-          const fallbackEnabled = ['claude-3.5-sonnet', 'claude-3.7-sonnet', 'claude-3.7-sonnet-max'];
+          const fallbackEnabled = availableModels.map(model => model.id);
           setModels(
              availableClaudeModels.map(model => ({
               ...model,
@@ -235,20 +228,6 @@ export function SettingsModal({ isOpen, setIsOpen, onSettingsChanged }: Settings
   const displayPlanName = subscriptionDetails.planName ? capitalizeFirstLetter(subscriptionDetails.planName) : 'Free';
   const isPaidPlan = !!subscriptionDetails.planName;
 
-  const features = isPaidPlan ? [
-    "Everything in Free",
-    "Extended limits",
-    "Standard and advanced voice mode",
-    "Access to deep research",
-    "Create custom GPTs",
-    "Access to Sora (limited)",
-    "Early access to new features"
-  ] : [
-    "Basic chatbot features",
-    "Standard response speed",
-    "Community support"
-  ];
-
   const renderAccountContent = () => (
     <section aria-labelledby="account-heading" className="space-y-4">
        <h2 id="account-heading" className="text-lg font-semibold text-gray-900">Account Information</h2>
@@ -258,6 +237,7 @@ export function SettingsModal({ isOpen, setIsOpen, onSettingsChanged }: Settings
            <dd className="text-sm font-medium text-gray-800">{userEmail ?? '-'}</dd>
          </div>
        </dl>
+       <Link href="/account" onClick={closeModal} className="block text-sm underline">View and edit your profile</Link>
     </section>
   );
 
@@ -364,20 +344,8 @@ export function SettingsModal({ isOpen, setIsOpen, onSettingsChanged }: Settings
         )}
       </div>
       
-      <div className="bg-gray-50 rounded-md p-4">
-        <h3 className="text-sm font-medium text-gray-700 mb-3">
-          {isPaidPlan ? "Thanks for subscribing! Features include:" : "Your Free plan includes:"}
-        </h3>
-        <ul className="space-y-2">
-          {features.map((feature, index) => (
-            <li key={index} className="flex items-start">
-              <Check className="h-5 w-5 text-green-500 flex-shrink-0 mr-2 mt-0.5" aria-hidden="true" />
-              <span className="text-sm text-gray-600">{feature}</span>
-            </li>
-          ))}
-        </ul>
-      </div>
-      
+      <Link href="/pricing" onClick={closeModal} className="block text-sm underline">View available plans and pricing</Link>
+
       <div className="mt-4 text-center h-5">
          {cancelSuccessMessage && (
             <p className="text-sm text-green-600"> {cancelSuccessMessage}</p>

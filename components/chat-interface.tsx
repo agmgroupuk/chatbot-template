@@ -1,9 +1,10 @@
 'use client';
 
+import { availableModels } from '@/lib/models';
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { ImageIcon, ArrowUp, Check, Loader2, PlusIcon, BookText, XIcon } from 'lucide-react';
 import { createPortal } from 'react-dom';
-import { getUserModelSettings, updateUserSelectedModel, getAnthropicResponse, addMessage, getMessagesForChat, updateChatName } from '@/app/actions'; // Keep model actions if needed in chat view
+import { getUserModelSettings, updateUserSelectedModel, getAnthropicResponse, addMessage, getMessagesForChat } from '@/app/actions'; // Keep model actions if needed in chat view
 import { SettingsModal } from './settings-modal';
 import { v4 as uuidv4 } from 'uuid';
 import { Skeleton } from "@/components/ui/skeleton";
@@ -19,14 +20,7 @@ import { ContextItem } from '@/app/actions';
 
 // Define available models with display names within this component
 // TODO: Centralize this definition later if needed
-const availableModelsForDisplay = [
-  { id: 'claude-3-7-sonnet-20250219', displayName: 'Claude 3.7 Sonnet' },
-  { id: 'claude-3-opus-20240229', displayName: 'Claude 3 Opus' }, 
-  { id: 'claude-3-5-sonnet-20240620', displayName: 'Claude 3.5 Sonnet' },
-  { id: 'claude-3-sonnet-20240229', displayName: 'Claude 3 Sonnet' },
-  { id: 'claude-3-haiku-20240307', displayName: 'Claude 3 Haiku' },
-  // Add others matching the settings modal
-];
+const availableModelsForDisplay = availableModels;
 
 // Helper to find display name from ID
 const getDisplayName = (id: string | null): string | null => {
@@ -115,11 +109,7 @@ export function ChatInterface({ chatId }: ChatInterfaceProps) {
             setMessages(fetchedMessages);
             setIsLoadingMessages(false);
 
-            // Trigger initial AI response if exactly one message exists and models are loaded
-            if (fetchedMessages.length === 1 && fetchedMessages[0].sender === 'user') {
-              setHasTriggeredInitialResponse(true); // Set flag immediately
-              triggerInitialResponse(fetchedMessages[0]);
-            }
+
         }
       })
       .catch(error => {
@@ -137,32 +127,11 @@ export function ChatInterface({ chatId }: ChatInterfaceProps) {
   // --- Function to trigger the initial AI response ---
   // Renamed from handleInitialPromptFlow
   const triggerInitialResponse = useCallback(async (initialUserMessage: Message) => {
-      // Wait for model to be selected if it's still loading
-      let currentModel = selectedModel;
-      if (isLoadingModels) {
-          console.log("Initial response trigger waiting for models to load...");
-          // Simple wait loop (consider a more robust state-based approach if needed)
-          let waitCount = 0;
-          while (isLoadingModels && waitCount < 50) { // Max ~5 seconds wait
-              await new Promise(resolve => setTimeout(resolve, 100));
-              waitCount++;
-          }
-          // Re-fetch the potentially updated selectedModel after waiting
-          const settings = await getUserModelSettings(); // Re-fetch to get latest selected model
-          currentModel = settings.selectedModel;
-          if (!currentModel) {
-               console.error("Initial response trigger: Model still not available after waiting.");
-               setMessageError("Could not determine AI model to use for initial response.");
-               return;
-          }
-          console.log(`Initial response trigger: Model loaded (${currentModel}), proceeding.`);
-      } else if (!currentModel) {
-          console.error("Initial response trigger: No model selected and not loading.");
-          setMessageError("No AI model selected for initial response.");
-          return;
+      const currentModel = selectedModel;
+      if (!currentModel) {
+        setMessageError('No AI model selected for initial response.');
+        return;
       }
-
-      console.log(`ChatInterface triggering AI for initial message:`, initialUserMessage.content);
 
       setIsAiResponding(true);
       if (textareaRef.current) textareaRef.current.disabled = true;
@@ -213,7 +182,7 @@ export function ChatInterface({ chatId }: ChatInterfaceProps) {
           textareaRef.current?.focus();
         }, 50); // 50ms delay
       }
-  }, [chatId, selectedModel, isLoadingModels, addMessage, updateChatName]); // Dependencies
+  }, [chatId, selectedModel]); // Dependencies
 
   // Effect to trigger initial response if messages load BEFORE models
    useEffect(() => {

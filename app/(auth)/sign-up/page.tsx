@@ -1,6 +1,7 @@
 "use client";
 
 import { signUpAction } from "@/app/actions";
+import { googleSignInAction } from "@/app/auth-actions";
 import { Input } from "@/components/ui/input";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
@@ -141,7 +142,9 @@ export default function SignUp() {
             </div>
 
             <Button
-              type="button"
+              type="submit"
+              formAction={googleSignInAction}
+              formNoValidate
               variant="outline"
               className={`${buttonStyles} border border-gray-300 hover:bg-gray-50 flex items-center justify-center gap-3`}
             >

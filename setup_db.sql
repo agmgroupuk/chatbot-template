@@ -8,8 +8,8 @@ create table public.profiles (
   full_name text,
   avatar_url text,
   website text,
-  enabled_models text[] default '{}', -- Added during ALTER steps below, included here for completeness
-  selected_model text,            -- Added during ALTER steps below, included here for completeness
+  enabled_models text[] default array['claude-sonnet-4-6', 'claude-opus-4-6', 'claude-haiku-4-5-20251001']::text[], -- Added during ALTER steps below, included here for completeness
+  selected_model text default 'claude-sonnet-4-6',            -- Added during ALTER steps below, included here for completeness
   constraint username_length check (char_length(username) >= 3)
 );
 
@@ -18,7 +18,7 @@ alter table public.profiles enable row level security;
 
 -- 3. RLS Policies for profiles:
 create policy "Public profiles are viewable by everyone." on public.profiles
-  for select using (true);
+  for select using (auth.uid() = id);
 
 create policy "Users can insert their own profile." on public.profiles
   for insert with check (auth.uid() = id);
@@ -30,7 +30,7 @@ create policy "Users can update own profile." on public.profiles
 -- but are included in the initial CREATE TABLE above for simplicity in a single script.
 -- If running ALTER separately, uncomment the lines below and remove from CREATE TABLE:
 -- alter table public.profiles
---  add column enabled_models text[] default '{}'; 
+--  add column enabled_models text[] default array['claude-sonnet-4-6', 'claude-opus-4-6', 'claude-haiku-4-5-20251001']::text[];
 -- alter table public.profiles
 --    add column selected_model text; 
 
@@ -106,7 +106,8 @@ CREATE POLICY "Allow INSERT for messages in own chats" ON public.messages
   );
 
 CREATE POLICY "Allow UPDATE for own messages" ON public.messages
-  FOR UPDATE USING (auth.uid() = user_id) WITH CHECK (auth.uid() = user_id);
+  FOR UPDATE USING (auth.uid() = user_id AND EXISTS (SELECT 1 FROM public.chats WHERE id = messages.chat_id AND user_id = auth.uid()))
+  WITH CHECK (auth.uid() = user_id AND EXISTS (SELECT 1 FROM public.chats WHERE id = messages.chat_id AND user_id = auth.uid()));
 
 CREATE POLICY "Allow DELETE for own messages" ON public.messages
   FOR DELETE USING (auth.uid() = user_id);
@@ -167,9 +168,13 @@ CREATE OR REPLACE FUNCTION add_chat_message(
 )
 RETURNS VOID
 LANGUAGE plpgsql
-SECURITY DEFINER
+SECURITY INVOKER
+SET search_path = public
 AS $$
 BEGIN
+  IF auth.uid() IS NULL OR auth.uid() <> p_user_id OR NOT EXISTS (SELECT 1 FROM public.chats WHERE id = p_chat_id AND user_id = auth.uid()) THEN
+    RAISE EXCEPTION 'Not authorized';
+  END IF;
   INSERT INTO public.messages (chat_id, user_id, sender, content, model_id)
   VALUES (p_chat_id, p_user_id, p_sender, p_content, p_model_id);
 

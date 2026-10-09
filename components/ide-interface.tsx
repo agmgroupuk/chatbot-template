@@ -1,5 +1,6 @@
 "use client";
 
+import { availableModels } from '@/lib/models';
 import React, { useState, useRef, useEffect, useCallback } from "react";
 import { ImageIcon, ArrowUp, Check, Loader2, PlusIcon, BookText, XIcon } from "lucide-react";
 import { createPortal } from "react-dom";
@@ -20,14 +21,7 @@ import { Session } from '@supabase/supabase-js';
 
 // Define available models with display names within this component
 // TODO: Centralize this definition later if needed
-const availableModelsForDisplay = [
-  { id: 'claude-3-7-sonnet-20250219', displayName: 'Claude 3.7 Sonnet' },
-  { id: 'claude-3-opus-20240229', displayName: 'Claude 3 Opus' }, 
-  { id: 'claude-3-5-sonnet-20240620', displayName: 'Claude 3.5 Sonnet' },
-  { id: 'claude-3-sonnet-20240229', displayName: 'Claude 3 Sonnet' },
-  { id: 'claude-3-haiku-20240307', displayName: 'Claude 3 Haiku' },
-  // Add others matching the settings modal
-];
+const availableModelsForDisplay = availableModels;
 
 // Helper to find display name from ID
 const getDisplayName = (id: string | null): string | null => {
@@ -207,7 +201,7 @@ export function IdeInterfaceComponent() {
       // Continue animation loop
       animationFrameRef.current = requestAnimationFrame(animate);
     }
-  }, [currentPlaceholder, showTabButton, prompt, isModelDropdownOpen, currentPromptIndex]);
+  }, [prompt, isModelDropdownOpen, currentPromptIndex]);
   
   // Start and clean up animation
   useEffect(() => {

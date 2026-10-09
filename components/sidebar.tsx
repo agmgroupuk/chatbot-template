@@ -36,7 +36,7 @@ function capitalizeFirstLetter(string: string | null): string {
 const SocialLink = ({ icon: Icon, text, href }: { icon: React.ElementType, text: string, href: string }) => (
   <a 
     href={href} 
-    target="_blank" 
+    target={href.startsWith("/") ? undefined : "_blank"}
     rel="noopener noreferrer"
     className="flex items-center gap-3 text-sm text-stone-700 hover:text-stone-900 transition-colors"
   >
@@ -355,7 +355,7 @@ export function SidebarComponent({ className, onToggleCollapse, collapsed = fals
             <h3 className="text-sm font-medium text-stone-800 mb-3">Feedback? DM us!</h3>
             <div className="space-y-2.5">
               <SocialLink icon={XLogo} text="@wymi_" href="https://x.com/wymi_" />
-              <SocialLink icon={Mail} text="Contact us" href="mailto:feedback@example.com" /> 
+              <SocialLink icon={Mail} text="Your account" href="/account" />
             </div>
           </div>
 

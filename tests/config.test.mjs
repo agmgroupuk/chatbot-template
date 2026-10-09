@@ -1,0 +1,51 @@
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import { resolve, dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { runInNewContext } from 'node:vm';
+import ts from 'typescript';
+const __dirname = dirname(fileURLToPath(import.meta.url));
+
+function load(file, env) {
+  const exports = {};
+  const { outputText } = ts.transpileModule(readFileSync(resolve(__dirname, '..', file), 'utf8'), {
+    compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020 },
+  });
+  runInNewContext(outputText, { exports, process: { env }, URL });
+  return exports;
+}
+
+test('a production build must still select Test Mode billing', () => {
+  assert.equal(load('lib/billing-environment.ts', { NODE_ENV: 'production' }).billingEnvironment(), 'test');
+  assert.equal(load('lib/billing-environment.ts', { NODE_ENV: 'production', NEXT_PUBLIC_UPDATE_ENVIRONMENT: 'test' }).billingEnvironment(), 'test');
+});
+test('Live Mode and misspelled billing environments fail closed', () => {
+  for (const environment of ['live', 'production', 'TEST']) {
+    assert.throws(() => load('lib/billing-environment.ts', { NEXT_PUBLIC_UPDATE_ENVIRONMENT: environment }).billingEnvironment(), /Only Test Mode/);
+  }
+});
+test('production redirects cannot silently fall back to localhost or HTTP', () => {
+  for (const value of [undefined, 'http://onefinsolution.online', 'https://localhost:3000', 'https://127.0.0.1']) {
+    assert.throws(() => load('lib/site-url.ts', { NODE_ENV: 'production', NEXT_PUBLIC_SITE_URL: value }).siteUrl());
+  }
+  assert.equal(load('lib/site-url.ts', { NODE_ENV: 'production', NEXT_PUBLIC_SITE_URL: 'https://onefinsolution.online/path' }).siteUrl(), 'https://onefinsolution.online');
+});
+test('retired saved selections resolve to a supported model without rewriting history', () => {
+  const models = load('lib/models.ts', {});
+  for (const retired of ['claude-3-7-sonnet-20250219', 'claude-3-5-sonnet-20240620', 'claude-3-sonnet-20240229', 'claude-3-opus-20240229', 'claude-3-haiku-20240307']) {
+    assert.ok(models.availableModels.some(model => model.id === models.normalizeModel(retired)));
+  }
+});
+test('all private pages redirect guests, including nested chat and context routes', () => {
+  const { authRedirect } = load('lib/auth-redirect.ts', {});
+  for (const path of ['/account', '/reset-password', '/context', '/context/new', '/context/123', '/c/123']) {
+    assert.equal(authRedirect(path, false), '/sign-in');
+    assert.equal(authRedirect(path, true), null);
+  }
+  for (const path of ['/', '/pricing', '/forgot-password', '/auth/callback', '/confirmation']) {
+    assert.equal(authRedirect(path, false), null);
+  }
+  assert.equal(authRedirect('/sign-in', true), '/');
+  assert.equal(authRedirect('/sign-up', true), '/');
+});

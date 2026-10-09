@@ -48,7 +48,7 @@ function ClientLayoutContent({ children }: ClientLayoutProps) {
   }, [isAuthenticated]);
 
   // Check if we're on an auth page or confirmation page
-  const isAuthPage = pathname === '/sign-in' || pathname === '/sign-up' || pathname === '/pricing' || pathname === '/confirmation' || pathname?.startsWith('/confirmation');
+  const isAuthPage = pathname === '/forgot-password' || pathname === '/reset-password' || pathname === '/sign-in' || pathname === '/sign-up' || pathname === '/pricing' || pathname === '/confirmation' || pathname?.startsWith('/confirmation');
 
   const toggleSidebar = () => {
     if (showSidebar) {

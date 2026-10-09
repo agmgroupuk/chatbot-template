@@ -1,7 +1,12 @@
-import { createServerClient } from "@supabase/ssr";
+import { createServerClient, type CookieOptions } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
+import { authRedirect } from '@/lib/auth-redirect';
 
 export async function updateSession(request: NextRequest) {
+  if (request.nextUrl.pathname === '/api/health') return NextResponse.next();
+  if (!process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY) {
+    return new NextResponse('Authentication is not configured. Please contact the site administrator.', { status: 503 });
+  }
   let supabaseResponse = NextResponse.next({
     request,
   });
@@ -14,7 +19,7 @@ export async function updateSession(request: NextRequest) {
         getAll() {
           return request.cookies.getAll();
         },
-        setAll(cookiesToSet) {
+        setAll(cookiesToSet: { name: string; value: string; options: CookieOptions }[]) {
           cookiesToSet.forEach(({ name, value }) =>
             request.cookies.set(name, value)
           );
@@ -33,10 +38,13 @@ export async function updateSession(request: NextRequest) {
   // supabase.auth.getUser(). A simple mistake could make it very hard to debug
   // issues with users being randomly logged out.
 
-  const user = await supabase.auth.getUser();
-
-  if (request.nextUrl.pathname.startsWith("/protected") && user.error) {
-    return NextResponse.redirect(new URL("/sign-in", request.url));
+  const { data: { user } } = await supabase.auth.getUser();
+  const path = request.nextUrl.pathname;
+  const destination = authRedirect(path, Boolean(user));
+  if (destination) {
+    const response = NextResponse.redirect(new URL(destination, request.url));
+    supabaseResponse.cookies.getAll().forEach(cookie => response.cookies.set(cookie));
+    return response;
   }
 
   return supabaseResponse;

@@ -19,6 +19,7 @@ export default function EmailConfirmation() {
       const { error } = await client.auth.resend({
         type: 'signup',
         email,
+        options: { emailRedirectTo: `${process.env.NEXT_PUBLIC_SITE_URL || window.location.origin}/auth/callback` },
       });
       
       if (error) {

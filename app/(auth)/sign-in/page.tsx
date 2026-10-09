@@ -1,6 +1,7 @@
 "use client";
 
 import { signInAction } from "@/app/actions";
+import { googleSignInAction } from "@/app/auth-actions";
 import { Input } from "@/components/ui/input";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
@@ -67,6 +68,7 @@ export default function SignIn() {
               </h1>
             </div>
 
+            {searchParams.get("success") && <p role="status" className="rounded-lg bg-green-50 p-4 text-sm text-green-800">{searchParams.get("success")}</p>}
             {errorMessage && (
               <div className="bg-red-50 border border-red-200 rounded-lg p-4 text-sm text-red-600 flex items-start gap-2">
                 <AlertCircle className="h-5 w-5 mt-0.5 flex-shrink-0" />
@@ -152,7 +154,9 @@ export default function SignIn() {
             </div>
 
             <Button
-              type="button"
+              type="submit"
+              formAction={googleSignInAction}
+              formNoValidate
               variant="outline"
               className={`${buttonStyles} border border-gray-300 hover:bg-gray-50 flex items-center justify-center gap-3`}
             >

@@ -16,6 +16,7 @@ import { Product } from '@/types/products';
 // }
 
 export default async function PricingPage() {
+  if (!process.env.NEXT_PUBLIC_UPDATE_PUBLISHABLE_KEY) return <div className="m-auto p-6" role="alert">Billing is not configured. Please contact the site administrator.</div>;
   const client = await createUpdateClient();
   const { data, error } = await client.billing.getProducts();
   const { data: subscriptionData } = await client.billing.getSubscriptions();
@@ -28,11 +29,8 @@ export default async function PricingPage() {
     );
   }
 
-  const currentProductId =
-    subscriptionData?.subscriptions == null ||
-    subscriptionData?.subscriptions.length === 0
-      ? null
-      : subscriptionData.subscriptions[0].product.id;
+  const currentProductId = subscriptionData?.subscriptions?.find(sub => sub.status === 'active')?.product.id ?? null;
+  if (!data.products.length) return <div className="m-auto p-6">No plans are currently available. Please check back later.</div>;
 
   return (
     <div className="max-w-[1200px] mx-auto px-6 py-16">

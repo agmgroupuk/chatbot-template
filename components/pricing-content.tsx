@@ -7,7 +7,7 @@ import { cn } from "@/utils/styles";
 import { useRouter } from "next/navigation";
 import { createCheckout, getSubscriptionDetails, cancelSubscriptionAction, reactivateSubscriptionAction } from "@/app/actions";
 import { Button } from "@/components/ui/button";
-import { Check, RefreshCcw, XCircle } from "lucide-react";
+import { RefreshCcw, XCircle } from "lucide-react";
 import { Spinner } from "@/components/ui/spinner";
 import { Product, Price } from "@/types/products";
 
@@ -130,7 +130,7 @@ export default function PricingContent({
       </button>
 
       <div className="max-w-5xl mx-auto px-4">
-        <div className="flex justify-center mb-6">
+        <div className="grid w-full grid-cols-1 gap-6 mb-6 md:grid-cols-2 xl:grid-cols-3">
           <Tabs 
             value={billingInterval} 
             onValueChange={(value) => setBillingInterval(value as 'monthly' | 'yearly')} 
@@ -149,11 +149,11 @@ export default function PricingContent({
         </div>
 
         <div className="flex flex-col items-center gap-8">
-          <div className="flex justify-center mb-6">
+          <div className="grid w-full grid-cols-1 gap-6 mb-6 md:grid-cols-2 xl:grid-cols-3">
             {products.map((product) => {
               const price = product.prices.find(
                 (p: Price) => p.interval === (billingInterval === 'monthly' ? 'month' : 'year')
-              );
+              ) ?? product.prices.find(p => p.type === 'one-time');
               const isCurrent = currentProductId === product.id;
               const isLoadingThis = isLoadingPriceId === price?.id;
               const showManageButton = isCurrent && subscriptionDetails && !isLoadingDetails;
@@ -180,12 +180,12 @@ export default function PricingContent({
                       </div>
 
                       <div className="flex items-baseline gap-1.5">
-                        <span className="text-3xl font-bold text-gray-900">$</span>
+
                         <span className="text-5xl font-bold text-gray-900">
-                          {((price?.unit_amount || 0) / 100).toFixed(2)}
+                          {price ? new Intl.NumberFormat('en-US', { style: 'currency', currency: price.currency }).format(price.unit_amount / (10 ** new Intl.NumberFormat('en-US', { style: 'currency', currency: price.currency }).resolvedOptions().maximumFractionDigits!)) : 'Unavailable'}
                         </span>
                         <span className="text-gray-600 ml-1">
-                          /{billingInterval === 'monthly' ? 'mo' : 'yr'}
+                          {price?.type === 'one-time' ? 'one-time' : price ? `/${price.interval_count > 1 ? `${price.interval_count} ` : ''}${price.interval === 'month' ? 'mo' : 'yr'}` : ''}
                         </span>
                       </div>
 
@@ -233,7 +233,7 @@ export default function PricingContent({
                                 ? "bg-gray-100 text-gray-400 cursor-not-allowed"
                                 : "bg-blue-600 text-white hover:bg-blue-700"
                             )}
-                            disabled={isCurrent || isLoadingThis || isLoadingDetails}
+                            disabled={!price || isCurrent || isLoadingThis || isLoadingDetails}
                             onClick={() => price && handleSelectPlan(price.id)}
                           >
                             {isLoadingThis ? (
@@ -245,23 +245,7 @@ export default function PricingContent({
                         )}
                       </div>
 
-                      <div className="space-y-3 pt-6 border-t border-gray-100 mt-6">
-                        <p className="font-medium text-sm text-gray-900 mb-2">
-                          {product.name === 'Free' ? 'Includes:' : `Everything in ${product.name === 'Pro' ? 'Basic' : 'Free'}, plus:`}
-                        </p>
-                        {(product.name === 'Basic' ? ['Enhanced chatbot capabilities', 'Faster response times', 'Email support'] : product.name === 'Pro' ? ['Advanced AI models', 'Priority access to new features', 'Dedicated support'] : ['Standard chatbot features', 'Basic response speed', 'Community forum access']).map((feature) => (
-                          <div key={feature} className="flex items-center gap-3">
-                            <Check className="w-5 h-5 text-blue-500 flex-shrink-0" />
-                            <span className="text-gray-600 text-sm">{feature}</span>
-                          </div>
-                        ))}
-                      </div>
-
-                      <div className="pt-4 text-center">
-                        <span className="text-sm text-gray-500">
-                          {billingInterval === 'yearly' ? 'Save 20% with annual billing' : 'Try free for 14 days'}
-                        </span>
-                      </div>
+                      <p className="pt-6 border-t text-sm text-gray-600">{product.description}</p>
                     </div>
                   </div>
                 </Card>
