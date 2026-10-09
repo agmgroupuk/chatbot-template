@@ -14,10 +14,11 @@ import { redirect } from 'next/navigation';
 export async function signInAction(form:FormData) {
   try { await authRequestThrottle(); const id=await authenticate(String(form.get('email')||''),String(form.get('password')||'')); await createSession(id); }
   catch(error) { return encodedRedirect('error','/sign-in',error instanceof Error?error.message:'Unable to sign in.'); }
-  revalidatePath('/'); redirect('/');
+  revalidatePath('/'); redirect('/dashboard');
 }
 export async function signUpAction(form:FormData) {
   let email='';
+  if(form.get('accept_terms')!=='on') return encodedRedirect('error','/sign-up','Please agree to the Terms & Conditions before creating an account.');
   try { await authRequestThrottle(); email=await register(String(form.get('email')||''),String(form.get('password')||'')); }
   catch(error) { return encodedRedirect('error','/sign-up',error instanceof Error?error.message:'Unable to sign up.'); }
   redirect(`/confirmation?email=${encodeURIComponent(email)}`);

@@ -1,11 +1,6 @@
-import {company} from '@/lib/company';
-export default function About() {
- return <section className="mx-auto max-w-2xl p-6 text-stone-900">
-  <h1 className="mb-6 text-3xl">{company.displayName}</h1>
-  <dl className="space-y-4"><div><dt className="font-semibold">Registered company</dt><dd>{company.name}</dd></div>
-   <div><dt className="font-semibold">Registration number</dt><dd>{company.registrationNumber}</dd></div>
-   <div><dt className="font-semibold">Website</dt><dd><a className="underline" href={company.website}>{company.website}</a></dd></div>
-   <div><dt className="font-semibold">Business activity</dt><dd>{company.businessActivity}</dd></div>
-  </dl>
- </section>;
-}
+import Link from 'next/link';
+import { PageHeading } from '@/components/page-heading';
+import { company } from '@/lib/company';
+import { Layers, Globe2, ShieldCheck } from 'lucide-react';
+export const metadata={title:'About Us | One Fin Solution'};
+export default function About() { return <div className="page-wrap"><PageHeading eyebrow="ABOUT ONE FIN" title="Software with a practical purpose." description="We bring software access, AI conversations, and useful workspace tools together so people can spend more time on the work that matters." /><div className="two-grid"><section className="panel"><h2>Who we are</h2><p>{company.name} is the company behind One Fin Solution. Our registered business activity is maintaining rights to reproduce finished software for sale or distribution.</p><p>Our website gives users a place to manage their account, organize conversations and reference material, and explore software plans. We serve an international audience, with product and payment availability depending on location.</p></section><section className="hero-preview"><p className="eyebrow">OUR APPROACH</p><h2>Useful tools.<br />Clear choices.<br />A human point of contact.</h2><p className="mt-6">We believe the basics should be easy: finding a plan, understanding your account, and knowing where to ask for help.</p></section></div><section className="three-grid section-space">{[{icon:Layers,title:'A connected workspace',body:'Conversations and reusable context in one account.'},{icon:ShieldCheck,title:'Control over your account',body:'Profile preferences, password controls, and session management.'},{icon:Globe2,title:'An international outlook',body:'Clear product information and online support wherever you work.'}].map(({icon:Icon,title,body})=><article key={title} className="panel"><Icon className="feature-icon" /><h3>{title}</h3><p>{body}</p></article>)}</section><section className="callout"><div><h2>Company information</h2><p>{company.name}<br />Registration number: {company.registrationNumber}</p></div><Link href="/contact" className="button">Contact our team</Link></section></div>; }

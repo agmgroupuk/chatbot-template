@@ -1,49 +1,12 @@
-import { createBillingClient } from "@/lib/billing";
-import Link from "next/link";
-import PricingContent from "@/components/pricing-content";
-import { Product } from '@/types/products';
-import { creditPlans } from '@/lib/credit-config';
-
-// interface Price {
-//   id: string;
-//   unit_amount: number;
-//   interval: 'month' | 'year';
-// }
-// 
-// interface Product {
-//   id: string;
-//   name: string;
-//   description: string;
-//   prices: Price[];
-// }
-
-export default async function PricingPage() {
-  const client = await createBillingClient();
-  const { data, error } = await client.billing.getProducts();
-  const { data: subscriptionData } = await client.billing.getSubscriptions();
-
-  if (error) {
-    return (
-      <section className="m-auto max-w-lg p-6 text-stone-900"><h1 className="mb-4 text-3xl">Plans and credits</h1><p>Payments are temporarily unavailable. Please try again later.</p><Link href="/" className="mt-6 block underline">Return home</Link></section>
-    );
-  }
-
-  const currentProductId = subscriptionData?.subscriptions?.find(sub => sub.status === 'active')?.product.id ?? null;
-  if (!data.products?.length) return <div className="m-auto p-6">No plans are currently available. Please check back later.</div>;
-
-  return (
-    <div className="max-w-[1200px] mx-auto px-6 py-16">
-      <div className="text-center mb-12">
-        <h1 className="text-4xl font-medium mb-4">Upgrade your plan</h1>
-      </div>
-
-      <PricingContent
-        products={data.products as Product[]}
-        currentProductId={currentProductId}
-        currentPriceId={subscriptionData?.subscriptions?.find(sub => sub.status === 'active')?.price.id}
-        supportsPlanChanges={process.env.BILLING_PROVIDER === 'stripe'}
-        creditsByPrice={Object.fromEntries(Object.entries(creditPlans()).map(([id, plan]) => [id, plan.credits]))}
-      />
-    </div>
-  );
-}
+import Link from 'next/link';
+import { PageHeading } from '@/components/page-heading';
+import catalog from '@/billing/test-catalog.json';
+export const metadata={title:'Daily, Weekly, Monthly & Yearly Pricing | One Fin Solution'};
+const basic=catalog.products.find(product=>product.code==='basic')!;
+const intervals=[
+  {name:'Daily',period:'day',description:'For a focused task or a short visit.',code:null,features:['A short commitment','Your personal workspace','Account and support access']},
+  {name:'Weekly',period:'week',description:'A little more room for a short project.',code:null,features:['A week-shaped workflow','Saved conversations and context','Account and support access']},
+  {name:'Monthly',period:'month',description:'A steady rhythm for everyday work.',code:'basic_month',features:['100 credits per paid month','Saved conversations and context','Manage renewal from your dashboard']},
+  {name:'Yearly',period:'year',description:'For the work you keep coming back to.',code:'basic_year',features:['1,200 credits per paid year','Saved conversations and context','Manage renewal from your dashboard']},
+];
+export default function Pricing() { return <div className="page-wrap"><PageHeading eyebrow="PLANS & PRICING" title="Choose the time that fits your work." description="Daily, Weekly, Monthly, or Yearly. Compare every option here and ask us about the plan that suits you." /><div className="notice">Plan preview: online purchases are not open yet. Monthly and yearly amounts below are existing USD test-catalog prices, not an offer to charge you. Daily and weekly pricing is available by inquiry. Final price, allowance, and renewal terms must be confirmed before purchase.</div><section className="pricing-grid" aria-label="All four plan options">{intervals.map(plan=>{const price=basic.prices.find(price=>price.code===plan.code);return <article className={`panel price-card ${plan.name==='Monthly'?'featured':''}`} key={plan.name}><span className="eyebrow">{plan.name.toUpperCase()}</span><h2>{plan.name}</h2><p>{plan.description}</p><div className="price">{price?<>${(price.amount/100).toFixed(0)} <small>USD / {plan.period}</small></>:'Contact us'}</div><p className="small-copy">{price?'Test price preview':'Request pricing and allowance'}</p><ul>{plan.features.map(feature=><li key={feature}>{feature}</li>)}</ul><Link className={`button ${plan.name==='Monthly'?'':'secondary'}`} href={`/contact?category=pricing&subject=${encodeURIComponent(plan.name+' plan inquiry')}`}>Ask about {plan.name.toLowerCase()}</Link></article>;})}</section><section className="two-grid section-space"><div className="panel"><h2>Start with your workspace</h2><p>Create an account, confirm your email, and explore your dashboard. Your available credits and enabled features are shown in your account.</p><Link href="/sign-up" className="text-link">Create an account →</Link></div><div className="panel"><h2>Already have a plan?</h2><p>Review your current plan, credit balance, recorded renewal date, and cancellation options in your dashboard.</p><Link href="/dashboard/billing" className="text-link">Manage plans & billing →</Link></div></section><section><h2>Clear terms, before you pay.</h2><details className="faq"><summary>What is included in a credit?</summary><p>Under the current model, one successful standard AI response uses one credit. Failed requests return the reservation. Subscription credits expire at the end of the paid period.</p></details><details className="faq"><summary>How does cancellation work?</summary><p>Cancel automatic renewal from Plans & billing. Access normally continues until the end of the paid period. See our <Link className="text-link" href="/payment-policy">Payment, Cancellation & Refund Policy</Link>.</p></details><details className="faq"><summary>Do you offer business or software licensing plans?</summary><p><Link className="text-link" href="/contact?category=pricing">Contact our team</Link> with the software, number of users, preferred term, and billing requirements. We will clarify availability and terms before payment.</p></details></section></div>; }

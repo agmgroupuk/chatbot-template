@@ -1,61 +1,11 @@
-"use client";
-
-import { useSearchParams } from "next/navigation";
-import { useState } from "react";
-import { resendConfirmationAction } from "@/app/auth-actions";
-
+'use client';
+import Link from 'next/link';
+import { useSearchParams } from 'next/navigation';
+import { useState } from 'react';
+import { resendConfirmationAction } from '@/app/auth-actions';
 export default function EmailConfirmation() {
-  const searchParams = useSearchParams();
-  const email = searchParams.get("email") || "";
-  const [isSubmitting, setIsSubmitting] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  
-  const handleResendEmail = async () => {
-    setIsSubmitting(true);
-    setError(null);
-    
-    try {
-      const { error } = await resendConfirmationAction(email);
-      
-      if (error) {
-        setError(error);
-      }
-    } catch {
-      setError("Failed to resend verification email");
-    } finally {
-      setIsSubmitting(false);
-    }
-  };
-
-  return (
-    <div className="h-screen w-full flex items-center justify-center bg-white">
-      <div className="w-full max-w-md px-6 mx-auto -mt-16">
-        <div className="text-center mb-8">
-          <h1 className="text-[32px] font-normal tracking-tight">Check your inbox</h1>
-          <p className="mt-4 text-gray-600">
-            If this address can be registered, check for a confirmation email at<br />
-            <span className="font-medium text-black">{email}</span>
-          </p>
-          <p className="mt-2 text-gray-600">
-            Click the link in the email to confirm your account
-          </p>
-        </div>
-
-        <div className="space-y-6">
-          {error && (
-            <div className="text-red-500 text-sm text-center">{error}</div>
-          )}
-
-          <button
-            type="button"
-            onClick={handleResendEmail}
-            disabled={isSubmitting}
-            className="w-full text-center text-zinc-900 hover:underline text-sm font-normal"
-          >
-            Didn&apos;t receive an email? Send again
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-} 
+  const email=useSearchParams().get('email')||'';
+  const [busy,setBusy]=useState(false),[error,setError]=useState(''),[notice,setNotice]=useState('');
+  async function resend(){setBusy(true);setError('');setNotice('');try{const result=await resendConfirmationAction(email);if(!result.success)setError(result.error||'Unable to request another email.');else setNotice('If this address is awaiting confirmation, a new link has been sent.');}catch{setError('Unable to request another email. Please try again.');}finally{setBusy(false);}}
+  return <div className="auth-wrap"><p className="eyebrow">ONE MORE STEP</p><h1>Check your inbox.</h1><p>If this address can be registered, look for an email from One Fin at <strong className="break-all">{email||'the address you supplied'}</strong>. Open the confirmation link to finish creating your account.</p><p className="small-copy">Check spam and junk folders. Confirmation links expire after 24 hours.</p>{error&&<p className="notice error" role="alert">{error}</p>}{notice&&<p className="notice success" role="status">{notice}</p>}<button className="button mt-6" disabled={busy||!email} onClick={resend}>{busy?'Requesting link…':'Resend confirmation email'}</button><div className="auth-links"><Link className="text-link" href="/sign-in">Back to sign in</Link><Link className="text-link" href="/contact?category=account">Get help</Link></div></div>;
+}

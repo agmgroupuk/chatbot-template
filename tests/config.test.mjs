@@ -39,7 +39,7 @@ test('retired saved selections resolve to a supported model without rewriting hi
 });
 test('all private pages redirect guests, including nested chat and context routes', () => {
   const { authRedirect } = load('lib/auth-redirect.ts', {});
-  for (const path of ['/account', '/context', '/context/new', '/context/123', '/c/123']) {
+  for (const path of ['/account', '/account/security', '/dashboard', '/dashboard/support', '/chat', '/context', '/context/new', '/context/123', '/c/123']) {
     assert.equal(authRedirect(path, false), '/sign-in');
     assert.equal(authRedirect(path, true), null);
   }

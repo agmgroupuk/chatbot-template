@@ -1,32 +1,14 @@
 import { currentUser } from '@/lib/session';
 import { ownedQuery } from '@/lib/db';
 import { redirect } from 'next/navigation';
-import { getSubscriptionDetails, signOutAction } from '@/app/actions';
 import { updateProfileAction } from '@/app/auth-actions';
+import { signOutAction } from '@/app/actions';
+import { SubmitButton } from '@/components/submit-button';
+import { FormNotice } from '@/components/form-notice';
 import Link from 'next/link';
-import { getCreditBalance } from '@/app/credit-actions';
-
-export default async function Account({ searchParams }: { searchParams: Promise<{ error?: string; success?: string; checkout?: string }> }) {
-  const user=await currentUser();
-  if (!user) redirect('/sign-in');
-  const [profiles, subscription, params, credits] = await Promise.all([
-    ownedQuery(user.id,'select full_name from profiles where id=$1',[user.id]), getSubscriptionDetails(), searchParams, getCreditBalance(),
-  ]);
-  return <section className="mx-auto w-full max-w-xl overflow-y-auto p-6 text-stone-900">
-    <h1 className="mb-6 text-3xl">Your account</h1>
-    {params.error && <p role="alert" className="text-red-700">{params.error}</p>}
-    {params.success && <p role="status">{params.success}</p>}
-    {params.checkout === 'success' && <p role="status">Checkout returned successfully. Your plan appears after payment confirmation; refresh if it is still processing.</p>}
-    <p className="my-4 break-all">Email: {user.email}</p>
-    {credits.error ? <p role="alert">{credits.error}</p> : <p className="my-4">Available credits: {credits.balance}</p>}
-    <form action={updateProfileAction} className="space-y-4">
-      <label className="block">Full name<input name="full_name" maxLength={120} defaultValue={profiles[0]?.full_name || ''} className="mt-2 w-full rounded-xl border p-3" /></label>
-      <button className="rounded-xl bg-zinc-900 px-5 py-3 text-white">Save profile</button>
-    </form>
-    {subscription.error ? <p role="alert" className="mt-6">{subscription.error}</p> : <p className="mt-6">Active plan: {subscription.planName || 'No active subscription'}</p>}
-    {subscription.renewalDate && <p>{subscription.isCancelled ? 'Access ends' : 'Renews'}: {subscription.renewalDate}</p>}
-    <Link href="/pricing" className="my-4 block underline">Manage subscription</Link>
-    <Link href="/forgot-password" className="my-4 block underline">Reset password</Link>
-    <form action={signOutAction}><button className="rounded-xl border px-5 py-3">Log out</button></form>
-  </section>;
+export default async function Account({ searchParams }: { searchParams: Promise<{error?:string;success?:string}> }) {
+  const user=await currentUser(); if(!user) redirect('/sign-in');
+  const [profiles,params]=await Promise.all([ownedQuery(user.id,'select full_name,username,website from profiles where id=$1',[user.id]),searchParams]);
+  const profile=profiles[0]||{};
+  return <><FormNotice {...params} /><section className="panel"><div className="setting-row" style={{paddingTop:0}}><div><h2>Personal profile</h2><p>Your identity across the One Fin workspace.</p></div><span className="badge">Email verified</span></div><form action={updateProfileAction} className="stack mt-6"><div className="form-grid"><label className="field">Full name<input name="full_name" maxLength={120} defaultValue={profile.full_name||''} autoComplete="name" /></label><label className="field">Username<input name="username" minLength={3} maxLength={32} pattern="[a-zA-Z0-9_]{3,32}" defaultValue={profile.username||''} autoComplete="username" /><small>3–32 letters, numbers, or underscores. Optional.</small></label></div><label className="field">Email address<input type="email" value={user.email} readOnly /><small>For an email change, <Link className="text-link" href="/contact?category=account&subject=Email%20change%20request">contact support</Link> so we can verify ownership.</small></label><label className="field">Website<input name="website" type="url" maxLength={500} placeholder="https://example.com" defaultValue={profile.website||''} autoComplete="url" /></label><div><SubmitButton>Save profile</SubmitButton></div></form></section><section className="panel"><h2>Account access</h2><p>Keep your profile and settings separate from your activity overview.</p><div className="button-row"><Link className="button secondary" href="/dashboard">Go to dashboard</Link><form action={signOutAction}><SubmitButton className="button secondary" pendingText="Signing out…">Sign out</SubmitButton></form></div></section></>;
 }

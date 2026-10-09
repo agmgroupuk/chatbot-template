@@ -1,6 +1,7 @@
 'use client';
 
 import { availableModels } from '@/lib/models';
+import { useWorkspacePreferences } from './workspace-preferences';
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { ArrowUp, Check, Loader2, PlusIcon, BookText } from 'lucide-react';
 import { createPortal } from 'react-dom';
@@ -41,6 +42,7 @@ interface ChatInterfaceProps {
 }
 
 export function ChatInterface({ chatId }: ChatInterfaceProps) {
+  const preferences = useWorkspacePreferences();
   const [prompt, setPrompt] = useState("");
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
@@ -306,7 +308,7 @@ export function ChatInterface({ chatId }: ChatInterfaceProps) {
 
   // Submit only requires prompt text now
   const handleTextareaKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-    if (e.key === 'Enter' && !e.shiftKey && prompt.trim() && !isAiResponding) {
+    if (preferences.enter_to_send && !e.nativeEvent.isComposing && e.key === 'Enter' && !e.shiftKey && prompt.trim() && !isAiResponding) {
         e.preventDefault();
         handleSubmit();
     }
@@ -390,6 +392,8 @@ export function ChatInterface({ chatId }: ChatInterfaceProps) {
             {/* Text input section */}
             <div className="w-full relative">
               <textarea
+                spellCheck={preferences.spellcheck}
+                aria-label="Message"
                 ref={textareaRef}
                 // Reverted class changes, context no longer shown here
                 className={`w-full resize-none text-base focus:outline-none text-stone-900 placeholder:text-gray-500 bg-transparent px-5 py-3 min-h-[48px] max-h-[360px] pr-10`}
@@ -471,6 +475,7 @@ export function ChatInterface({ chatId }: ChatInterfaceProps) {
 
                     {/* --- Updated Context Item (to match IdeInterface) --- */}
                     <DropdownMenuItem
+                      disabled={!preferences.context_enabled}
                       onSelect={() => setIsContextModalOpen(true)}
                       className="flex items-center justify-between"
                     >

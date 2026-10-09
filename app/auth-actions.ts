@@ -35,9 +35,13 @@ export async function updateProfileAction(form:FormData) {
   const user=await currentUser();
   if(!user) redirect('/sign-in');
   const name=String(form.get('full_name')||'').trim();
+  const username=String(form.get('username')||'').trim();
+  const website=String(form.get('website')||'').trim();
   if(name.length>120) return encodedRedirect('error','/account','Name must be at most 120 characters.');
-  try { await query('update profiles set full_name=$1,updated_at=now() where id=$2',[name,user.id]); }
-  catch { return encodedRedirect('error','/account','Unable to save profile.'); }
+  if(username && !/^[a-zA-Z0-9_]{3,32}$/.test(username)) return encodedRedirect('error','/account','Username must be 3–32 letters, numbers, or underscores.');
+  if(website) { try { const url=new URL(website); if(!['https:','http:'].includes(url.protocol)||website.length>500) throw new Error(); } catch { return encodedRedirect('error','/account','Enter a valid http or https website URL.'); } }
+  try { await query('update profiles set full_name=$1,username=$2,website=$3,updated_at=now() where id=$4',[name,username||null,website||null,user.id]); }
+  catch { return encodedRedirect('error','/account','Unable to save profile. The username may already be taken.'); }
   revalidatePath('/account');
   return encodedRedirect('success','/account','Profile saved.');
 }

@@ -5,7 +5,9 @@ const globalDatabase = globalThis as unknown as { databasePool?: Pool };
 export function database() {
   if (!process.env.DATABASE_URL) throw new Error('Database is not configured.');
   if (!globalDatabase.databasePool) {
-    const pool = new Pool({ connectionString: process.env.DATABASE_URL, max: 10, connectionTimeoutMillis: 10000, idleTimeoutMillis: 30000 });
+    const max=Number(process.env.DATABASE_POOL_MAX||10);
+    if(!Number.isInteger(max)||max<1||max>20) throw new Error('DATABASE_POOL_MAX must be between 1 and 20.');
+    const pool = new Pool({ connectionString: process.env.DATABASE_URL, max, connectionTimeoutMillis: 10000, idleTimeoutMillis: 30000 });
     pool.on('error',()=>console.error('An idle database connection was interrupted.'));
     globalDatabase.databasePool=pool;
   }

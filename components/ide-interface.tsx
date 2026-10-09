@@ -1,6 +1,7 @@
 "use client";
 
 import { availableModels } from '@/lib/models';
+import { useWorkspacePreferences } from './workspace-preferences';
 import React, { useState, useRef, useEffect, useCallback } from "react";
 import { ArrowUp, Check, Loader2, PlusIcon, BookText } from "lucide-react";
 import { createPortal } from "react-dom";
@@ -39,6 +40,7 @@ const placeholderPrompts = [
 ];
 
 export function IdeInterfaceComponent() {
+  const preferences = useWorkspacePreferences();
   const router = useRouter();
 
   const [prompt, setPrompt] = useState("");
@@ -249,7 +251,7 @@ export function IdeInterfaceComponent() {
 
   // Specific handler for Textarea Enter key
   const handleTextareaKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-    if (e.key === 'Enter' && !e.shiftKey && prompt.trim()) {
+    if (preferences.enter_to_send && !e.nativeEvent.isComposing && e.key === 'Enter' && !e.shiftKey && prompt.trim()) {
         e.preventDefault();
         handleSubmit();
     }
@@ -344,6 +346,8 @@ export function IdeInterfaceComponent() {
             <div className="flex flex-col">
               <div className="w-full relative">
                 <textarea
+                  spellCheck={preferences.spellcheck}
+                  aria-label="Message"
                   ref={textareaRef}
                   className="w-full resize-none text-base focus:outline-none text-stone-900 placeholder:text-gray-500 bg-transparent px-5 py-3 min-h-[48px] max-h-[360px] pr-10"
                   placeholder={currentPlaceholder || "Ask anything..."}
@@ -444,6 +448,7 @@ export function IdeInterfaceComponent() {
 
                       {/* --- Updated Context Item - Adjusted Structure for consistent spacing --- */}
                       <DropdownMenuItem
+                        disabled={!preferences.context_enabled}
                         onSelect={() => setIsContextModalOpen(true)}
                         className="flex items-center justify-between" // Keep justify-between for checkmark placement
                       >
