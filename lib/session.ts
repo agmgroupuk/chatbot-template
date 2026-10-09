@@ -20,5 +20,6 @@ export async function destroySession() {
   const jar = await cookies();
   const token = jar.get(sessionCookie)?.value;
   if (token) await query('delete from app_sessions where token_hash=$1',[tokenHash(token)]);
-  jar.delete(sessionCookie);
+  // __Host- cookies require Secure even on an expiry/deletion response.
+  jar.set(sessionCookie,'',{httpOnly:true,secure:process.env.NODE_ENV==='production',sameSite:'lax',path:'/',maxAge:0});
 }

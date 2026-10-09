@@ -44,7 +44,7 @@ try {
  await page.goto(`${origin}/auth/callback?purpose=reset&token=${reset}`);await expect(page).toHaveURL(`${origin}/reset-password`);
  await page.locator('[name=password]').fill(nextPassword);await page.locator('[name=confirmPassword]').fill(nextPassword);await page.getByRole('button',{name:'Update password'}).click();await expect(page).toHaveURL(/sign-in/,{timeout:30000});
  const stale=await browser.newContext();await stale.addCookies([oldSession]);const stalePage=await stale.newPage();await stalePage.goto(`${origin}/account`);await expect(stalePage).toHaveURL(/sign-in/);await stale.close();
- await login(nextPassword);await expect(page).toHaveURL(`${origin}/`,{timeout:30000});await page.goto(`${origin}/account`);await page.getByRole('button',{name:'Log out',exact:true}).click();await expect(page).toHaveURL(/sign-in/,{timeout:30000});await page.goto(`${origin}/account`);await expect(page).toHaveURL(/sign-in/);
+ await login(nextPassword);await expect(page).toHaveURL(`${origin}/`,{timeout:30000});await page.goto(`${origin}/account`);await page.getByRole('button',{name:'Log out',exact:true}).click();await expect(page).toHaveURL(/sign-in/,{timeout:30000});expect((await context.cookies()).some(cookie=>cookie.name==='__Host-onefin-session')).toBe(false);await page.goto(`${origin}/account`);await expect(page).toHaveURL(/sign-in/);
  await page.setViewportSize({width:375,height:812});await page.goto(origin);expect(await page.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth)).toBe(true);
  await page.goto(`${origin}/about`);await expect(page.getByText('0115569007686',{exact:true})).toBeVisible();
  expect(errors).toEqual([]);
