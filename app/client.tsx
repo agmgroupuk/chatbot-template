@@ -19,7 +19,7 @@ interface ClientLayoutProps {
 function ClientLayoutContent({ children }: ClientLayoutProps) {
   const [showSidebar, setShowSidebar] = useState(false);
   const [logoVisible, setLogoVisible] = useState(true);
-  const { isAuthenticated } = useAuth();
+  const { isAuthenticated, isLoading: isAuthLoading } = useAuth();
   const pathname = usePathname();
 
   const [activePlanName, setActivePlanName] = useState<string | null>(null);
@@ -132,7 +132,7 @@ function ClientLayoutContent({ children }: ClientLayoutProps) {
               </Link>}
 
               {/* Only show Login/Signup if not authenticated */}
-              {!isAuthenticated && (
+              {!isAuthenticated && !isAuthLoading && (
                 <div className="flex items-center gap-2 sm:gap-4">
                   <Link href="/sign-up">
                     <button

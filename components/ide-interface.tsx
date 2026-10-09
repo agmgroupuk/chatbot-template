@@ -72,7 +72,7 @@ export function IdeInterfaceComponent() {
   const [selectedModel, setSelectedModel] = useState<string | null>(null);
   const [isLoadingModels, setIsLoadingModels] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const { isAuthenticated } = useAuth();
+  const { isAuthenticated, isLoading: isAuthLoading } = useAuth();
 
   // --- State for Settings Modal ---
   const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false);
@@ -273,6 +273,7 @@ export function IdeInterfaceComponent() {
   };
 
   const handleSubmit = async () => {
+    if (isAuthLoading) return;
     // --- Authentication Check ---
     if (isAuthenticated === false) {
       router.push('/sign-in');
@@ -462,7 +463,7 @@ export function IdeInterfaceComponent() {
                 <button
                   className="flex items-center justify-center h-8 w-8 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed bg-black text-white hover:bg-gray-800"
                   onClick={handleSubmit}
-                  disabled={isSubmitting || !prompt.trim() || isLoadingModels || (enabledModels.length > 0 && !selectedModel) || isAuthenticated === null}
+                  disabled={isAuthLoading || isSubmitting || !prompt.trim() || isLoadingModels || (enabledModels.length > 0 && !selectedModel)}
                   aria-label="Submit prompt"
                 >
                   {isSubmitting ? (

@@ -5,11 +5,11 @@ import React, { useState, useEffect, Fragment } from 'react';
 import { Button } from '@/components/ui/button';
 import { X, ArrowUpCircle, XCircle, LayoutGrid, RefreshCcw, User, CreditCard, List } from 'lucide-react';
 import { getCurrentUserAction } from '@/app/actions';
-import { 
-  getSubscriptionDetails, 
-  cancelSubscriptionAction, 
-  reactivateSubscriptionAction, 
-  getUserModelSettings, 
+import {
+  getSubscriptionDetails,
+  cancelSubscriptionAction,
+  reactivateSubscriptionAction,
+  getUserModelSettings,
   updateUserModelSettings
 } from '@/app/actions';
 import Link from 'next/link';
@@ -93,11 +93,11 @@ export function SettingsModal({ isOpen, setIsOpen, onSettingsChanged }: Settings
             modelsPromise
           ]);
 
-          console.log("[MODAL LOG] Received userSettings from action:", userSettings);
-          
+
+
           setUserEmail(user?.email ?? null);
           setSubscriptionDetails(subscriptionData);
-          
+
           // Initialize models state using the correct field from the settings object
           setModels(
             availableConfiguredModels.map(model => ({
@@ -132,13 +132,13 @@ export function SettingsModal({ isOpen, setIsOpen, onSettingsChanged }: Settings
     const changingModel = models.find(model => model.id === id);
 
     if (isTryingToDisable && changingModel?.enabled && enabledModelsCount <= 1) {
-      console.log("Cannot disable the last enabled model.");
+
       setModelSaveError("At least one model must remain enabled."); // User feedback
       // Clear error after a delay
       setTimeout(() => setModelSaveError(null), 3000);
-      return; 
+      return;
     }
-    
+
     // Optimistically update local state
     const newModelsState = models.map(model =>
       model.id === id ? { ...model, enabled: !!checked } : model
@@ -158,7 +158,7 @@ export function SettingsModal({ isOpen, setIsOpen, onSettingsChanged }: Settings
       if (!result.success) {
         setModelSaveError(result.error || "Failed to save model settings.");
       } else {
-        console.log("Enabled model settings saved successfully.");
+
         onSettingsChanged?.();
       }
     } catch (error) {
@@ -246,8 +246,8 @@ export function SettingsModal({ isOpen, setIsOpen, onSettingsChanged }: Settings
         <div>
           <h2 id="subscription-heading" className="text-lg font-semibold text-gray-900">{displayPlanName} Plan</h2>
           <p className="text-sm text-gray-500 mt-1">
-            {isPaidPlan 
-              ? subscriptionDetails.isCancelled 
+            {isPaidPlan
+              ? subscriptionDetails.isCancelled
                 ? `Plan cancelled. Access ends on ${subscriptionDetails.renewalDate || '[Date Unavailable]'}`
                 : `Your plan auto-renews on ${subscriptionDetails.renewalDate || '[Date Unavailable]'}`
               : "Current plan details"}
@@ -342,7 +342,7 @@ export function SettingsModal({ isOpen, setIsOpen, onSettingsChanged }: Settings
           </Menu>
         )}
       </div>
-      
+
       <Link href="/pricing" onClick={closeModal} className="block text-sm underline">View available plans and pricing</Link>
 
       <div className="mt-4 text-center h-5">
@@ -366,7 +366,7 @@ export function SettingsModal({ isOpen, setIsOpen, onSettingsChanged }: Settings
   // Updated render function for Models Tab
   const renderModelsContent = () => (
     <section aria-labelledby="models-heading" className="space-y-4 pt-4 relative">
-       {/* Saving Overlay */} 
+       {/* Saving Overlay */}
        {isSavingModels && (
          <div className="absolute inset-0 bg-white/50 flex items-center justify-center z-10 rounded-md">
            <Spinner className="h-6 w-6" />
@@ -388,8 +388,8 @@ export function SettingsModal({ isOpen, setIsOpen, onSettingsChanged }: Settings
                 onCheckedChange={(checked: boolean | 'indeterminate') => handleCheckedChange(model.id, checked)}
                 disabled={isSavingModels}
               />
-              <Label 
-                 htmlFor={model.id} 
+              <Label
+                 htmlFor={model.id}
                  className={cn(
                    "text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70",
                    isSavingModels && "opacity-50"
@@ -418,22 +418,22 @@ export function SettingsModal({ isOpen, setIsOpen, onSettingsChanged }: Settings
         <Tabs defaultValue="account" className="flex flex-1 overflow-hidden">
           <TabsList className="h-auto flex flex-col justify-start items-start p-4 space-y-1 w-48 border-r border-gray-200 bg-gray-50/50 rounded-none">
             <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2 px-2">Settings</h3>
-            <TabsTrigger 
-              value="account" 
+            <TabsTrigger
+              value="account"
               className="w-full flex items-center gap-3 px-3 py-2 rounded-md text-sm font-medium text-left justify-start data-[state=active]:bg-gray-200 data-[state=active]:text-gray-900 text-gray-600 hover:bg-gray-100 hover:text-gray-900"
             >
                <User className="h-5 w-5 flex-shrink-0" />
                <span>Account</span>
             </TabsTrigger>
-            <TabsTrigger 
-              value="models" 
+            <TabsTrigger
+              value="models"
               className="w-full flex items-center gap-3 px-3 py-2 rounded-md text-sm font-medium text-left justify-start data-[state=active]:bg-gray-200 data-[state=active]:text-gray-900 text-gray-600 hover:bg-gray-100 hover:text-gray-900"
             >
                <List className="h-5 w-5 flex-shrink-0" />
                <span>Models</span>
              </TabsTrigger>
-            <TabsTrigger 
-              value="subscription" 
+            <TabsTrigger
+              value="subscription"
               className="w-full flex items-center gap-3 px-3 py-2 rounded-md text-sm font-medium text-left justify-start data-[state=active]:bg-gray-200 data-[state=active]:text-gray-900 text-gray-600 hover:bg-gray-100 hover:text-gray-900"
              >
                <CreditCard className="h-5 w-5 flex-shrink-0" />
@@ -460,4 +460,4 @@ export function SettingsModal({ isOpen, setIsOpen, onSettingsChanged }: Settings
       </div>
     </div>
   );
-} 
+}

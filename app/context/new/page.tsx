@@ -20,18 +20,13 @@ export default function NewContextItemPage() {
   const [error, setError] = useState<string | null>(null);
 
   // Keep console log for debugging if needed
-  console.log("--- Render / Button Disabled State Check ---", { 
-      isSubmitting, 
-      isNameEmpty: !name.trim(), 
-      isContentEmpty: !content.trim(),
-      isDisabled: isSubmitting || !name.trim() || !content.trim()
-  });
-  
+
+
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
-    console.log("--- handleSubmit triggered ---");
+
     e.preventDefault();
     if (!name.trim() || !content.trim() || isSubmitting) {
-      console.log("handleSubmit: Validation failed or already submitting", { name: name.trim(), content: content.trim(), isSubmitting });
+
       return;
     }
     setIsSubmitting(true);
@@ -63,22 +58,22 @@ export default function NewContextItemPage() {
                  <span>Back</span>
             </Button>
             {/* Save Button Moved Back Here */}
-            <Button 
+            <Button
                 id="save-context-button" // Add an ID for easier selection if needed
                 size="sm"
                 onClick={() => {
-                    console.log("--- Save button clicked ---");
+
                     // Find the form using a more reliable method if possible, e.g., ID
-                    const form = document.getElementById('new-context-form') as HTMLFormElement | null; 
+                    const form = document.getElementById('new-context-form') as HTMLFormElement | null;
                     if (form) {
-                        console.log("Form found, attempting requestSubmit");
+
                         form.requestSubmit(); // Use requestSubmit for proper validation trigger
                     } else {
                         console.error("Save button could not find form with ID 'new-context-form'!");
                     }
                 }}
                 disabled={isSubmitting || !name.trim() || !content.trim()}
-                className="h-8 px-4" 
+                className="h-8 px-4"
             >
                {isSubmitting ? "Saving..." : "Save"}
             </Button>
@@ -99,18 +94,18 @@ export default function NewContextItemPage() {
                  className="w-full border-0 focus:ring-0 focus:outline-none p-0 text-4xl font-semibold h-auto mb-4 bg-transparent text-stone-700 placeholder:text-4xl placeholder:font-semibold placeholder:text-stone-400/70"
             />
 
-            {/* Content Textarea */} 
+            {/* Content Textarea */}
             <Textarea
                  id="context-content"
-                 placeholder="Start writing your context here... Type '/' for commands." 
+                 placeholder="Write reference information for your chats..."
                  value={content}
                  onChange={(e) => setContent(e.target.value)}
                  required
                  disabled={isSubmitting}
                  className="w-full border-0 focus-visible:ring-0 focus:outline-none min-h-[300px] bg-white shadow-none text-base text-stone-900 resize-none placeholder:text-stone-500 py-2 leading-relaxed"
             />
-            
-             {/* Error Display */} 
+
+             {/* Error Display */}
              {error && (
                <Alert variant="destructive" className="mt-6 text-sm p-3">
                   <ExclamationTriangleIcon className="h-4 w-4" />
@@ -121,4 +116,4 @@ export default function NewContextItemPage() {
         </form>
     </div>
   );
-} 
+}

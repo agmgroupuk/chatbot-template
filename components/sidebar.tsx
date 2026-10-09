@@ -35,8 +35,8 @@ function capitalizeFirstLetter(string: string | null): string {
 
 // Define SocialLink at the top level
 const SocialLink = ({ icon: Icon, text, href }: { icon: React.ElementType, text: string, href: string }) => (
-  <a 
-    href={href} 
+  <a
+    href={href}
     target={href.startsWith("/") ? undefined : "_blank"}
     rel="noopener noreferrer"
     className="flex items-center gap-3 text-sm text-stone-700 hover:text-stone-900 transition-colors"
@@ -78,7 +78,7 @@ export function SidebarComponent({ className, onToggleCollapse, collapsed = fals
     function handleClickOutside(event: MouseEvent) {
       const profileButton = document.querySelector('.profile-button');
       if (
-        profileMenuRef.current && 
+        profileMenuRef.current &&
         !profileMenuRef.current.contains(event.target as Node) &&
         !(profileButton && profileButton.contains(event.target as Node))
       ) {
@@ -92,15 +92,15 @@ export function SidebarComponent({ className, onToggleCollapse, collapsed = fals
     };
   }, []);
 
-  // --- useEffect to fetch chat history --- 
+  // --- useEffect to fetch chat history ---
   useEffect(() => {
-    console.log("[Sidebar Effect] Running due to auth/path change:", { isAuthenticated, pathname });
-    if (isAuthenticated) { 
+
+    if (isAuthenticated) {
       setIsLoadingHistory(true);
       setHistoryError(null);
       getChatHistory()
         .then(history => {
-          console.log("[Sidebar Effect] Fetched history:", history);
+
           setChatHistory(history);
         })
         .catch(error => {
@@ -111,7 +111,7 @@ export function SidebarComponent({ className, onToggleCollapse, collapsed = fals
           setIsLoadingHistory(false);
         });
     } else {
-      console.log("[Sidebar Effect] Clearing history due to !isAuthenticated");
+
       setChatHistory([]);
       setIsLoadingHistory(false);
     }
@@ -132,9 +132,9 @@ export function SidebarComponent({ className, onToggleCollapse, collapsed = fals
     router.refresh();
   };
 
-  // --- Define the callback for settings changes --- 
+  // --- Define the callback for settings changes ---
   const handleSettingsChanged = () => {
-    console.log("[Sidebar] Settings changed, refreshing router...");
+
     router.refresh();
   };
 
@@ -149,7 +149,7 @@ export function SidebarComponent({ className, onToggleCollapse, collapsed = fals
       const result = await deleteChat(deletedChatId);
       if (result.success) {
         setChatHistory(prevHistory => prevHistory.filter(chat => chat.id !== deletedChatId));
-        
+
         if (pathname === `/c/${deletedChatId}`) {
           router.push('/');
         }
@@ -169,8 +169,8 @@ export function SidebarComponent({ className, onToggleCollapse, collapsed = fals
   return (
     <div
       className={cn(
-        "relative flex flex-col h-full border-r border-stone-200 bg-stone-50 transition-all duration-300 ease-in-out", 
-        collapsed ? "w-0" : "w-[260px]", 
+        "relative flex flex-col h-full border-r border-stone-200 bg-stone-50 transition-all duration-300 ease-in-out",
+        collapsed ? "w-0" : "w-[260px]",
         className
       )}
       style={{
@@ -181,8 +181,8 @@ export function SidebarComponent({ className, onToggleCollapse, collapsed = fals
         <>
           <div className="flex items-center justify-between p-4 flex-shrink-0">
             <div className="flex items-center h-[26px]">
-              <span 
-                className="font-bold text-2xl text-zinc-900" 
+              <span
+                className="font-bold text-2xl text-zinc-900"
                 style={{ lineHeight: '26px', marginTop: '-3px' }}
               >
                 start
@@ -194,10 +194,10 @@ export function SidebarComponent({ className, onToggleCollapse, collapsed = fals
               className="rounded-full transition-all duration-300 ease-in-out hover:bg-stone-200"
               onClick={handleCollapseClick}
             >
-              <ChevronLeft className="h-4 w-4" /> 
+              <ChevronLeft className="h-4 w-4" />
             </Button>
           </div>
-          
+
           <div className="px-3 py-2 flex-shrink-0">
             <Button
               variant="ghost"
@@ -215,12 +215,12 @@ export function SidebarComponent({ className, onToggleCollapse, collapsed = fals
 
           <div className="flex-1 overflow-y-auto px-3 py-2">
             <div className="mb-2">
-              <button 
+              <button
                 className="flex items-center justify-between w-full px-1.5 py-1.5 text-sm font-bold text-stone-700 rounded-md"
                 onClick={toggleWorkspace}
               >
                 <span className="text-left">Workspace</span>
-                <ChevronDown 
+                <ChevronDown
                   className={cn(
                     "h-4 w-4 transition-transform text-stone-500",
                     isWorkspaceCollapsed ? "-rotate-90" : ""
@@ -229,13 +229,13 @@ export function SidebarComponent({ className, onToggleCollapse, collapsed = fals
               </button>
               {!isWorkspaceCollapsed && (
                 <div className="mt-1 space-y-1 animate-in fade-in duration-200">
-                   <Button 
-                     variant="ghost" 
+                   <Button
+                     variant="ghost"
                      className="justify-start w-full text-stone-700 hover:bg-stone-200 text-sm px-1.5"
                      onClick={() => router.push('/context')}
                    >
                      <div className="flex items-center gap-2 w-full text-left">
-                       <span>📖</span> <span>Context</span>
+                       <span>ðŸ“–</span> <span>Context</span>
                      </div>
                    </Button>
 
@@ -246,12 +246,12 @@ export function SidebarComponent({ className, onToggleCollapse, collapsed = fals
             <Separator className="bg-stone-200 my-3"/>
 
             <div className="mb-2">
-              <button 
+              <button
                 className="flex items-center justify-between w-full px-1.5 py-1.5 text-sm font-bold text-stone-700 rounded-md"
                 onClick={toggleHistory}
               >
                 <span className="text-left">History</span>
-                <ChevronDown 
+                <ChevronDown
                   className={cn(
                     "h-4 w-4 transition-transform text-stone-500",
                     isHistoryCollapsed ? "-rotate-90" : ""
@@ -277,12 +277,12 @@ export function SidebarComponent({ className, onToggleCollapse, collapsed = fals
                   )}
                   {/* History List */}
                   {!isLoadingHistory && !historyError && chatHistory.map((chat) => (
-                    <div 
+                    <div
                       key={chat.id}
                       className="group relative flex items-center w-full overflow-hidden min-w-0"
                     >
-                      <Button 
-                         variant="ghost" 
+                      <Button
+                         variant="ghost"
                          className="justify-start text-stone-700 hover:bg-stone-200 text-sm px-1.5 py-2 h-auto flex-grow mr-1 min-w-0"
                          onClick={() => router.push(`/c/${chat.id}`)}
                          disabled={isDeleting && chatToDelete?.id === chat.id}
@@ -292,9 +292,9 @@ export function SidebarComponent({ className, onToggleCollapse, collapsed = fals
                         </div>
                       </Button>
                       {/* Three Dot Menu Button - Opens Modal */}
-                       <Button 
-                          variant="ghost" 
-                          size="icon" 
+                       <Button
+                          variant="ghost"
+                          size="icon"
                           className="h-7 w-7 p-0 flex-shrink-0 text-stone-500 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 focus:opacity-100"
                           onClick={(e) => {
                             e.stopPropagation();
@@ -317,7 +317,7 @@ export function SidebarComponent({ className, onToggleCollapse, collapsed = fals
             <>
               <Separator className="bg-stone-200"/>
               <div className="px-3 py-2 flex flex-col gap-y-1 flex-shrink-0">
-                <Button 
+                <Button
                   variant="outline"
                   className="w-full justify-start gap-2 border-stone-200 text-stone-700 hover:bg-stone-200"
                   onClick={() => router.push('/pricing')}
@@ -328,7 +328,7 @@ export function SidebarComponent({ className, onToggleCollapse, collapsed = fals
               </div>
             </>
           )}
-          
+
           {/* Social Feedback Section (Separator is now only rendered once) */}
           <Separator className="bg-stone-200"/>
           <div className="px-5 py-4">
@@ -342,7 +342,7 @@ export function SidebarComponent({ className, onToggleCollapse, collapsed = fals
           {/* Profile Section (Moved here) */}
            <div className="p-3 border-t border-stone-200">
              <div className="relative">
-               <button 
+               <button
                  className="w-full h-10 bg-stone-50 text-stone-900 hover:bg-stone-200 rounded-lg flex items-center px-4 shadow-none profile-button"
                  onClick={(e) => {
                    e.stopPropagation();
@@ -362,13 +362,13 @@ export function SidebarComponent({ className, onToggleCollapse, collapsed = fals
                    showProfileMenu ? "rotate-180" : ""
                  )} />
                </button>
-               
+
                {showProfileMenu && (
-                 <div 
+                 <div
                    ref={profileMenuRef}
                    className="absolute bottom-full left-0 w-full bg-white rounded-lg shadow-lg border border-stone-200 py-1 mb-1"
                  >
-                   <button 
+                   <button
                      className="w-full px-4 py-2 text-left flex items-center gap-2 hover:bg-stone-100 text-stone-700"
                      onClick={() => {
                        setIsSettingsModalOpen(true);
@@ -379,7 +379,7 @@ export function SidebarComponent({ className, onToggleCollapse, collapsed = fals
                      <span>Settings</span>
                    </button>
                    <Separator className="my-1" />
-                   <button 
+                   <button
                      className="w-full px-4 py-2 text-left flex items-center gap-2 hover:bg-stone-100 text-red-600"
                      onClick={handleSignOut}
                    >
@@ -392,10 +392,10 @@ export function SidebarComponent({ className, onToggleCollapse, collapsed = fals
            </div>
         </>
       )}
-      <SettingsModal 
-        isOpen={isSettingsModalOpen} 
-        setIsOpen={setIsSettingsModalOpen} 
-        onSettingsChanged={handleSettingsChanged} 
+      <SettingsModal
+        isOpen={isSettingsModalOpen}
+        setIsOpen={setIsSettingsModalOpen}
+        onSettingsChanged={handleSettingsChanged}
       />
       <DeleteConfirmationModal
         isOpen={isDeleteModalOpen}
@@ -406,4 +406,4 @@ export function SidebarComponent({ className, onToggleCollapse, collapsed = fals
       />
     </div>
   );
-} 
+}

@@ -4,7 +4,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { 
+import {
   Table,
   TableBody,
   TableCell,
@@ -43,7 +43,7 @@ export default function ContextPage() {
   const [items, setItems] = useState<ContextItem[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const { isAuthenticated } = useAuth();
+  const { isAuthenticated, isLoading: isAuthLoading } = useAuth();
 
   // Rename delete-related state
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
@@ -71,9 +71,10 @@ export default function ContextPage() {
   const handleRowClick = (itemId: string) => {
     router.push(`/context/${itemId}`);
   };
-  
+
   // Updated navigation handler with auth check
   const handleGoToAddPage = () => {
+      if (isAuthLoading) return;
       if (isAuthenticated === false) {
           router.push('/sign-in');
           return;
@@ -91,14 +92,14 @@ export default function ContextPage() {
 
   // Renamed delete handler
   const handleDeleteItem = async () => {
-    if (!itemToDelete || isDeleting) return; 
+    if (!itemToDelete || isDeleting) return;
 
-    const deletedItemId = itemToDelete.id; 
-    setIsDeleting(true); 
-    setIsDeleteDialogOpen(false); 
+    const deletedItemId = itemToDelete.id;
+    setIsDeleting(true);
+    setIsDeleteDialogOpen(false);
 
     try {
-      const result = await deleteContextItem(deletedItemId); 
+      const result = await deleteContextItem(deletedItemId);
       if (result.success) {
         // Update client-side state immediately
         setItems(prevItems => prevItems.filter(item => item.id !== deletedItemId));
@@ -113,8 +114,8 @@ export default function ContextPage() {
       toast.error(message);
       setError(message); // Show error in list page if needed
     } finally {
-      setIsDeleting(false); 
-      setItemToDelete(null); 
+      setIsDeleting(false);
+      setItemToDelete(null);
     }
   };
 
@@ -122,11 +123,11 @@ export default function ContextPage() {
     <div className="container max-w-5xl mx-auto py-10 px-4 md:px-6">
       <div className="flex justify-between items-center mb-8">
         <h1 className="text-3xl font-bold">Manage Context</h1>
-        <Button 
-            onClick={handleGoToAddPage} 
+        <Button
+            onClick={handleGoToAddPage}
             size="sm"
             className="flex items-center gap-2 h-8 px-4"
-            disabled={isAuthenticated === null}
+            disabled={isAuthLoading}
         >
             <PlusCircle className="h-4 w-4" />
             <span>Add New</span>
@@ -168,16 +169,16 @@ export default function ContextPage() {
                 </TableRow>
               ) : (
                 items.map((item) => (
-                  <TableRow 
-                    key={item.id} 
+                  <TableRow
+                    key={item.id}
                     className="group border-b border-stone-100 hover:bg-stone-50/50"
-                  > 
-                    <TableCell className="px-1 py-1 align-middle"> 
-                        <Button 
-                            variant="ghost" 
-                            size="icon" 
-                            className="h-7 w-7 opacity-0 group-hover:opacity-100 transition-opacity text-stone-500 hover:text-red-600 hover:bg-red-100/50" 
-                            onClick={(e) => { 
+                  >
+                    <TableCell className="px-1 py-1 align-middle">
+                        <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-7 w-7 opacity-0 group-hover:opacity-100 transition-opacity text-stone-500 hover:text-red-600 hover:bg-red-100/50"
+                            onClick={(e) => {
                                 e.stopPropagation();
                                 openDeleteModal(item);
                             }}
@@ -185,14 +186,14 @@ export default function ContextPage() {
                            <TrashIcon className="h-4 w-4" />
                         </Button>
                     </TableCell>
-                    <TableCell 
-                        className="font-medium px-3 py-2 align-middle text-sm flex items-center gap-2 cursor-pointer" 
+                    <TableCell
+                        className="font-medium px-3 py-2 align-middle text-sm flex items-center gap-2 cursor-pointer"
                         onClick={() => handleRowClick(item.id)}
                     >
                        <FileText className="h-4 w-4 text-stone-400 flex-shrink-0" />
                        <span>{item.name}</span>
                     </TableCell>
-                    <TableCell 
+                    <TableCell
                         className="px-3 py-2 align-middle cursor-pointer"
                         onClick={() => handleRowClick(item.id)}
                     >
@@ -200,7 +201,7 @@ export default function ContextPage() {
                         {item.content}
                       </p>
                     </TableCell>
-                    <TableCell 
+                    <TableCell
                         className="text-sm text-stone-500 px-3 py-2 align-middle cursor-pointer"
                         onClick={() => handleRowClick(item.id)}
                     >
@@ -217,9 +218,9 @@ export default function ContextPage() {
          isOpen={isDeleteDialogOpen}
          setIsOpen={setIsDeleteDialogOpen}
          itemTitle={itemToDelete?.name ?? null}
-         onConfirmDelete={handleDeleteItem} 
-         isDeleting={isDeleting} 
+         onConfirmDelete={handleDeleteItem}
+         isDeleting={isDeleting}
        />
     </div>
   );
-} 
+}

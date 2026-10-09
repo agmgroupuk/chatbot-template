@@ -82,7 +82,7 @@ export default function ContextDetailPage() {
 
     const handleSave = async () => {
         if (!item || !isDirty || isSaving || !editableName.trim() || !editableContent.trim()) {
-            console.log("Save condition not met", { item, isDirty, isSaving, editableName, editableContent });
+
             return;
         }
 
@@ -145,7 +145,7 @@ export default function ContextDetailPage() {
                     <ArrowLeftIcon className="h-4 w-4"/>
                     <span>Back</span>
                 </Button>
-                <Button 
+                <Button
                     size="sm"
                     onClick={handleSave}
                     disabled={!isDirty || isSaving || !editableName.trim() || !editableContent.trim()}
@@ -181,14 +181,14 @@ export default function ContextDetailPage() {
 
             <Textarea
                  id="context-content"
-                 placeholder="Start writing your context here... Type '/' for commands." 
+                 placeholder="Write reference information for your chats..."
                  value={editableContent}
                  onChange={handleContentChange}
                  required
                  disabled={isSaving}
                  className="w-full border-0 focus-visible:ring-0 focus:outline-none min-h-[300px] bg-white shadow-none text-base text-stone-900 resize-none placeholder:text-stone-500 py-2 leading-relaxed"
             />
-            
+
              {error && !isLoading && (
                 <Alert variant="destructive" className="mt-6 text-sm p-3">
                     <ExclamationTriangleIcon className="h-4 w-4" />
@@ -198,4 +198,4 @@ export default function ContextDetailPage() {
              )}
         </div>
     );
-} 
+}
