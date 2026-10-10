@@ -12,6 +12,11 @@ export default defineRailway(() => {
     env: {
       DATABASE_URL: preserve(),
       NEXT_PUBLIC_SITE_URL: preserve(),
+      RESEND_API_KEY: preserve(),
+      EMAIL_FROM: preserve(),
+      EMAIL_FROM_AUTH: preserve(),
+      EMAIL_FROM_BILLING: preserve(),
+      EMAIL_REPLY_TO: preserve(),
       PORT: preserve(),
       BILLING_PROVIDER: "stripe",
       STRIPE_MODE: "test",

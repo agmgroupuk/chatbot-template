@@ -11,7 +11,10 @@
     "test": "node --test tests/*.test.mjs",
     "test:website": "node scripts/test-website.mjs",
     "db:migrate": "node scripts/migrate.mjs",
-    "test:chat": "node scripts/test-website.mjs --features-only"
+    "test:chat": "node scripts/test-website.mjs --features-only",
+    "test:email": "node scripts/test-resend-templates.mjs",
+    "test:email:send": "node scripts/test-resend-templates.mjs --send",
+    "verify:resend": "node scripts/verify-resend-setup.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.133.0",
@@ -47,6 +50,7 @@
     "rehype-katex": "^7.0.1",
     "remark-gfm": "^4.0.1",
     "remark-math": "^6.0.0",
+    "resend": "^6.32.1",
     "sonner": "^2.0.8",
     "stripe": "^23.0.0",
     "tailwind-merge": "^3.2.0",
@@ -70,6 +74,8 @@
     "eslint-plugin-react-hooks": "^5.2.0",
     "postcss": "^8.5.3",
     "railway": "^3.13.1",
+    "resend-mcp": "^2.25.0",
+    "tsx": "^4.23.15",
     "typescript": "^5.8.2"
   },
   "engines": {

@@ -1,7 +1,7 @@
 import 'server-only';
 import { query, transaction } from './db';
 import { hashPassword, verifyPassword, randomToken, tokenHash } from './password';
-import { sendAuthEmail, emailConfigured } from './email';
+import { sendAuthEmail, sendPasswordChangedEmail, emailConfigured } from './email';
 import { siteUrl } from './site-url';
 export function normalizeEmail(value:string) {
   const email=value.trim().toLowerCase();
@@ -59,11 +59,18 @@ export async function consumeVerification(token:string) {
 export async function resetPassword(token:string,password:string) {
   if(!/^[A-Za-z0-9_-]{43}$/.test(token)) throw new Error('Request a new password reset link.');
   const hash=await hashPassword(password);
+  let userEmail: string | null = null;
   await transaction(async client=>{
     const {rows}=await client.query(`delete from auth_tokens where token_hash=$1 and purpose='reset' and expires_at>now() returning user_id`,[tokenHash(token)]);
     if(!rows.length) throw new Error('Invalid or expired password reset link.');
-    await client.query('update app_users set password_hash=$1 where id=$2',[hash,rows[0].user_id]);
-    await client.query('delete from app_sessions where user_id=$1',[rows[0].user_id]);
-    await client.query("delete from auth_tokens where user_id=$1 and purpose='reset'",[rows[0].user_id]);
+    const userId = rows[0].user_id as string;
+    await client.query('update app_users set password_hash=$1 where id=$2',[hash,userId]);
+    await client.query('delete from app_sessions where user_id=$1',[userId]);
+    await client.query("delete from auth_tokens where user_id=$1 and purpose='reset'",[userId]);
+    const emailRows = await client.query<{email:string}>('select email from app_users where id=$1',[userId]);
+    userEmail = emailRows.rows[0]?.email || null;
   });
+  if (userEmail) {
+    try { await sendPasswordChangedEmail(userEmail, '/sign-in'); } catch { /* non-blocking confirmation */ }
+  }
 }
