@@ -4,14 +4,13 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
 import { useRouter } from 'next/navigation';
-import { Elements, PaymentElement, useElements, useStripe } from '@stripe/react-stripe-js';
-import { loadStripe } from '@stripe/stripe-js';
 import { ArrowUp, ChevronLeft, ChevronRight, CreditCard, FileText, History, LayoutGrid, Plus, Settings, Wallet, UserRound, X } from 'lucide-react';
-import { createWorkspaceCreditPaymentIntent, getWorkspaceBillingData, prepareWorkspaceCardUpdate, saveWorkspaceCard, workspaceCreditPurchaseStatus } from '@/app/workspace-actions';
+import { getWorkspaceBillingData, saveWorkspaceCard, workspaceCreditPurchaseStatus } from '@/app/workspace-actions';
 import { ConversationTools, exportConversation } from './conversation-tools';
 import { MessageContent } from './message-content';
 import { getMessagesForChat } from '@/app/actions';
 import { workspaceCreditPack } from '@/lib/workspace-credit-pack';
+import { publicCheckoutPath } from '@/lib/site-url';
 
 type WorkspaceData =
   | {
@@ -35,90 +34,7 @@ function readImageDataUrl(file: File): Promise<string> {
   });
 }
 
-function WorkspacePaymentForm({ purchaseId, onComplete, initialData }: { purchaseId: string; onComplete: () => void; initialData: WorkspaceData }) {
-  const stripe = useStripe();
-  const elements = useElements();
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState('error' in initialData ? initialData.error : '');
 
-  async function submit(event: React.FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    if (!stripe || !elements || busy) return;
-    setBusy(true);
-    setError('');
-    try {
-      const result = await stripe.confirmPayment({
-        elements,
-        redirect: 'if_required',
-        confirmParams: { return_url: `${location.origin}/workspace?purchase=${purchaseId}` },
-      });
-      if (result.error) throw new Error(result.error.message || 'The payment could not be completed.');
-      if (result.paymentIntent?.status !== 'succeeded') {
-        setError('Payment is still processing. Check your transaction history in a moment.');
-        return;
-      }
-      const status = await workspaceCreditPurchaseStatus(purchaseId);
-      if (status.status !== 'succeeded') throw new Error('Payment was received but credits are still syncing. Refresh the Workspace shortly.');
-      onComplete();
-    } catch (error) {
-      setError(error instanceof Error ? error.message : 'The payment could not be completed.');
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  return (
-    <form className="workspace-payment-form" onSubmit={submit}>
-      <PaymentElement />
-      {error && <p className="workspace-alert" role="alert">{error}</p>}
-      <button className="workspace-primary-button" type="submit" disabled={!stripe || busy}>
-        {busy ? 'Processing payment…' : `Pay $${(workspaceCreditPack.amount / 100).toFixed(2)} USD`}
-      </button>
-      <p className="workspace-muted-copy">One-time payment. This does not start a subscription.</p>
-    </form>
-  );
-}
-
-function WorkspaceCardForm({ onComplete }: { onComplete: () => void }) {
-  const stripe = useStripe();
-  const elements = useElements();
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState('');
-
-  async function submit(event: React.FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    if (!stripe || !elements || busy) return;
-    setBusy(true);
-    setError('');
-    try {
-      const result = await stripe.confirmSetup({
-        elements,
-        redirect: 'if_required',
-        confirmParams: { return_url: `${location.origin}/workspace` },
-      });
-      if (result.error) throw new Error(result.error.message || 'Card verification failed.');
-      if (result.setupIntent?.status !== 'succeeded') throw new Error('Card verification is still processing.');
-      const saved = await saveWorkspaceCard(result.setupIntent.id);
-      if (saved.error) throw new Error(saved.error);
-      onComplete();
-    } catch (error) {
-      setError(error instanceof Error ? error.message : 'Unable to save payment method.');
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  return (
-    <form className="workspace-payment-form" onSubmit={submit}>
-      <PaymentElement />
-      {error && <p className="workspace-alert" role="alert">{error}</p>}
-      <button className="workspace-primary-button" type="submit" disabled={!stripe || busy}>
-        {busy ? 'Verifying card…' : 'Save Workspace payment method'}
-      </button>
-      <p className="workspace-muted-copy">Saving a card does not enable automatic or scheduled charges.</p>
-    </form>
-  );
-}
 
 export function WorkspaceApplication({
   email,
@@ -158,9 +74,6 @@ export function WorkspaceApplication({
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState('');
   const [error, setError] = useState('');
-  const [paymentSecret, setPaymentSecret] = useState('');
-  const [setupSecret, setSetupSecret] = useState('');
-  const [purchaseId, setPurchaseId] = useState('');
   const [accessPrompt, setAccessPrompt] = useState<'signin' | 'credits' | null>(null);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
@@ -168,7 +81,6 @@ export function WorkspaceApplication({
     const deleted=(event:Event)=>{if((event as CustomEvent<string>).detail===conversationId){setMessages([]);setPrompt('');setTaskAttachments([]);setTaskImages([]);setConversationId(crypto.randomUUID());window.history.replaceState(null,'','/workspace');}};
     window.addEventListener('conversation-deleted',deleted);return()=>window.removeEventListener('conversation-deleted',deleted);
   },[conversationId]);
-  const stripePromise = useMemo(() => publishableKey ? loadStripe(publishableKey) : null, [publishableKey]);
   const balance = 'balance' in data ? data.balance : null;
   const transactions = 'transactions' in data ? data.transactions : [];
   const usage = 'usage' in data ? data.usage : [];
@@ -184,29 +96,71 @@ export function WorkspaceApplication({
   }, []);
 
   useEffect(() => {
-    if (paymentConfirmed) setNotice('Your Workspace credit purchase is complete.');
     const params = new URLSearchParams(window.location.search);
+    const purchaseId = params.get('purchase');
     const setupIntentId = params.get('setup_intent');
-    if (params.has('purchase') || setupIntentId) {
-      router.replace('/workspace', { scroll: false });
-    }
-    if (!setupIntentId) return;
-
+    const billing = params.get('billing');
     let active = true;
-    setNotice('Verifying your Workspace payment method…');
-    void saveWorkspaceCard(setupIntentId)
-      .then((result) => {
-        if (!active) return;
-        if (result.error) setError(result.error);
-        else {
-          setError('');
-          setNotice('Workspace payment method saved.');
-          void refreshData();
-        }
-      })
-      .catch((failure: unknown) => {
-        if (active) setError(failure instanceof Error ? failure.message : 'Unable to verify the saved payment method.');
-      });
+
+    if (paymentConfirmed || billing === 'success') {
+      setNotice('Your Workspace credit purchase is complete.');
+      void refreshData();
+    } else if (billing === 'card_saved') {
+      setNotice('Workspace payment method saved.');
+      void refreshData();
+    } else if (billing === 'cancelled') {
+      setNotice('Checkout was cancelled. Your Workspace credits were not changed.');
+    } else if (billing === 'failed') {
+      setError('Payment did not complete. No credits were added.');
+    }
+
+    if (purchaseId) {
+      void workspaceCreditPurchaseStatus(purchaseId)
+        .then((result) => {
+          if (!active) return;
+          if (result?.error) setError(result.error);
+          else {
+            setError('');
+            setNotice(result?.status === 'succeeded' ? 'Your Workspace credit purchase is complete.' : result?.status === 'pending' ? 'Payment is still processing. Credits will appear after confirmation.' : 'Credit purchase did not complete.');
+            void refreshData();
+          }
+        })
+        .catch((failure: unknown) => {
+          if (active) setError(failure instanceof Error ? failure.message : 'Unable to confirm the credit purchase.');
+        });
+    }
+
+    if (setupIntentId) {
+      setNotice('Verifying your Workspace payment method…');
+      void saveWorkspaceCard(setupIntentId)
+        .then((result) => {
+          if (!active) return;
+          if (result.error) setError(result.error);
+          else {
+            setError('');
+            setNotice('Workspace payment method saved.');
+            void refreshData();
+          }
+        })
+        .catch((failure: unknown) => {
+          if (active) setError(failure instanceof Error ? failure.message : 'Unable to verify the saved payment method.');
+        });
+    }
+
+    if (purchaseId || setupIntentId || billing) {
+      const next = new URLSearchParams(params);
+      // Keep task id if present; drop payment return params after handling.
+      next.delete('purchase');
+      next.delete('setup_intent');
+      next.delete('setup_intent_client_secret');
+      next.delete('billing');
+      next.delete('payment_intent');
+      next.delete('payment_intent_client_secret');
+      next.delete('redirect_status');
+      const query = next.toString();
+      router.replace(query ? `/workspace?${query}` : '/workspace', { scroll: false });
+    }
+
     return () => { active = false; };
   }, [paymentConfirmed, refreshData, router]);
 
@@ -285,33 +239,24 @@ export function WorkspaceApplication({
     }
   }
 
-  async function beginPurchase() {
+  function beginPurchase() {
     if (!isAuthenticated) {
       setAccessPrompt('signin');
       return;
     }
     setError('');
     setNotice('');
-    const id = crypto.randomUUID();
-    const result = await createWorkspaceCreditPaymentIntent(id);
-    if (result.error) {
-      setError(result.error);
-      return;
-    }
-    setPurchaseId(id);
-    setPaymentSecret(result.clientSecret);
+    location.assign(publicCheckoutPath('/checkout/credits'));
   }
 
-  async function beginCardSetup() {
+  function beginCardSetup() {
     if (!isAuthenticated) {
       setAccessPrompt('signin');
       return;
     }
     setError('');
     setNotice('');
-    const result = await prepareWorkspaceCardUpdate();
-    if (result.error) setError(result.error);
-    else setSetupSecret(result.clientSecret);
+    location.assign(publicCheckoutPath('/checkout/card'));
   }
 
   const dateTime = (value: string) => new Date(value).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
@@ -398,20 +343,6 @@ export function WorkspaceApplication({
               <button className="workspace-link-button" type="button" onClick={() => void beginCardSetup()} disabled={isAuthenticated && !publishableKey}>Manage payment method</button>
             </article>
           </section>
-
-          {(paymentSecret || setupSecret) && stripePromise && (
-            <section className="workspace-panel workspace-checkout-panel" aria-label={paymentSecret ? 'Add Workspace credits' : 'Save Workspace payment method'}>
-              <div className="workspace-panel-heading">
-                <div><p className="workspace-eyebrow">{paymentSecret ? 'ONE-TIME PURCHASE' : 'PAYMENT SETTINGS'}</p><h2>{paymentSecret ? 'Add credits to your balance' : 'Save a payment method'}</h2></div>
-                <button className="workspace-link-button" type="button" onClick={() => { setPaymentSecret(''); setSetupSecret(''); }}>Cancel</button>
-              </div>
-              <Elements stripe={stripePromise} options={{ clientSecret: paymentSecret || setupSecret }} key={paymentSecret || setupSecret}>
-                {paymentSecret
-                  ? <WorkspacePaymentForm purchaseId={purchaseId} onComplete={() => { setPaymentSecret(''); setNotice('50 Workspace credits were added to your balance.'); void refreshData(); }} initialData={data} />
-                  : <WorkspaceCardForm onComplete={() => { setSetupSecret(''); setNotice('Workspace payment method saved.'); void refreshData(); }} />}
-              </Elements>
-            </section>
-          )}
 
           {isAuthenticated && <section className="workspace-panel"><h2>Saved tasks and projects</h2><ConversationTools area="workspace" onOpen={id=>void openTask(id)} refreshKey={historyVersion}/></section>}
           <section className="workspace-panel workspace-task-panel" aria-label="Workspace AI task">

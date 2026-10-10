@@ -1,35 +1,41 @@
 "use client";
+
 import { useEffect } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { checkoutStatusAction } from '@/app/billing-actions';
+import { publicSitePath } from '@/lib/site-url';
 
 export function CheckoutSuccessHandler() {
-  const router = useRouter();
   const params = useSearchParams();
+  const router = useRouter();
+
   useEffect(() => {
-    if (params.get('checkout') !== 'success') return;
+    const sessionId = params.get('session_id');
+    if (!sessionId) return;
+
     let cancelled = false;
-    const session = params.get('session_id');
-    async function reconcile() {
-      for (let attempt = 0; attempt < 6 && !cancelled; attempt++) {
-        try {
-          if (!session || await checkoutStatusAction(session) === 'paid') {
-            if (cancelled) return;
-            const url = new URL(window.location.href);
-            url.searchParams.delete('checkout');
-            url.searchParams.delete('session_id');
-            window.history.replaceState({}, '', url.pathname + url.search);
-            router.refresh();
-            return;
-          }
-        } catch {
-          // Keep the processing message and URL for a later refresh/retry.
+    (async () => {
+      try {
+        const result = await checkoutStatusAction(sessionId);
+        if (cancelled) return;
+        if (result === 'paid') {
+          router.replace(publicSitePath('/dashboard/billing?billing=success'));
+          return;
         }
-        await new Promise(resolve => setTimeout(resolve,2000));
+        if (result === 'pending') {
+          router.replace(publicSitePath('/dashboard/billing?billing=action_required'));
+          return;
+        }
+        router.replace(publicSitePath('/pricing?billing=failed'));
+      } catch {
+        if (!cancelled) router.replace(publicSitePath('/pricing?billing=failed'));
       }
-    }
-    void reconcile();
-    return () => { cancelled = true; };
-  },[params,router]);
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [params, router]);
+
   return null;
 }

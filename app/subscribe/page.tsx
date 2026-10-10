@@ -1,16 +1,41 @@
 import Link from 'next/link';
-import { currentUser } from '@/lib/session';
-import { PageHeading } from '@/components/page-heading';
+import { redirect } from 'next/navigation';
 import { SubscriptionForm } from '@/components/subscription-form';
-import { findPlan,priceLabel } from '@/lib/plans';
-import { notFound } from 'next/navigation';
-import { billingEnvironment } from '@/lib/billing-environment';
-export const metadata={title:'Subscribe',robots:{index:false,follow:false}};
-export default async function Subscribe({searchParams}:{searchParams:Promise<{plan?:string;mode?:string;setup_intent?:string}>}) {
-  const params=await searchParams;let plan;try{plan=findPlan(params.plan||'monthly');}catch{notFound();}
-  const mode=params.mode==='paid'?'paid':'trial';const user=await currentUser(),stripeMode=billingEnvironment();
-  const key=process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY||'';
-  const publishableKeyPattern = stripeMode === 'live' ? /^pk_live_/ : /^pk_test_/;
-  const next=encodeURIComponent(`/subscribe?plan=${plan.key}&mode=${mode}`);
-  return <div className="page-wrap"><PageHeading eyebrow="HOMEPAGE CHAT PLAN" title={`${plan.name}: ${priceLabel(plan)}`} description={mode==='trial'?`${plan.trialDays}-day free trial. Your trial starts only after successful card verification.`:'Subscribe without a trial. The first payment is due today.'} /><div className="two-grid"><section className="panel stack"><h2>{mode==='trial'?'Start your free trial':'Start your subscription'}</h2><p>Unlimited homepage chat while your trial or paid membership is active. This subscription does not include Workspace credits. Renews automatically at {priceLabel(plan)} until cancelled.</p><p>{mode==='trial'?`The first payment is due ${plan.trialDays} days after your card is verified and the trial starts. We show the exact date when activated. No subscription charge today.`:'The first subscription payment is charged today.'} Cancel before the renewal date in Chat plans & billing.</p><div className="notice">{stripeMode==='test'?'Payments are in Stripe test mode. Use test cards only; no real payment will be taken.':'Payments are processed securely by Stripe in live mode.'}</div>{!user?<div className="stack"><p>Create or sign in to an account to securely link your subscription and card.</p><Link className="button" href={`/sign-in?next=${next}`}>Sign in to continue</Link><Link className="text-link" href={`/sign-up?next=${next}`}>Create an account</Link></div>:publishableKeyPattern.test(key)?<SubscriptionForm planKey={plan.key} mode={mode} publishableKey={key} resumeSetup={params.setup_intent} />:<p className="notice">Card setup is not configured yet. Please contact support.</p>}</section><aside className="panel"><h2>Clear terms before you start</h2><ul><li>Card details go directly to Stripe. One Fin does not store card numbers or security codes.</li><li>One trial per account and payment card across all plans.</li><li>Renewal changes preserve your current period, without proration or another trial.</li><li>Bank authentication may be required for setup or later payments.</li></ul><Link className="text-link" href={`/subscribe?plan=${plan.key}&mode=${mode==='trial'?'paid':'trial'}`}>{mode==='trial'?'Subscribe without trial':'Choose free trial'}</Link><p><Link className="text-link" href="/payment-policy">Payment, cancellation & refund policy</Link></p></aside></div></div>;
+import { findPlan, priceLabel } from '@/lib/plans';
+import { currentUser } from '@/lib/session';
+import { sitePath } from '@/lib/site-url';
+
+export default async function SubscribePage({
+  searchParams,
+}: {
+  searchParams: Promise<{ plan?: string; mode?: string; setup?: string }>;
+}) {
+  const user = await currentUser();
+  if (!user) redirect(sitePath('/sign-in'));
+
+  const params = await searchParams;
+  const plan = findPlan(params.plan || '');
+  if (!plan || plan.key === 'custom') redirect(sitePath('/pricing'));
+  const mode = params.mode === 'paid' ? 'paid' : 'trial';
+  const publishableKey = process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY || '';
+  if (!publishableKey) throw new Error('NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY is required.');
+
+  return (
+    <div className="page-wrap">
+      <p className="eyebrow">Secure checkout</p>
+      <h1>{mode === 'trial' ? `Start ${plan.name} free trial` : `Subscribe to ${plan.name}`}</h1>
+      <p className="lede">
+        {mode === 'trial'
+          ? `Card required. ${priceLabel(plan)} after ${plan.trialDays} day${plan.trialDays === 1 ? '' : 's'} unless you cancel.`
+          : `${priceLabel(plan)} starts after your card is verified.`}
+      </p>
+      <p className="muted">Signed in as {user.email}</p>
+      <SubscriptionForm planKey={plan.key} mode={mode} publishableKey={publishableKey} resumeSetup={params.setup} />
+      <p>
+        <Link className="text-link" href={sitePath('/pricing?billing=cancelled')}>
+          Cancel and return to pricing
+        </Link>
+      </p>
+    </div>
+  );
 }
