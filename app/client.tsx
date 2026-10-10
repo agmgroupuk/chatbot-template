@@ -15,26 +15,23 @@ interface ClientLayoutProps {
 
 function ClientLayoutContent({ children }: ClientLayoutProps) {
   const pathname = usePathname();
-  const { isAuthenticated } = useAuth();
+  const { isAuthenticated, isLoading: isAuthLoading } = useAuth();
   const isHomePage = pathname === '/';
   const isWorkspacePage = pathname === '/workspace';
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [activePlanName, setActivePlanName] = useState<string | null>(null);
-  const [isSubscriptionLoading, setIsSubscriptionLoading] = useState(false);
 
   useEffect(() => {
     let active = true;
 
     if (!isHomePage || !isAuthenticated) {
       setActivePlanName(null);
-      setIsSubscriptionLoading(false);
       return () => {
         active = false;
       };
     }
 
-    setIsSubscriptionLoading(true);
     getSubscriptionDetails()
       .then((details) => {
         if (active) setActivePlanName(details.planName);
@@ -42,11 +39,7 @@ function ClientLayoutContent({ children }: ClientLayoutProps) {
       .catch((error: unknown) => {
         console.error('Error fetching subscription status:', error);
         if (active) setActivePlanName(null);
-      })
-      .finally(() => {
-        if (active) setIsSubscriptionLoading(false);
       });
-
     return () => {
       active = false;
     };
@@ -60,10 +53,10 @@ function ClientLayoutContent({ children }: ClientLayoutProps) {
           <SidebarComponent
             className={`home-chat-sidebar${isMobileSidebarOpen ? ' is-mobile-open' : ''}${isSidebarCollapsed ? ' is-collapsed' : ''}`}
             isAuthenticated={isAuthenticated}
+            isAuthLoading={isAuthLoading}
             collapsed={isSidebarCollapsed}
             onToggleCollapse={() => setIsSidebarCollapsed((collapsed) => !collapsed)}
             activePlanName={activePlanName}
-            isSubscriptionLoading={isSubscriptionLoading}
           />
           {isMobileSidebarOpen && (
             <button

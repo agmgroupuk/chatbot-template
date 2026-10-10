@@ -52,11 +52,20 @@ try {
   assert.ok(await page.locator('.home-chat-sidebar').isVisible(),'Homepage shows its dedicated chat sidebar');
   assert.ok(await page.getByRole('button',{name:'New chat'}).isVisible(),'Homepage can start a new chat');
   assert.ok(await page.getByRole('button',{name:'customer support',exact:true}).isVisible(),'Homepage offers prompt starters');
-  assert.ok(await page.getByRole('button',{name:/Profile/}).isVisible(),'Homepage sidebar shows the account menu');
-  assert.ok(await page.locator('.home-chat-sidebar a[href="/workspace"]').isVisible(),'Homepage links to the separate Workspace');
-  assert.equal(await page.locator('.home-chat-sidebar a[href="/context"]').count(),1,'Context navigation has its own destination');
-  assert.equal(await page.locator('.home-chat-sidebar a[href="/account"]').count(),1,'Account navigation has its own destination');
-  assert.ok(await page.getByRole('link',{name:'Company information'}).isVisible(),'Homepage sidebar links to company information');
+  const profileButton=page.locator('.home-chat-sidebar .profile-button');
+  await profileButton.waitFor();
+  await profileButton.click();
+  const profileMenu=page.getByRole('region',{name:'Profile and application menu'});
+  assert.ok(await profileMenu.getByRole('link',{name:'Dashboard'}).isVisible(),'Profile menu contains the account dashboard');
+  assert.ok(await profileMenu.getByRole('link',{name:'Workspace app'}).isVisible(),'Profile menu contains Workspace app');
+  assert.ok(await profileMenu.getByRole('link',{name:'Context'}).isVisible(),'Profile menu contains Context');
+  assert.ok(await profileMenu.getByRole('link',{name:'Account',exact:true}).isVisible(),'Profile menu contains account settings');
+  assert.ok(await profileMenu.getByRole('link',{name:'Contact'}).isVisible(),'Profile menu contains contact support');
+  assert.ok(await profileMenu.getByRole('link',{name:'Company information'}).isVisible(),'Profile menu contains company information');
+  assert.ok(await profileMenu.getByRole('link',{name:'Sign up'}).isVisible(),'Signed-out users see Sign up');
+  assert.ok(await profileMenu.getByRole('link',{name:'Sign in'}).isVisible(),'Signed-out users see Sign in');
+  assert.equal(await profileMenu.getByRole('button',{name:'Settings'}).count(),0,'Signed-out users do not see authenticated settings');
+  await profileButton.click();
   await page.getByRole('button',{name:'Collapse sidebar'}).click();
   assert.ok(await page.getByRole('button',{name:'Expand sidebar'}).isVisible(),'Homepage sidebar can be reopened from its collapsed state');
   await page.getByRole('button',{name:'Expand sidebar'}).click();
@@ -87,6 +96,7 @@ try {
   await page.goto(`${origin}/support`);await page.getByLabel('Search the help center').fill('forgot');assert.equal(await page.locator('details').count(),1);await page.locator('summary').click();assert.ok(await page.getByText('The link lasts 30 minutes',{exact:false}).isVisible());checks++;
   await page.goto(`${origin}/contact`);await page.getByLabel('Your name').fill('Guest Fixture');await page.getByLabel('Email address').fill('guest@example.test');await page.getByLabel('Subject',{exact:true}).fill('Guest support question');await page.getByLabel(/^Message/).fill('Please help me understand which plan interval fits my needs.');await page.getByRole('button',{name:'Submit request',exact:true}).click();await page.getByRole('heading',{name:'Thank you for reaching out.'}).waitFor();checks++;
   await page.goto(`${origin}/sign-in`);await page.getByLabel('Email address').fill('browser@example.test');await page.getByLabel('Password',{exact:true}).fill(password);await page.getByRole('button',{name:'Sign in',exact:true}).click();await page.waitForURL('**/dashboard');await page.getByRole('heading',{name:'Welcome back, Browser.'}).waitFor();assert.ok(await page.getByRole('link',{name:'My saved conversation',exact:true}).isVisible());assert.equal(await page.getByText('Other user private conversation',{exact:true}).count(),0);checks++;
+  await page.goto(`${origin}/`);await page.locator('.home-chat-sidebar .profile-button').click();const signedInMenu=page.getByRole('region',{name:'Profile and application menu'});assert.ok(await signedInMenu.getByRole('button',{name:'Settings'}).isVisible(),'Signed-in profile menu offers Settings');assert.ok(await signedInMenu.getByRole('button',{name:'Sign out'}).isVisible(),'Signed-in profile menu offers Sign out');assert.equal(await signedInMenu.getByRole('link',{name:'Sign in'}).count(),0);await signedInMenu.getByRole('button',{name:'Settings'}).click();const settings=page.getByRole('dialog',{name:'Settings'});await settings.waitFor();assert.ok(await settings.getByRole('tab',{name:'Account'}).isVisible());assert.ok(await settings.getByRole('tab',{name:'Models'}).isVisible());assert.ok(await settings.getByRole('tab',{name:'Subscription'}).isVisible());await settings.getByRole('button',{name:'Close settings'}).click();await settings.waitFor({state:'detached'});checks++;
   await page.goto(`${origin}/workspace`);await page.getByRole('heading',{level:1,name:'Build something useful.'}).waitFor();
   assert.equal(await page.locator('.home-chat-sidebar').count(),0,'Workspace never mounts the homepage chat sidebar');
   assert.equal(await page.locator('.site-header, footer').count(),0,'Workspace keeps its dedicated app shell');
@@ -102,10 +112,10 @@ try {
   await db.query("update credit_buckets set remaining=0 where user_id=$1 and reference=$2",[user,`signup:${user}`]);
   await page.reload();await page.getByRole('heading',{level:1,name:'Build something useful.'}).waitFor();await page.getByRole('textbox',{name:'Describe a Workspace task'}).fill('Try with no available credits');await page.getByRole('button',{name:'Run task'}).click();await page.getByRole('dialog').getByRole('heading',{name:'Add credits to continue'}).waitFor();checks++;
   await page.getByRole('dialog').getByRole('button',{name:'Not now'}).click();await db.query("update credit_buckets set remaining=10 where user_id=$1 and reference=$2",[user,`signup:${user}`]);
-  await page.goto(`${origin}/`);await page.locator('.home-chat-sidebar a[href="/dashboard"]').click();await page.waitForURL('**/dashboard');await page.getByRole('heading',{name:'Welcome back, Browser.'}).waitFor();assert.equal(new URL(page.url()).pathname,'/dashboard','Dashboard sidebar link opens the dashboard rather than Workspace');checks++;
-  await page.goto(`${origin}/`);await page.locator('.home-chat-sidebar a[href="/context"]').click();await page.waitForURL('**/context');assert.equal(new URL(page.url()).pathname,'/context','Context sidebar link opens its own page');checks++;
-  await page.goto(`${origin}/`);await page.locator('.home-chat-sidebar a[href="/account"]').click();await page.waitForURL('**/account');await page.getByRole('heading',{name:'Make yourself at home.'}).waitFor();assert.equal(new URL(page.url()).pathname,'/account','Account sidebar link opens its own page');checks++;
-  await page.goto(`${origin}/`);await page.locator('.home-chat-sidebar a[href="/workspace"]').click();await page.waitForURL('**/workspace');assert.equal(new URL(page.url()).pathname,'/workspace','Workspace sidebar link opens Workspace');checks++;
+  await page.goto(`${origin}/`);await page.locator('.home-chat-sidebar .profile-button').click();await page.getByRole('region',{name:'Profile and application menu'}).getByRole('link',{name:'Dashboard'}).click();await page.waitForURL('**/dashboard');await page.getByRole('heading',{name:'Welcome back, Browser.'}).waitFor();assert.equal(new URL(page.url()).pathname,'/dashboard','Dashboard profile-menu link opens the dashboard rather than Workspace');checks++;
+  await page.goto(`${origin}/`);await page.locator('.home-chat-sidebar .profile-button').click();await page.getByRole('region',{name:'Profile and application menu'}).getByRole('link',{name:'Context'}).click();await page.waitForURL('**/context');assert.equal(new URL(page.url()).pathname,'/context','Context profile-menu link opens its own page');checks++;
+  await page.goto(`${origin}/`);await page.locator('.home-chat-sidebar .profile-button').click();await page.getByRole('region',{name:'Profile and application menu'}).getByRole('link',{name:'Account',exact:true}).click();await page.waitForURL('**/account');await page.getByRole('heading',{name:'Make yourself at home.'}).waitFor();assert.equal(new URL(page.url()).pathname,'/account','Account profile-menu link opens its own page');checks++;
+  await page.goto(`${origin}/`);await page.locator('.home-chat-sidebar .profile-button').click();await page.getByRole('region',{name:'Profile and application menu'}).getByRole('link',{name:'Workspace app'}).click();await page.waitForURL('**/workspace');assert.equal(new URL(page.url()).pathname,'/workspace','Workspace profile-menu link opens Workspace');checks++;
   page.setViewportSize({width:390,height:844});
   assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth+1),'Workspace has no mobile horizontal overflow');
   assert.ok(await page.getByRole('textbox',{name:'Describe a Workspace task'}).isVisible(),'Workspace task composer remains usable on mobile');
@@ -124,7 +134,7 @@ try {
   await page.goto(`${origin}/workspace`);await page.getByRole('heading',{level:1,name:'Build something useful.'}).waitFor();assert.equal(await page.locator('.home-chat-sidebar').count(),0,'Unauthenticated Workspace requests do not reveal homepage chat');checks++;
   await page.setViewportSize({width:390,height:844});
   for(const path of ['/','/pricing','/support','/contact','/privacy','/forgot-password','/workspace']){await page.goto(`${origin}${path}`);await page.locator('h1').waitFor();assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth+1),`${path} mobile overflow`);checks++;}
-  await page.goto(`${origin}/`);await page.getByRole('button',{name:'Open chat menu'}).click();await page.locator('.home-chat-sidebar').getByRole('link',{name:'Company information'}).click();await page.waitForURL('**/about');await page.getByRole('heading',{level:1}).waitFor();checks++;
+  await page.goto(`${origin}/`);await page.getByRole('button',{name:'Open chat menu'}).click();await page.locator('.home-chat-sidebar .profile-button').click();await page.getByRole('region',{name:'Profile and application menu'}).getByRole('link',{name:'Company information'}).click();await page.waitForURL('**/about');await page.getByRole('heading',{level:1}).waitFor();checks++;
   await page.goto(`${origin}/pricing`);await page.getByRole('heading',{name:'Daily',exact:true}).waitFor();await page.screenshot({path:new URL('pricing-mobile.png',artifacts).pathname.replace(/^\/([A-Z]:)/,'$1'),fullPage:true});
   assert.deepEqual(failures,[],'No browser JavaScript errors');
   console.log(`Passed ${checks} website checks against an isolated local database.`);

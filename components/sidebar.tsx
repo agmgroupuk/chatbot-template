@@ -12,9 +12,10 @@ import {
   ChevronDown,
   Plus,
   Mail,
-  ArrowRight,
   Settings,
   LogOut,
+  LogIn,
+  UserPlus,
   User,
   MoreHorizontal,
 } from "lucide-react";
@@ -35,30 +36,16 @@ function capitalizeFirstLetter(string: string | null): string {
   return string.charAt(0).toUpperCase() + string.slice(1);
 }
 
-// Define SocialLink at the top level
-const SocialLink = ({ icon: Icon, text, href }: { icon: React.ElementType, text: string, href: string }) => (
-  <a
-    href={href}
-    target={href.startsWith("/") ? undefined : "_blank"}
-    rel="noopener noreferrer"
-    className="flex items-center gap-3 text-sm text-stone-700 hover:text-stone-900 transition-colors"
-  >
-    <Icon className="h-4 w-4 text-stone-500" />
-    <span>{text}</span>
-  </a>
-);
-
 export interface SidebarProps {
   className?: string;
   onToggleCollapse?: () => void;
   collapsed?: boolean;
   isAuthenticated: boolean;
+  isAuthLoading: boolean;
   activePlanName: string | null;
-  isSubscriptionLoading: boolean;
 }
 
-export function SidebarComponent({ className, onToggleCollapse, collapsed = false, isAuthenticated, activePlanName, isSubscriptionLoading }: SidebarProps) {
-  const [isWorkspaceCollapsed, setIsWorkspaceCollapsed] = useState(false);
+export function SidebarComponent({ className, onToggleCollapse, collapsed = false, isAuthenticated, isAuthLoading, activePlanName }: SidebarProps) {
   const [isHistoryCollapsed, setIsHistoryCollapsed] = useState(false);
   const [showProfileMenu, setShowProfileMenu] = useState(false);
   const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false);
@@ -125,7 +112,6 @@ export function SidebarComponent({ className, onToggleCollapse, collapsed = fals
     }
   };
 
-  const toggleWorkspace = () => setIsWorkspaceCollapsed(!isWorkspaceCollapsed);
   const toggleHistory = () => setIsHistoryCollapsed(!isHistoryCollapsed);
 
   const handleSignOut = async () => {
@@ -233,39 +219,6 @@ export function SidebarComponent({ className, onToggleCollapse, collapsed = fals
             <div className="mb-2">
               <button
                 className="flex items-center justify-between w-full px-1.5 py-1.5 text-sm font-bold text-stone-700 rounded-md"
-                onClick={toggleWorkspace}
-              >
-                <span className="text-left">Workspace</span>
-                <ChevronDown
-                  className={cn(
-                    "h-4 w-4 transition-transform text-stone-500",
-                    isWorkspaceCollapsed ? "-rotate-90" : ""
-                  )}
-                />
-              </button>
-              {!isWorkspaceCollapsed && (
-                <div className="mt-1 space-y-1 animate-in fade-in duration-200">
-                   <Link className="flex w-full items-center gap-2 rounded-md px-1.5 py-2 text-sm text-stone-700 hover:bg-stone-200" href="/dashboard" aria-current={pathname === '/dashboard' ? 'page' : undefined}>
-                     <span aria-hidden="true">📊</span><span>Dashboard</span>
-                   </Link>
-                   <Link className="flex w-full items-center gap-2 rounded-md px-1.5 py-2 text-sm text-stone-700 hover:bg-stone-200" href="/workspace" aria-current={pathname === '/workspace' ? 'page' : undefined}>
-                     <span aria-hidden="true">▦</span><span>Workspace app</span>
-                   </Link>
-                   <Link className="flex w-full items-center gap-2 rounded-md px-1.5 py-2 text-sm text-stone-700 hover:bg-stone-200" href="/context" aria-current={pathname === '/context' || pathname.startsWith('/context/') ? 'page' : undefined}>
-                     <span aria-hidden="true">📖</span><span>Context</span>
-                   </Link>
-                   <Link className="flex w-full items-center gap-2 rounded-md px-1.5 py-2 text-sm text-stone-700 hover:bg-stone-200" href="/account" aria-current={pathname === '/account' ? 'page' : undefined}>
-                     <span aria-hidden="true">⚙️</span><span>Account</span>
-                   </Link>
-                </div>
-              )}
-            </div>
-
-            <Separator className="bg-stone-200 my-3"/>
-
-            <div className="mb-2">
-              <button
-                className="flex items-center justify-between w-full px-1.5 py-1.5 text-sm font-bold text-stone-700 rounded-md"
                 onClick={toggleHistory}
               >
                 <span className="text-left">History</span>
@@ -330,50 +283,27 @@ export function SidebarComponent({ className, onToggleCollapse, collapsed = fals
             </div>
           </div>
 
-          {/* Conditionally render Upgrade section based on loading state */}
-          {isAuthenticated && !isSubscriptionLoading && !activePlanName && (
-            <>
-              <Separator className="bg-stone-200"/>
-              <div className="px-3 py-2 flex flex-col gap-y-1 flex-shrink-0">
-                <Button
-                  variant="outline"
-                  className="w-full justify-start gap-2 border-stone-200 text-stone-700 hover:bg-stone-200"
-                  onClick={() => router.push('/pricing')}
-                >
-                  <ArrowRight className="h-4 w-4" />
-                  <span>Upgrade Plan</span>
-                </Button>
-              </div>
-            </>
-          )}
-
-          {/* Social Feedback Section (Separator is now only rendered once) */}
-          <Separator className="bg-stone-200"/>
-          <div className="px-5 py-4">
-            <h3 className="text-sm font-medium text-stone-800 mb-3">Feedback? DM us!</h3>
-            <div className="space-y-2.5">
-              <SocialLink icon={User} text="Company information" href="/about" />
-              <SocialLink icon={Mail} text="Contact us" href="/contact" />
-            </div>
-          </div>
-
           {/* Profile Section (Moved here) */}
            <div className="p-3 border-t border-stone-200">
              <div className="relative">
                <button
+                 type="button"
                  className="w-full h-10 bg-stone-50 text-stone-900 hover:bg-stone-200 rounded-lg flex items-center px-4 shadow-none profile-button"
+                 aria-expanded={showProfileMenu}
+                 aria-controls="profile-navigation-menu"
                  onClick={(e) => {
                    e.stopPropagation();
-                   setShowProfileMenu(!showProfileMenu);
+                   setShowProfileMenu((open) => !open);
                  }}
                >
                  <div className="flex items-center gap-2 grow">
                    <User className="h-4 w-4 flex-shrink-0" />
-                   <span>Profile</span>
-                   {/* Use PROP for tag */}
-                   <span className="text-xs px-1.5 py-0.5 bg-stone-100 text-stone-500 rounded-full">
-                     {activePlanName ? capitalizeFirstLetter(activePlanName) : 'Free'}
-                   </span>
+                   <span>{isAuthLoading ? 'Account' : isAuthenticated ? 'Profile' : 'Welcome'}</span>
+                   {!isAuthLoading && isAuthenticated && (
+                     <span className="text-xs px-1.5 py-0.5 bg-stone-100 text-stone-500 rounded-full">
+                       {activePlanName ? capitalizeFirstLetter(activePlanName) : 'Free'}
+                     </span>
+                   )}
                  </div>
                  <ChevronDown className={cn(
                    "h-4 w-4 transition-transform flex-shrink-0 ml-2",
@@ -384,13 +314,48 @@ export function SidebarComponent({ className, onToggleCollapse, collapsed = fals
                {showProfileMenu && (
                  <div
                    ref={profileMenuRef}
-                   className="absolute bottom-full left-0 w-full bg-white rounded-lg shadow-lg border border-stone-200 py-1 mb-1"
+                   className="absolute bottom-full left-0 z-40 w-full max-h-[calc(100dvh-150px)] overflow-y-auto bg-white rounded-lg shadow-lg border border-stone-200 py-1 mb-1"
+                   id="profile-navigation-menu"
+                   role="region"
+                   aria-label="Profile and application menu"
                  >
+                   <div className="px-3 pb-1 pt-2 text-xs font-semibold uppercase tracking-wide text-stone-500">Workspace</div>
+                   <Link className="flex w-full items-center gap-3 px-4 py-2 text-sm text-stone-700 hover:bg-stone-100" href="/" onClick={() => setShowProfileMenu(false)}>
+                     <Plus className="h-4 w-4" /><span>Homepage chat</span>
+                   </Link>
+                   <Link className="flex w-full items-center gap-3 px-4 py-2 text-sm text-stone-700 hover:bg-stone-100" href="/dashboard" onClick={() => setShowProfileMenu(false)}>
+                     <span aria-hidden="true">📊</span><span>Dashboard</span>
+                   </Link>
+                   <Link className="flex w-full items-center gap-3 px-4 py-2 text-sm text-stone-700 hover:bg-stone-100" href="/workspace" onClick={() => setShowProfileMenu(false)}>
+                     <span aria-hidden="true">▦</span><span>Workspace app</span>
+                   </Link>
+                   <Link className="flex w-full items-center gap-3 px-4 py-2 text-sm text-stone-700 hover:bg-stone-100" href="/context" onClick={() => setShowProfileMenu(false)}>
+                     <span aria-hidden="true">📖</span><span>Context</span>
+                   </Link>
+                   <Link className="flex w-full items-center gap-3 px-4 py-2 text-sm text-stone-700 hover:bg-stone-100" href="/account" onClick={() => setShowProfileMenu(false)}>
+                     <User className="h-4 w-4" /><span>Account</span>
+                   </Link>
+                   <Link className="flex w-full items-center gap-3 px-4 py-2 text-sm text-stone-700 hover:bg-stone-100" href="/pricing" onClick={() => setShowProfileMenu(false)}>
+                     <Settings className="h-4 w-4" /><span>Chat plans</span>
+                   </Link>
+                   <Link className="flex w-full items-center gap-3 px-4 py-2 text-sm text-stone-700 hover:bg-stone-100" href="/support" onClick={() => setShowProfileMenu(false)}>
+                     <span aria-hidden="true">?</span><span>Help center</span>
+                   </Link>
+                   <Link className="flex w-full items-center gap-3 px-4 py-2 text-sm text-stone-700 hover:bg-stone-100" href="/contact" onClick={() => setShowProfileMenu(false)}>
+                     <Mail className="h-4 w-4" /><span>Contact</span>
+                   </Link>
+                   <Link className="flex w-full items-center gap-3 px-4 py-2 text-sm text-stone-700 hover:bg-stone-100" href="/about" onClick={() => setShowProfileMenu(false)}>
+                     <User className="h-4 w-4" /><span>Company information</span>
+                   </Link>
+                   <Separator className="my-1" />
+                   {isAuthLoading ? null : isAuthenticated ? (
+                     <>
                    <button
-                     className="w-full px-4 py-2 text-left flex items-center gap-2 hover:bg-stone-100 text-stone-700"
+                     type="button"
+                     className="w-full px-4 py-2 text-left flex items-center gap-3 hover:bg-stone-100 text-stone-700"
                      onClick={() => {
                        setIsSettingsModalOpen(true);
-                       setShowProfileMenu(false); // Close profile menu when opening modal
+                       setShowProfileMenu(false);
                      }}
                    >
                      <Settings className="h-4 w-4" />
@@ -398,12 +363,24 @@ export function SidebarComponent({ className, onToggleCollapse, collapsed = fals
                    </button>
                    <Separator className="my-1" />
                    <button
-                     className="w-full px-4 py-2 text-left flex items-center gap-2 hover:bg-stone-100 text-red-600"
+                     type="button"
+                     className="w-full px-4 py-2 text-left flex items-center gap-3 hover:bg-stone-100 text-red-600"
                      onClick={handleSignOut}
                    >
                      <LogOut className="h-4 w-4" />
                      <span>Sign out</span>
                    </button>
+                     </>
+                   ) : (
+                     <div className="grid grid-cols-2 gap-2 p-2">
+                       <Link className="flex items-center justify-center gap-2 rounded-md border border-stone-200 px-3 py-2 text-sm font-medium text-stone-700 hover:bg-stone-100" href="/sign-up" onClick={() => setShowProfileMenu(false)}>
+                         <UserPlus className="h-4 w-4" /><span>Sign up</span>
+                       </Link>
+                       <Link className="flex items-center justify-center gap-2 rounded-md bg-emerald-700 px-3 py-2 text-sm font-medium text-white hover:bg-emerald-800" href="/sign-in" onClick={() => setShowProfileMenu(false)}>
+                         <LogIn className="h-4 w-4" /><span>Sign in</span>
+                       </Link>
+                     </div>
+                   )}
                  </div>
                )}
              </div>

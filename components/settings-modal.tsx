@@ -69,6 +69,20 @@ export function SettingsModal({ isOpen, setIsOpen, onSettingsChanged }: Settings
   // Model state - initialized empty, will be loaded
   const [models, setModels] = useState<ModelSetting[]>([]);
 
+  useEffect(() => {
+    if (!isOpen) return;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === 'Escape') setIsOpen(false);
+    }
+    window.addEventListener('keydown', handleKeyDown);
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [isOpen, setIsOpen]);
+
   // Updated useEffect to load settings
   useEffect(() => {
     async function fetchData() {
@@ -407,16 +421,22 @@ export function SettingsModal({ isOpen, setIsOpen, onSettingsChanged }: Settings
 
   return (
     <div className="fixed inset-0 z-50 overflow-y-auto bg-black/30 backdrop-blur-sm flex items-center justify-center p-4" onClick={closeModal}>
-      <div className="relative bg-white rounded-lg shadow-xl w-full max-w-3xl h-[75vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
+      <div
+        className="relative bg-white rounded-lg shadow-xl w-full max-w-5xl h-[75vh] min-h-[420px] flex flex-col"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="settings-title"
+        onClick={(e) => e.stopPropagation()}
+      >
         <div className="px-6 py-4 border-b border-gray-200 flex justify-between items-center flex-shrink-0">
-          <h1 className="text-xl font-semibold text-gray-900">Settings</h1>
-          <Button variant="ghost" size="icon" onClick={closeModal} className="rounded-full">
+          <h1 id="settings-title" className="text-xl font-semibold text-gray-900">Settings</h1>
+          <Button variant="ghost" size="icon" onClick={closeModal} className="rounded-full" aria-label="Close settings">
             <X className="h-5 w-5" />
           </Button>
         </div>
 
         <Tabs defaultValue="account" className="flex flex-1 overflow-hidden">
-          <TabsList className="h-auto flex flex-col justify-start items-start p-4 space-y-1 w-48 border-r border-gray-200 bg-gray-50/50 rounded-none">
+          <TabsList className="h-auto w-1/4 min-w-[190px] max-w-[250px] flex flex-col justify-start items-start p-4 space-y-1 border-r border-gray-200 bg-gray-50/50 rounded-none">
             <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2 px-2">Settings</h3>
             <TabsTrigger
               value="account"
