@@ -1,6 +1,6 @@
 # Website foundation
 
-The public site now includes a homepage, About, Contact, searchable Help Center, Pricing, Privacy, Terms, and Payment/Cancellation/Refund Policy. Shared desktop/mobile navigation and the footer link all primary routes. Password recovery, reset-link validation, sign-in, signup, and email confirmation use the existing secure authentication service.
+The homepage opens directly to the visitor chat composer, so people can start chatting without signing in or creating an account. Anonymous visitors can send 10 responses per day; the limit resets at midnight UTC. The public site also includes About, Contact, searchable Help Center, Pricing, Privacy, Terms, and Payment/Cancellation/Refund Policy. Shared desktop/mobile navigation and the footer link all primary routes. Password recovery, reset-link validation, sign-in, signup, and email confirmation use the existing secure authentication service.
 
 Pricing shows Daily USD 5, Weekly USD 13, Monthly USD 30, Yearly USD 249, and Business contact sales. Card-backed trials last 1, 2, 3, and 5 days respectively. Personal memberships have unlimited responses; visitor workspace access allows 10 responses per UTC day. See [Plans and workspace](billing/PLANS-AND-WORKSPACE.md) for the custom payment flow, operational prerequisites, and identification limits. Stripe remains sandbox-only.
 

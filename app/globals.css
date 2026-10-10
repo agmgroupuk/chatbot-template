@@ -272,7 +272,21 @@
 .table-scroll { overflow-x:auto; }
 .site-shell table { width:100%; border-collapse:collapse; font-size:13px; text-align:left; }
 .site-shell th,.site-shell td { padding:14px 10px; border-bottom:1px solid var(--site-line); }
+.home-chat-page { max-width:920px; padding-top:58px; }
+.home-chat-intro { margin:0 auto 34px; text-align:center; }
+.home-chat-intro .eyebrow { margin-bottom:10px; }
+.home-chat-intro h1 { font-size:clamp(2.25rem,5vw,3.5rem); }
+.home-chat-intro > p:last-child { margin-top:12px; font-size:16px; }
+.landing-chat .setting-row { justify-content:center; flex-wrap:wrap; padding:0 0 14px; border:0; }
+.landing-chat .panel { gap:22px; padding:32px; border-radius:18px; box-shadow:0 18px 54px -42px #174e37; }
+.landing-chat .empty-state { padding:14px 0 0; text-align:center; }
+.landing-chat .empty-state h2 { font-size:22px; }
+.landing-chat .visitor-composer { display:grid; grid-template-columns:minmax(0,1fr) auto; align-items:end; gap:12px; padding:14px; border:1px solid var(--site-line); border-radius:14px; background:var(--site-bg); }
+.landing-chat .visitor-composer .field { grid-column:1; }
+.landing-chat .visitor-composer textarea { min-height:94px; margin-top:4px; padding:10px 2px; border:0; background:transparent; resize:vertical; }
+.landing-chat .visitor-composer .button { grid-column:2; }
+.landing-chat > .small-copy { max-width:780px; margin:16px auto 0; text-align:center; }
 @media(max-width:1000px) { .desktop-nav { gap:16px; } .brand-sub { display:none; } .hero-grid { gap:30px; } .pricing-grid { grid-template-columns:1fr 1fr; } .footer-top { gap:30px; } }
-@media(max-width:760px) { .desktop-nav,.desktop-signin { display:none; } .mobile-toggle { display:block; } .site-header { padding:15px 20px; min-height:75px; } .header-actions { gap:10px; } .page-wrap { padding:35px 22px 55px; } .hero-grid,.two-grid,.three-grid,.account-grid,.legal-layout,.footer-top { grid-template-columns:1fr; } .hero-grid { padding:15px 0 40px; gap:35px; } .hero-preview { padding:24px; } .callout { flex-direction:column; align-items:start; padding:28px; } .site-footer { padding:32px 22px 20px; } .footer-links { gap:18px; } .workspace-nav { justify-content:flex-start; gap:20px; font-size:12px; } .account-menu { flex-direction:row; flex-wrap:wrap; position:static; gap:4px; } .account-menu a { font-size:12px; padding:8px 10px; } .legal-toc { position:static; } .footer-bottom span { display:none; } .panel { padding:22px; } }
+@media(max-width:760px) { .desktop-nav { display:none; } .mobile-toggle { display:block; } .site-header { padding:15px 20px; min-height:75px; } .header-actions { gap:10px; } .page-wrap { padding:35px 22px 55px; } .home-chat-page { padding-top:42px; } .home-chat-intro { margin-bottom:26px; } .home-chat-intro h1 { font-size:clamp(2rem,9vw,3rem); } .landing-chat .panel { padding:22px; } .landing-chat .visitor-composer { grid-template-columns:minmax(0,1fr); } .landing-chat .visitor-composer .field,.landing-chat .visitor-composer .button { grid-column:1; } .landing-chat .visitor-composer .button { justify-self:end; } .hero-grid,.two-grid,.three-grid,.account-grid,.legal-layout,.footer-top { grid-template-columns:1fr; } .hero-grid { padding:15px 0 40px; gap:35px; } .hero-preview { padding:24px; } .callout { flex-direction:column; align-items:start; padding:28px; } .site-footer { padding:32px 22px 20px; } .footer-links { gap:18px; } .workspace-nav { justify-content:flex-start; gap:20px; font-size:12px; } .account-menu { flex-direction:row; flex-wrap:wrap; position:static; gap:4px; } .account-menu a { font-size:12px; padding:8px 10px; } .legal-toc { position:static; } .footer-bottom span { display:none; } .panel { padding:22px; } }
 @media(max-width:440px) { .pricing-grid,.form-grid { grid-template-columns:1fr; } .preview-tiles { grid-template-columns:1fr; } .brand-mark { display:none; } .footer-links { grid-template-columns:1fr 1fr; } .footer-links > div:last-child { grid-column:1 / -1; } .data-list li { align-items:start; flex-direction:column; gap:5px; } }
 @media(prefers-reduced-motion:reduce) { *,*::before,*::after { scroll-behavior:auto !important; animation:none !important; transition:none !important; } }

@@ -47,7 +47,11 @@ try {
   page.on('requestfinished',request=>{pending.delete(request);if(request.method()==='POST')actionLog.push(['done',new URL(request.url()).pathname]);});
   page.on('requestfailed',request=>{pending.delete(request);actionLog.push(['failed',new URL(request.url()).pathname,request.failure()?.errorText]);});
   async function check(path,title){console.log(`Checking ${path}`);const response=await page.goto(`${origin}${path}`);assert.equal(response.status(),200,path);await page.getByRole('heading',{level:1,name:title}).waitFor();assert.equal(await page.locator('h1').count(),1,`${path}: one page heading`);assert.ok(await page.locator('footer').isVisible());checks++;}
-  await check('/',/Make room for/);
+  await check('/',/What can I help you with\?/);
+  assert.ok(await page.getByRole('textbox',{name:'Workspace message'}).isVisible(),'Homepage shows the public chat composer');
+  assert.ok(await page.getByRole('navigation',{name:'Main navigation'}).getByRole('link',{name:'Pricing',exact:true}).isVisible(),'Homepage keeps public site navigation');
+  assert.equal(await page.getByRole('link',{name:'Sign in',exact:true}).count(),0,'Anonymous header has no sign-in prompt');
+  assert.equal(await page.getByRole('link',{name:'Get started',exact:true}).count(),0,'Anonymous header has no sign-up prompt');
   await page.screenshot({path:new URL('home-desktop.png',artifacts).pathname.replace(/^\/([A-Z]:)/,'$1'),fullPage:true});
   for(const [path,title] of [['/about','Software with a practical purpose.'],['/privacy','Privacy Policy'],['/terms','Terms & Conditions'],['/payment-policy','Payment, Cancellation & Refund Policy'],['/support','A little help goes a long way.'],['/contact','Let’s get you to the right place.'],['/pricing','Choose the time that fits your work.'],['/forgot-password','Forgot your password?'],['/reset-password','Request a fresh reset link.'],['/sign-in','Your workspace is waiting.'],['/sign-up','A place for your next idea.']]) await check(path,title);
   for(const path of ['/dashboard','/dashboard/activity','/dashboard/billing','/account/security','/chat']){await page.goto(`${origin}${path}`);assert.equal(new URL(page.url()).pathname,'/sign-in');checks++;}
