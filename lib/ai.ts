@@ -1,5 +1,8 @@
 import 'server-only';
 import OpenAI from 'openai';
+import type { ChatCompletionMessageParam } from 'openai/resources/chat/completions/completions';
+import type { ResponseInputItem } from 'openai/resources/responses/responses';
+export interface AIImage {mimeType:'image/jpeg'|'image/png'|'image/webp'|'image/gif';data:string}
 export function aiConfiguration() {
   const provider = process.env.AI_PROVIDER || 'openai';
   if (!['openai','xai'].includes(provider)) throw new Error('Unsupported AI provider.');
@@ -7,17 +10,47 @@ export function aiConfiguration() {
     ? { provider, model: process.env.OPENAI_MODEL || 'gpt-4.1-mini', apiKey: process.env.OPENAI_API_KEY, baseURL:'https://api.openai.com/v1' }
     : { provider, model: process.env.XAI_MODEL || 'grok-4.3', apiKey: process.env.XAI_API_KEY, baseURL:'https://api.x.ai/v1' };
 }
-export async function generateResponse(messages: {sender:'user'|'ai';content:string}[], context?: string | null) {
+export async function generateResponse(messages: {sender:'user'|'ai';content:string}[], context?: string | null, images:AIImage[] = []) {
   const configuration = aiConfiguration();
   if (!configuration.apiKey) throw new Error('AI is not configured yet. Please try again later.');
   const client = new OpenAI({apiKey:configuration.apiKey,baseURL:configuration.baseURL,timeout:60000,maxRetries:1});
   try {
     if (configuration.provider === 'openai') {
-      const result = await client.responses.create({model:configuration.model,store:false,max_output_tokens:2048,instructions:context ? `Use the following user-supplied reference when relevant:\n${context}` : undefined,input:messages.map(message=>({role:message.sender==='user'?'user' as const:'assistant' as const,content:message.content}))});
+      const input:ResponseInputItem[]=messages.map((message,index)=>{
+        if(message.sender==='user' && index===messages.length-1 && images.length) {
+          return {
+            type:'message',
+            role:'user',
+            content:[
+              {type:'input_text',text:message.content},
+              ...images.map(image=>({type:'input_image' as const,detail:'auto' as const,image_url:`data:${image.mimeType};base64,${image.data}`})),
+            ],
+          };
+        }
+        return {role:message.sender==='user'?'user':'assistant',content:message.content};
+      });
+      const result = await client.responses.create({model:configuration.model,store:false,max_output_tokens:2048,instructions:context ? `Use the following user-supplied reference when relevant:\n${context}` : undefined,input});
       if (!result.output_text?.trim()) throw new Error('The AI returned an empty response. Please try again.');
       return result.output_text;
     }
-    const result = await client.chat.completions.create({model:configuration.model,messages:[...(context ? [{role:'system' as const,content:`Use this user-supplied reference when relevant:\n${context}`}] : []),...messages.map(message=>({role:message.sender==='user'?'user' as const:'assistant' as const,content:message.content}))]});
+    const completionMessages:ChatCompletionMessageParam[]=[
+      ...(context ? [{role:'system' as const,content:`Use this user-supplied reference when relevant:\n${context}`}] : []),
+      ...messages.map((message,index)=>{
+        if(message.sender==='user' && index===messages.length-1 && images.length) {
+          return {
+            role:'user' as const,
+            content:[
+              {type:'text' as const,text:message.content},
+              ...images.map(image=>({type:'image_url' as const,image_url:{url:`data:${image.mimeType};base64,${image.data}`}})),
+            ],
+          };
+        }
+        return message.sender==='user'
+          ? {role:'user' as const,content:message.content}
+          : {role:'assistant' as const,content:message.content};
+      }),
+    ];
+    const result = await client.chat.completions.create({model:configuration.model,messages:completionMessages});
     const text = result.choices[0]?.message.content;
     if (!text?.trim()) throw new Error('The AI returned an empty response. Please try again.');
     return text;

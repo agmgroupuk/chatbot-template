@@ -3,9 +3,10 @@
 import { availableModels } from '@/lib/models';
 import { useWorkspacePreferences } from './workspace-preferences';
 import React, { useState, useRef, useEffect, useCallback } from 'react';
-import { ArrowUp, Check, Loader2, PlusIcon, BookText } from 'lucide-react';
+import Image from 'next/image';
+import { ArrowUp, Bookmark, Check, Clipboard, FileUp, Image as ImageIcon, Link2, Loader2, Mic, PlusIcon, BookText, RotateCcw, Share2, Volume2, X } from 'lucide-react';
 import { createPortal } from 'react-dom';
-import { getUserModelSettings, updateUserSelectedModel, getAIResponse, addMessage, getMessagesForChat } from '@/app/actions'; // Keep model actions if needed in chat view
+import { getUserModelSettings, updateUserSelectedModel, getAIResponse, addMessage, addContextItem, getMessagesForChat, updateAssistantMessage } from '@/app/actions';
 import { SettingsModal } from './settings-modal';
 import { v4 as uuidv4 } from 'uuid';
 import { Skeleton } from "@/components/ui/skeleton";
@@ -35,7 +36,27 @@ interface Message {
   id: string;
   sender: 'user' | 'ai';
   content: string;
+  persisted?: boolean;
+  images?: { name:string; dataUrl:string }[];
 }
+
+type PendingAttachment =
+  | { id:string; kind:'file'; name:string; content:string }
+  | { id:string; kind:'image'; name:string; mimeType:'image/jpeg'|'image/png'|'image/webp'|'image/gif'; dataUrl:string }
+  | { id:string; kind:'link'; name:string; url:string };
+
+interface SpeechRecognitionLike {
+  lang:string;
+  continuous:boolean;
+  interimResults:boolean;
+  onresult:((event:{resultIndex:number;results:ArrayLike<{isFinal:boolean;[index:number]:{transcript:string}}>} )=>void)|null;
+  onerror:((event:{error:string})=>void)|null;
+  onend:(()=>void)|null;
+  start:()=>void;
+  stop:()=>void;
+}
+
+type SpeechRecognitionConstructor = new()=>SpeechRecognitionLike;
 
 interface ChatInterfaceProps {
   chatId: string;
@@ -45,6 +66,8 @@ export function ChatInterface({ chatId }: ChatInterfaceProps) {
   const preferences = useWorkspacePreferences();
   const [prompt, setPrompt] = useState("");
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const speechRecognitionRef = useRef<SpeechRecognitionLike|null>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
@@ -70,11 +93,21 @@ export function ChatInterface({ chatId }: ChatInterfaceProps) {
 
   // --- New State for Attached Context ---
   const [attachedContextItem, setAttachedContextItem] = useState<ContextItem | null>(null);
-
-  // --- New State for Attached Image ---
+  const [pendingAttachments, setPendingAttachments] = useState<PendingAttachment[]>([]);
+  const [isReadingAttachments, setIsReadingAttachments] = useState(false);
+  const [attachmentStatus, setAttachmentStatus] = useState<string|null>(null);
+  const [isLinkDialogOpen, setIsLinkDialogOpen] = useState(false);
+  const [linkDraft, setLinkDraft] = useState('');
+  const [isRecording, setIsRecording] = useState(false);
+  const [activeSpeechMessageId, setActiveSpeechMessageId] = useState<string|null>(null);
+  const [retryingMessageId, setRetryingMessageId] = useState<string|null>(null);
+  const [savedResponseIds, setSavedResponseIds] = useState<string[]>([]);
+  const [savingResponseIds, setSavingResponseIds] = useState<string[]>([]);
+  const [imageAttachmentsByMessage, setImageAttachmentsByMessage] = useState<Record<string, {mimeType:'image/jpeg'|'image/png'|'image/webp'|'image/gif';data:string}[]>>({});
+  const [contextByMessage, setContextByMessage] = useState<Record<string, string>>({});
 
   // --- Calculate Attachment Count ---
-  const attachmentCount = (attachedContextItem ? 1 : 0);
+  const attachmentCount = pendingAttachments.length + (attachedContextItem ? 1 : 0);
 
   // --- Load Models (Copied from IdeInterface for now) ---
   const loadModels = useCallback(async () => {
@@ -99,13 +132,16 @@ export function ChatInterface({ chatId }: ChatInterfaceProps) {
     setMessageError(null);
     setHasTriggeredInitialResponse(false); // Reset flag on chat change
     setAttachedContextItem(null); // Clear attached context on chat change
+    setPendingAttachments([]);
+    setImageAttachmentsByMessage({});
+    setContextByMessage({});
     loadModels(); // Load model settings concurrently
 
     // Fetch existing messages
     getMessagesForChat(chatId)
       .then(fetchedMessages => {
         if (isMounted) {
-            setMessages(fetchedMessages);
+            setMessages(fetchedMessages.map(message=>({...message,persisted:true})));
             setIsLoadingMessages(false);
 
 
@@ -146,8 +182,9 @@ export function ChatInterface({ chatId }: ChatInterfaceProps) {
           aiContent = result.response;
           messageToSave = { id: uuidv4(), sender: 'ai', content: aiContent };
 
-          const saved = await addMessage(chatId, 'ai', aiContent, currentModel);
-          if (!saved.success) setMessageError('Reply generated, but could not be saved. Copy it before refreshing.');
+          const saved = await addMessage(chatId, 'ai', aiContent, currentModel, messageToSave.id);
+          messageToSave.persisted = saved.success;
+          if (!saved.success) setAttachmentStatus('Reply generated, but could not be saved. Copy it before refreshing.');
 
         } else {
           aiContent = `Error: ${result.error || 'Failed to get response from AI.'}`;
@@ -176,6 +213,11 @@ export function ChatInterface({ chatId }: ChatInterfaceProps) {
        triggerInitialResponse(messages[0]);
      }
    }, [isLoadingMessages, isLoadingModels, messages, hasTriggeredInitialResponse, triggerInitialResponse]);
+
+   useEffect(() => () => {
+     speechRecognitionRef.current?.stop();
+     if ('speechSynthesis' in window) window.speechSynthesis.cancel();
+   }, []);
 
   const handleSettingsChanged = useCallback(() => {
      loadModels();
@@ -224,49 +266,267 @@ export function ChatInterface({ chatId }: ChatInterfaceProps) {
     textareaRef.current?.focus();
   };
 
-  // --- Updated handleSubmit to include attached context ---
+  const readImageDataUrl = (file:File) => new Promise<string>((resolve,reject) => {
+    const reader = new FileReader();
+    reader.onload = () => typeof reader.result === 'string' ? resolve(reader.result) : reject(new Error('Unable to read the selected image.'));
+    reader.onerror = () => reject(new Error('Unable to read the selected image.'));
+    reader.readAsDataURL(file);
+  });
+
+  const handleFilesSelected = async (event:React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(event.target.files || []);
+    event.target.value = '';
+    if (!files.length) return;
+    setIsReadingAttachments(true);
+    setAttachmentStatus('Reading selected files…');
+    try {
+      const additions:PendingAttachment[] = [];
+      let textSize = pendingAttachments.reduce((total,item)=>total+(item.kind==='file'?item.content.length:0),0);
+      let imageSize = pendingAttachments.reduce((total,item)=>total+(item.kind==='image'?Math.ceil(item.dataUrl.length*3/4):0),0);
+      let imageCount = pendingAttachments.filter(item=>item.kind==='image').length;
+      for (const file of files) {
+        if (file.type.startsWith('image/')) {
+          if (!['image/jpeg','image/png','image/webp','image/gif'].includes(file.type)) throw new Error(`${file.name}: use a PNG, JPEG, WebP, or GIF image.`);
+          if (file.size>2*1024*1024 || imageCount>=3 || imageSize+file.size>3.5*1024*1024) throw new Error('Images must be 2 MB or smaller, with at most 3 images and 3.5 MB total per message.');
+          const dataUrl = await readImageDataUrl(file);
+          additions.push({id:uuidv4(),kind:'image',name:file.name,mimeType:file.type as 'image/jpeg'|'image/png'|'image/webp'|'image/gif',dataUrl});
+          imageCount++;
+          imageSize+=file.size;
+          continue;
+        }
+        const extension = file.name.split('.').pop()?.toLowerCase();
+        const supportedTextTypes = ['text/plain','text/markdown','text/csv','application/json','application/xml'];
+        const supportedTextExtensions = ['txt','md','csv','json','html','htm','xml','css','js','jsx','ts','tsx','py','sql','yaml','yml','toml','sh','go','rs','java','c','cpp','h'];
+        if (!supportedTextTypes.includes(file.type) && !supportedTextExtensions.includes(extension||'')) {
+          throw new Error(`${file.name}: choose a supported text/code file or an image. PDFs and other binary files are not supported yet.`);
+        }
+        if (file.size>1024*1024) throw new Error(`${file.name}: text/code files must be 1 MB or smaller.`);
+        const content = await file.text();
+        if (textSize+content.length>20000) throw new Error('Text attachments are limited to 20,000 characters per message.');
+        additions.push({id:uuidv4(),kind:'file',name:file.name,content});
+        textSize+=content.length;
+      }
+      setPendingAttachments(current=>[...current,...additions]);
+      setAttachmentStatus(`${additions.length} attachment${additions.length===1?'':'s'} added.`);
+    } catch(error) {
+      setAttachmentStatus(error instanceof Error?error.message:'Unable to add the selected files.');
+    } finally {
+      setIsReadingAttachments(false);
+    }
+  };
+
+  const handleAddLink = (event:React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    try {
+      const enteredUrl = linkDraft.trim();
+      if (enteredUrl.length>2048) throw new Error('Use a link shorter than 2,048 characters.');
+      const url = new URL(enteredUrl);
+      if (!['http:','https:'].includes(url.protocol) || url.username || url.password) throw new Error('Use a public website or map link beginning with http:// or https://, without embedded credentials.');
+      setPendingAttachments(current=>[...current,{id:uuidv4(),kind:'link',name:url.hostname,url:url.toString()}]);
+      setLinkDraft('');
+      setIsLinkDialogOpen(false);
+      setAttachmentStatus('Link added as a reference. The page itself will not be fetched automatically.');
+    } catch(error) {
+      setAttachmentStatus(error instanceof Error && (error.message.startsWith('Use a public') || error.message.startsWith('Use a link'))?error.message:'Enter a valid website or map URL beginning with http:// or https://.');
+    }
+  };
+
+  const handleToggleMicrophone = () => {
+    if (isRecording) {
+      speechRecognitionRef.current?.stop();
+      return;
+    }
+    const browserWindow = window as Window & {SpeechRecognition?:SpeechRecognitionConstructor;webkitSpeechRecognition?:SpeechRecognitionConstructor};
+    const Recognition = browserWindow.SpeechRecognition || browserWindow.webkitSpeechRecognition;
+    if (!Recognition) {
+      setAttachmentStatus('Speech-to-text is not supported in this browser. Try a recent version of Chrome or Edge.');
+      return;
+    }
+    const recognition = new Recognition();
+    speechRecognitionRef.current = recognition;
+    recognition.lang = navigator.language || 'en-US';
+    recognition.continuous = true;
+    recognition.interimResults = false;
+    recognition.onresult = event => {
+      let transcript = '';
+      for (let index=event.resultIndex;index<event.results.length;index++) {
+        if (event.results[index].isFinal) transcript += event.results[index][0].transcript;
+      }
+      if (transcript.trim()) setPrompt(current=>`${current}${current.trim()?' ':''}${transcript.trim()}`);
+    };
+    recognition.onerror = event => {
+      setIsRecording(false);
+      setAttachmentStatus(event.error==='not-allowed'?'Allow microphone access in your browser to dictate a message.':'Speech recognition stopped. Please try again.');
+    };
+    recognition.onend = () => setIsRecording(false);
+    try {
+      recognition.start();
+      setIsRecording(true);
+      setAttachmentStatus('Listening… Speak your message, then tap the microphone again to stop.');
+    } catch {
+      setIsRecording(false);
+      setAttachmentStatus('Could not start speech recognition. Check microphone permission and try again.');
+    }
+  };
+
+  const handleReadAloud = (message:Message) => {
+    if (!('speechSynthesis' in window)) {
+      setAttachmentStatus('Text-to-speech is not supported in this browser.');
+      return;
+    }
+    if (activeSpeechMessageId===message.id) {
+      window.speechSynthesis.cancel();
+      setActiveSpeechMessageId(null);
+      return;
+    }
+    window.speechSynthesis.cancel();
+    const utterance = new SpeechSynthesisUtterance(message.content);
+    utterance.onend = () => setActiveSpeechMessageId(null);
+    utterance.onerror = () => {
+      setActiveSpeechMessageId(null);
+      setAttachmentStatus('Unable to read this response aloud.');
+    };
+    setActiveSpeechMessageId(message.id);
+    window.speechSynthesis.speak(utterance);
+  };
+
+  const handleCopyResponse = async (content:string) => {
+    try {
+      await navigator.clipboard.writeText(content);
+      setAttachmentStatus('Response copied to clipboard.');
+    } catch {
+      setAttachmentStatus('Clipboard access is unavailable. Select and copy the response manually.');
+    }
+  };
+
+  const handleShareResponse = async (content:string) => {
+    try {
+      if (navigator.share) {
+        await navigator.share({title:'AI chat response',text:content,url:window.location.href});
+        setAttachmentStatus('Response shared.');
+      } else {
+        await navigator.clipboard.writeText(`${content}\n\n${window.location.href}`);
+        setAttachmentStatus('Share is unavailable here; the response and chat link were copied.');
+      }
+    } catch(error) {
+      if (error instanceof Error && error.name==='AbortError') return;
+      setAttachmentStatus('Unable to share this response. You can copy it instead.');
+    }
+  };
+
+  const handleSaveResponse = async (message:Message) => {
+    if (savedResponseIds.includes(message.id) || savingResponseIds.includes(message.id)) return false;
+    const title = message.content.trim().replace(/\s+/g,' ').slice(0,70) || 'Saved chat response';
+    setSavingResponseIds(current=>[...current,message.id]);
+    try {
+      const result = await addContextItem(`Saved response: ${title}`,message.content);
+      setAttachmentStatus(result.success?'Response saved to your Context library.':result.error||'Unable to save this response.');
+      if (result.success) setSavedResponseIds(current=>current.includes(message.id)?current:[...current,message.id]);
+      return result.success;
+    } catch(error) {
+      console.error('Unable to save chat response:',error);
+      setAttachmentStatus('Unable to save this response. Please try again.');
+      return false;
+    } finally {
+      setSavingResponseIds(current=>current.filter(id=>id!==message.id));
+    }
+  };
+
+  const handleRetryResponse = async (message:Message) => {
+    const messageIndex = messages.findIndex(item=>item.id===message.id);
+    let userIndex = messageIndex-1;
+    while (userIndex>=0 && messages[userIndex].sender!=='user') userIndex--;
+    if (userIndex<0 || isAiResponding || !selectedModel) return;
+    const userMessage = messages[userIndex];
+    const images = imageAttachmentsByMessage[userMessage.id] || [];
+    if (userMessage.content.includes('Attached image:') && images.length===0) {
+      setAttachmentStatus('The original image is no longer available in this session. Attach it again before regenerating this response.');
+      return;
+    }
+    setIsAiResponding(true);
+    setRetryingMessageId(message.id);
+    setAttachmentStatus('Regenerating response…');
+    try {
+      const retryConversation = messages.slice(0,userIndex+1).map(({id,sender,content})=>({id,sender,content}));
+      const result = await getAIResponse(retryConversation,selectedModel,contextByMessage[userMessage.id]||null,images);
+      if (!result.success || !result.response) {
+        setAttachmentStatus(result.error||'Unable to regenerate this response.');
+        return;
+      }
+      const saved = message.persisted
+        ? await updateAssistantMessage(chatId,message.id,result.response,selectedModel)
+        : await addMessage(chatId,'ai',result.response,selectedModel,message.id);
+      if (!saved.success) {
+        setAttachmentStatus(saved.error||'Unable to save the regenerated response.');
+        return;
+      }
+      setMessages(current=>current.map(item=>item.id===message.id?{...item,content:result.response!,persisted:true}:item));
+      setAttachmentStatus('Response regenerated.');
+    } catch(error) {
+      console.error('Unable to regenerate chat response:',error);
+      setAttachmentStatus('Unable to regenerate this response. Please try again.');
+    } finally {
+      setRetryingMessageId(null);
+      setIsAiResponding(false);
+      textareaRef.current?.focus();
+    }
+  };
+
   const handleSubmit = async () => {
     const currentPrompt = prompt.trim();
-    // Only require typed prompt now. Attachments are handled separately.
-    if (!currentPrompt || isAiResponding || !selectedModel) {
+    if ((!currentPrompt && pendingAttachments.length===0) || isAiResponding || isReadingAttachments || isRecording || !selectedModel) {
         if (!selectedModel) console.error("Submit cancelled: No model selected");
         return;
     }
 
-    // NOTE: We are NOT prepending context/image info to the user message content here.
-    // separately if it needs to use them.
+    const attachments = [...pendingAttachments];
+    const contextItem = attachedContextItem;
+    const attachmentText = attachments.map(item=>{
+      if (item.kind==='file') return `Attached file: ${item.name}\n${item.content}`;
+      if (item.kind==='image') return `Attached image: ${item.name}`;
+      return `User-provided website or map link (page contents are not fetched automatically): ${item.url}`;
+    });
+    const userContent = [currentPrompt,...attachmentText].filter(Boolean).join('\n\n').trim();
+    if (userContent.length>32000) {
+      setAttachmentStatus('The message and its attachments exceed the 32,000-character limit.');
+      return;
+    }
+    const images = attachments.filter((item):item is Extract<PendingAttachment,{kind:'image'}>=>item.kind==='image')
+      .map(({mimeType,dataUrl})=>({mimeType,data:dataUrl.slice(dataUrl.indexOf(',')+1)}));
     const newUserMessage: Message = {
       id: uuidv4(),
       sender: 'user',
-      content: currentPrompt // Send only the typed prompt
+      content: userContent,
+      images: attachments.filter((item):item is Extract<PendingAttachment,{kind:'image'}>=>item.kind==='image').map(({name,dataUrl})=>({name,dataUrl}))
     };
 
-    // Include the user message in the list sent to the API
-    // The API might need modification if it relies on context being inline
-    const updatedMessagesForApi = [...messages, newUserMessage];
-    setMessages(updatedMessagesForApi); // Update UI immediately
+    const updatedMessagesForApi = [
+      ...messages.map(({id,sender,content})=>({id,sender,content})),
+      {id:newUserMessage.id,sender:newUserMessage.sender,content:newUserMessage.content},
+    ];
+    setMessages([...messages,newUserMessage]);
+    setImageAttachmentsByMessage(current=>({...current,[newUserMessage.id]:images}));
+    if (contextItem) setContextByMessage(current=>({...current,[newUserMessage.id]:contextItem.id}));
 
-    // Clear prompt and attachments
     setPrompt("");
+    setPendingAttachments([]);
+    setAttachmentStatus(null);
     setAttachedContextItem(null);
 
     setIsAiResponding(true);
     if(textareaRef.current) textareaRef.current.disabled = true;
 
     try {
-      const savedUser = await addMessage(chatId, 'user', currentPrompt);
+      const savedUser = await addMessage(chatId, 'user', userContent, undefined, newUserMessage.id);
       if (!savedUser.success) {
-        setMessageError('Unable to save your message. Please try again.');
+        setAttachmentStatus('Unable to save your message. Please try again.');
         setMessages(messages);
         setPrompt(currentPrompt);
+        setPendingAttachments(attachments);
+        setAttachedContextItem(contextItem);
         return;
       }
-      // Pass the updated message list AND the context item ID
-      const result = await getAIResponse(
-          updatedMessagesForApi,
-          selectedModel,
-          attachedContextItem?.id || null // Pass the context ID here
-      );
+      const result = await getAIResponse(updatedMessagesForApi,selectedModel,contextItem?.id||null,images);
 
       let aiContent: string;
       let messageToSave: Message | null = null;
@@ -278,8 +538,9 @@ export function ChatInterface({ chatId }: ChatInterfaceProps) {
               sender: 'ai',
               content: aiContent
             };
-        const saved = await addMessage(chatId, 'ai', aiContent, selectedModel);
-        if (!saved.success) setMessageError('Reply generated, but could not be saved. Copy it before refreshing.');
+        const saved = await addMessage(chatId, 'ai', aiContent, selectedModel, messageToSave.id);
+        messageToSave.persisted = saved.success;
+        if (!saved.success) setAttachmentStatus('Reply generated, but could not be saved. Copy it before refreshing.');
       } else {
         aiContent = `Error: ${result.error || 'Failed to get response from AI.'}`;
         messageToSave = {
@@ -308,7 +569,7 @@ export function ChatInterface({ chatId }: ChatInterfaceProps) {
 
   // Submit only requires prompt text now
   const handleTextareaKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-    if (preferences.enter_to_send && !e.nativeEvent.isComposing && e.key === 'Enter' && !e.shiftKey && prompt.trim() && !isAiResponding) {
+    if (preferences.enter_to_send && !e.nativeEvent.isComposing && e.key === 'Enter' && !e.shiftKey && (prompt.trim() || pendingAttachments.length>0) && !isAiResponding && !isReadingAttachments && !isRecording) {
         e.preventDefault();
         handleSubmit();
     }
@@ -357,13 +618,24 @@ export function ChatInterface({ chatId }: ChatInterfaceProps) {
                 {msg.sender === 'user' && (
                     <div className="max-w-[75%] px-4 py-2 rounded-xl bg-gray-100 text-gray-800">
                         <p className="whitespace-pre-wrap">{msg.content}</p>
+                        {msg.images?.length ? (
+                          <div className="mt-3 flex flex-wrap gap-2">
+                            {msg.images.map(image=><Image key={`${msg.id}-${image.name}`} src={image.dataUrl} alt={`Attached image: ${image.name}`} width={224} height={192} unoptimized className="max-h-48 max-w-56 rounded-lg border border-gray-200 object-contain" />)}
+                          </div>
+                        ):null}
                     </div>
                 )}
                 { /* AI Message Styling */ }
                 {msg.sender === 'ai' && (
                     <div className="max-w-[90%] text-gray-800">
-                        {/* AI Content - No background bubble */}
                         <p className="whitespace-pre-wrap">{msg.content}</p>
+                        <div className="mt-2 flex flex-wrap items-center gap-1 text-gray-500" aria-label="Response actions">
+                          <button type="button" onClick={()=>handleCopyResponse(msg.content)} aria-label="Copy response" title="Copy response" className="rounded-md p-2 hover:bg-gray-100"><Clipboard className="h-4 w-4" /></button>
+                          <button type="button" onClick={()=>handleReadAloud(msg)} aria-label={activeSpeechMessageId===msg.id?'Stop reading response aloud':'Read response aloud'} title={activeSpeechMessageId===msg.id?'Stop reading':'Read aloud'} className="rounded-md p-2 hover:bg-gray-100"><Volume2 className={`h-4 w-4 ${activeSpeechMessageId===msg.id?'text-emerald-700':''}`} /></button>
+                          <button type="button" onClick={()=>handleRetryResponse(msg)} disabled={isAiResponding || retryingMessageId===msg.id} aria-label="Regenerate response" title="Regenerate response" className="rounded-md p-2 hover:bg-gray-100 disabled:opacity-50">{retryingMessageId===msg.id?<Loader2 className="h-4 w-4 animate-spin"/>:<RotateCcw className="h-4 w-4"/>}</button>
+                          <button type="button" onClick={()=>handleSaveResponse(msg)} disabled={savedResponseIds.includes(msg.id)||savingResponseIds.includes(msg.id)} aria-label={savedResponseIds.includes(msg.id)?'Response saved':'Save response to Context'} title={savedResponseIds.includes(msg.id)?'Saved to Context':'Save to Context'} className="rounded-md p-2 hover:bg-gray-100 disabled:opacity-50">{savingResponseIds.includes(msg.id)?<Loader2 className="h-4 w-4 animate-spin"/>:savedResponseIds.includes(msg.id)?<Check className="h-4 w-4"/>:<Bookmark className="h-4 w-4"/>}</button>
+                          <button type="button" onClick={()=>handleShareResponse(msg.content)} aria-label="Share response" title="Share response" className="rounded-md p-2 hover:bg-gray-100"><Share2 className="h-4 w-4" /></button>
+                        </div>
                     </div>
                 )}
             </div>
@@ -406,6 +678,25 @@ export function ChatInterface({ chatId }: ChatInterfaceProps) {
               />
             </div>
 
+            {pendingAttachments.length>0 && (
+              <div className="flex flex-wrap gap-2 px-4 pb-2" aria-label="Pending attachments">
+                {pendingAttachments.map(item=>(
+                  <span key={item.id} className="inline-flex max-w-full items-center gap-1.5 rounded-lg border border-gray-200 bg-gray-50 px-2.5 py-1 text-xs text-gray-700">
+                    {item.kind==='image'?<ImageIcon className="h-3.5 w-3.5"/>:item.kind==='link'?<Link2 className="h-3.5 w-3.5"/>:<FileUp className="h-3.5 w-3.5"/>}
+                    <span className="max-w-48 truncate">{item.kind==='link'?item.name:item.name}</span>
+                    <button type="button" onClick={()=>setPendingAttachments(current=>current.filter(value=>value.id!==item.id))} aria-label={`Remove ${item.name}`} className="rounded p-0.5 hover:bg-gray-200"><X className="h-3.5 w-3.5"/></button>
+                  </span>
+                ))}
+              </div>
+            )}
+            {attachedContextItem && (
+              <div className="flex items-center gap-2 px-4 pb-2 text-xs text-gray-600">
+                <BookText className="h-3.5 w-3.5"/>
+                <span className="max-w-56 truncate">Context: {attachedContextItem.name}</span>
+                <button type="button" onClick={handleRemoveContext} aria-label="Remove attached context" className="rounded p-0.5 hover:bg-gray-100"><X className="h-3.5 w-3.5"/></button>
+              </div>
+            )}
+
             {/* Controls section */}
             <div className="border-t border-gray-200 px-4 py-2 flex items-center justify-between">
               {/* Left Controls */}
@@ -413,6 +704,8 @@ export function ChatInterface({ chatId }: ChatInterfaceProps) {
                 {/* Model Selector */}
                 <div className="relative" ref={dropdownRef}>
                    <button
+                        type="button"
+                        aria-label="Choose AI agent"
                         className="text-gray-500 flex items-center gap-1 text-sm hover:bg-gray-100 px-2 py-1 rounded-md transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                         onClick={(e) => {
                             if (isLoadingModels) return;
@@ -422,6 +715,7 @@ export function ChatInterface({ chatId }: ChatInterfaceProps) {
                         }}
                         disabled={isLoadingModels}
                     >
+                        <span className="text-xs text-gray-400">Agent</span>
                         <span>
                             {isLoadingModels ? 'Loading...' : getDisplayName(selectedModel) ? getDisplayName(selectedModel) : enabledModels.length > 0 ? 'Select Model' : 'No Models Enabled'}
                         </span>
@@ -471,9 +765,14 @@ export function ChatInterface({ chatId }: ChatInterfaceProps) {
                     </Button>
                   </DropdownMenuTrigger>
                   <DropdownMenuContent align="start" className="w-48">
-                    {/* --- Conditional Image Item --- */}
-
-                    {/* --- Updated Context Item (to match IdeInterface) --- */}
+                    <DropdownMenuItem onSelect={()=>fileInputRef.current?.click()} className="flex items-center gap-2">
+                      <FileUp className="h-4 w-4" />
+                      <span>Upload files or images</span>
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onSelect={()=>setIsLinkDialogOpen(true)} className="flex items-center gap-2">
+                      <Link2 className="h-4 w-4" />
+                      <span>Add website or map link</span>
+                    </DropdownMenuItem>
                     <DropdownMenuItem
                       disabled={!preferences.context_enabled}
                       onSelect={() => setIsContextModalOpen(true)}
@@ -487,18 +786,23 @@ export function ChatInterface({ chatId }: ChatInterfaceProps) {
                     </DropdownMenuItem>
                   </DropdownMenuContent>
                 </DropdownMenu>
+                <button type="button" onClick={handleToggleMicrophone} disabled={isAiResponding} aria-pressed={isRecording} aria-label={isRecording?'Stop speech input':'Start speech input'} title={isRecording?'Stop speech input':'Dictate a message'} className={`grid h-8 w-8 place-items-center rounded-md transition-colors disabled:opacity-50 ${isRecording?'bg-red-50 text-red-700':'text-gray-500 hover:bg-gray-100'}`}>
+                  <Mic className="h-4 w-4"/>
+                </button>
               </div>
               {/* Submit Button */}
               <button
-                className={`flex items-center justify-center h-8 w-8 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${ prompt.trim() ? "bg-black text-white hover:bg-gray-800" : "bg-white text-gray-400 border border-gray-300"}`}
-                aria-label="Submit prompt"
+                type="button"
+                className={`flex items-center justify-center h-8 w-8 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${ prompt.trim() || attachmentCount>0 ? "bg-black text-white hover:bg-gray-800" : "bg-white text-gray-400 border border-gray-300"}`}
+                aria-label="Send message"
                 onClick={handleSubmit}
-                // Disable only if prompt is empty or AI is responding
-                disabled={!prompt.trim() || isAiResponding}
+                disabled={(!prompt.trim() && pendingAttachments.length===0) || isAiResponding || isReadingAttachments || isRecording}
               >
                 {isAiResponding ? <Loader2 className="h-4 w-4 animate-spin"/> : <ArrowUp className="h-4 w-4" />}
               </button>
             </div>
+            <input ref={fileInputRef} type="file" multiple accept="image/png,image/jpeg,image/webp,image/gif,.txt,.md,.csv,.json,.html,.htm,.xml,.css,.js,.jsx,.ts,.tsx,.py,.sql,.yaml,.yml,.toml,.sh,.go,.rs,.java,.c,.cpp,.h" className="hidden" onChange={handleFilesSelected} aria-label="Choose files and images"/>
+            {attachmentStatus && <p role="status" aria-live="polite" className="px-4 pb-2 text-xs text-gray-500">{attachmentStatus}</p>}
           </div>
         </div>
       </div>
@@ -518,6 +822,28 @@ export function ChatInterface({ chatId }: ChatInterfaceProps) {
         attachedContextItemId={attachedContextItem?.id || null} // Pass current ID
         onRemoveContext={handleRemoveContext} // Pass remove handler
       />
+
+      {isLinkDialogOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onMouseDown={event=>{if(event.target===event.currentTarget)setIsLinkDialogOpen(false);}}>
+          <section role="dialog" aria-modal="true" aria-labelledby="chat-link-dialog-title" className="w-full max-w-md rounded-2xl border border-gray-200 bg-white p-5 shadow-2xl">
+            <div className="mb-4 flex items-start justify-between gap-4">
+              <div>
+                <h2 id="chat-link-dialog-title" className="text-base font-semibold text-gray-900">Add a website or map link</h2>
+                <p className="mt-1 text-sm text-gray-500">The URL is shared with the model as a reference; its page contents are not fetched automatically.</p>
+              </div>
+              <button type="button" onClick={()=>setIsLinkDialogOpen(false)} aria-label="Close link dialog" className="rounded-lg p-1.5 text-gray-500 hover:bg-gray-100"><X className="h-4 w-4"/></button>
+            </div>
+            <form onSubmit={handleAddLink} className="space-y-4">
+              <label htmlFor="chat-link-input" className="block text-sm font-medium text-gray-700">Website or map URL</label>
+              <input id="chat-link-input" type="url" required value={linkDraft} onChange={event=>setLinkDraft(event.target.value)} placeholder="https://…" className="w-full rounded-xl border border-gray-300 px-3 py-2.5 text-sm outline-none focus:border-emerald-700 focus:ring-2 focus:ring-emerald-700/15"/>
+              <div className="flex justify-end gap-2">
+                <button type="button" onClick={()=>setIsLinkDialogOpen(false)} className="rounded-lg border border-gray-200 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50">Cancel</button>
+                <button type="submit" className="rounded-lg bg-gray-900 px-3 py-2 text-sm font-medium text-white hover:bg-gray-800">Add link</button>
+              </div>
+            </form>
+          </section>
+        </div>
+      )}
 
       {/* --- Hidden File Input (remains) --- */}
     </div>

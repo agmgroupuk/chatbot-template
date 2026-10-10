@@ -4,7 +4,7 @@ import { authenticate, register } from '@/lib/auth-service';
 import { authRequestThrottle } from '@/app/auth-actions';
 import { ownedQuery, transaction } from '@/lib/db';
 import { availableModels, defaultModel, normalizeModel } from '@/lib/models';
-import { generateResponse, aiConfiguration } from '@/lib/ai';
+import { generateResponse, aiConfiguration, type AIImage } from '@/lib/ai';
 import { createBillingClient } from '@/lib/billing';
 import { encodedRedirect } from '@/utils/redirect';
 import { revalidatePath } from 'next/cache';
@@ -224,9 +224,13 @@ export async function updateUserSelectedModel(id:string|null) {
   return {success:true};
 }
 interface ClientMessage {id:string;sender:'user'|'ai';content:string}
-export async function getAIResponse(messages:ClientMessage[],model:string,contextItemId?:string|null):Promise<{success:boolean;response?:string;error?:string}> {
+type ClientImage=AIImage;
+export async function getAIResponse(messages:ClientMessage[],model:string,contextItemId?:string|null,images:ClientImage[]=[]):Promise<{success:boolean;response?:string;error?:string}> {
   const user=await currentUser(); if(!user) return {success:false,error:'Please sign in to use chat.'};
   if(!Array.isArray(messages) || !messages.length || messages.length>100 || messages.some(m=>!m || typeof m.content!=='string' || m.content.length>32000 || !['user','ai'].includes(m.sender)) || messages.reduce((n,m)=>n+m.content.length,0)>128000) return {success:false,error:'Invalid or oversized conversation.'};
+  const allowedImageTypes=new Set(['image/jpeg','image/png','image/webp','image/gif']);
+  if(!Array.isArray(images) || images.length>3 || images.some(image=>!image || !allowedImageTypes.has(image.mimeType) || typeof image.data!=='string' || !/^[A-Za-z0-9+/]+={0,2}$/.test(image.data)) || images.reduce((total,image)=>total+image.data.length,0)>5_000_000) return {success:false,error:'Invalid or oversized image attachment.'};
+  if(images.length && messages.at(-1)?.sender!=='user') return {success:false,error:'Images can only be attached to your latest message.'};
   const settings=await getUserModelSettings();
   if(!settings.enabledModels.includes(model)) return {success:false,error:'This model is not enabled.'};
   try {
@@ -235,7 +239,7 @@ export async function getAIResponse(messages:ClientMessage[],model:string,contex
     if(!membership) throw new Error('An active chat subscription is required. Choose a plan to continue.');
     const context=contextItemId?await getContextItemById(contextItemId):null;
     if(contextItemId && !context) throw new Error('Context item was not found.');
-    const response=await generateResponse(messages,context?.content);
+    const response=await generateResponse(messages,context?.content,images);
     await ownedQuery(user.id,"insert into chat_usage(id,user_id,status,model_id) values(gen_random_uuid(),$1,'completed',$2)",[user.id,model]);
     return {success:true,response};
   } catch(error) {
@@ -259,18 +263,32 @@ export async function startNewChat(chatId:string,prompt:string,model:string|null
     revalidatePath('/'); return {success:true};
   } catch { return {success:false,error:'Unable to create chat.'}; }
 }
-export async function addMessage(chatId:string,sender:'user'|'ai',content:string,modelId?:string|null) {
+export async function addMessage(chatId:string,sender:'user'|'ai',content:string,modelId?:string|null,messageId?:string) {
   const user=await currentUser(); if(!user) return {success:false,error:'Please sign in.'};
-  if(!uuid.test(chatId) || !['user','ai'].includes(sender) || !content || content.length>128000) return {success:false,error:'Invalid message.'};
+  if(!uuid.test(chatId) || (messageId!==undefined && !uuid.test(messageId)) || !['user','ai'].includes(sender) || !content || content.length>128000) return {success:false,error:'Invalid message.'};
   try {
     await transaction(async client=>{
       const {rows}=await client.query('select id from chats where id=$1 and user_id=$2 for update',[chatId,user.id]);
       if(!rows.length) throw new Error('Chat not found.');
-      await client.query('insert into messages(chat_id,user_id,sender,content,model_id) values($1,$2,$3,$4,$5)',[chatId,user.id,sender,content,modelId]);
+      await client.query('insert into messages(id,chat_id,user_id,sender,content,model_id) values(coalesce($1,gen_random_uuid()),$2,$3,$4,$5,$6)',[messageId||null,chatId,user.id,sender,content,modelId]);
       await client.query('update chats set updated_at=now() where id=$1 and user_id=$2',[chatId,user.id]);
     });
     return {success:true};
   } catch { return {success:false,error:'Unable to save message.'}; }
+}
+export async function updateAssistantMessage(chatId:string,messageId:string,content:string,modelId?:string|null) {
+  const user=await currentUser();
+  if(!user) return {success:false,error:'Please sign in.'};
+  if(!uuid.test(chatId) || !uuid.test(messageId) || !content.trim() || content.length>128000) return {success:false,error:'Invalid response.'};
+  try {
+    const rows=await ownedQuery(user.id,`update messages m set content=$1,model_id=$2
+      from chats c where m.id=$3 and m.chat_id=$4 and m.user_id=$5 and m.sender='ai'
+      and c.id=m.chat_id and c.user_id=$5 returning m.id`,[content,modelId||null,messageId,chatId,user.id]);
+    return {success:!!rows.length,error:rows.length?undefined:'Response not found.'};
+  } catch(error) {
+    console.error('Unable to update chat response:',error);
+    return {success:false,error:'Unable to save the retried response.'};
+  }
 }
 export async function getChatHistory():Promise<{id:string;title:string}[]> {
   const user=await currentUser(); if(!user) return [];

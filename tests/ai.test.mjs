@@ -20,6 +20,28 @@ test('OpenAI uses Responses without storage and xAI uses the configured compatib
  });
  assert.equal(await xai.api.generateResponse([{sender:'user',content:'Hi'}]),'xAI fixture response');assert.equal(called,2);
 });
+test('image attachments are passed to the configured provider as multimodal user input',async()=>{
+ const image={mimeType:'image/png',data:'aGVsbG8='};
+ const openai=provider({OPENAI_API_KEY:'unit-fixture'},async(options,body,kind)=>{
+  assert.equal(kind,'responses');
+  assert.equal(body.input[0].role,'user');
+  assert.deepEqual(JSON.parse(JSON.stringify(body.input[0].content)),[
+   {type:'input_text',text:'Describe this image.'},
+   {type:'input_image',detail:'auto',image_url:'data:image/png;base64,aGVsbG8='},
+  ]);
+  return {output_text:'OpenAI image response'};
+ });
+ assert.equal(await openai.api.generateResponse([{sender:'user',content:'Describe this image.'}],null,[image]),'OpenAI image response');
+ const xai=provider({AI_PROVIDER:'xai',XAI_API_KEY:'unit-fixture'},async(options,body,kind)=>{
+  assert.equal(kind,'chat');
+  assert.deepEqual(JSON.parse(JSON.stringify(body.messages[0].content)),[
+   {type:'text',text:'Describe this image.'},
+   {type:'image_url',image_url:{url:'data:image/png;base64,aGVsbG8='}},
+  ]);
+  return {choices:[{message:{content:'xAI image response'}}]};
+ });
+ assert.equal(await xai.api.generateResponse([{sender:'user',content:'Describe this image.'}],null,[image]),'xAI image response');
+});
 test('missing credentials and rate limits fail safely without leaking provider error details',async()=>{
  const missing=provider({},()=>{throw new Error('must not call');});
  await assert.rejects(missing.api.generateResponse([{sender:'user',content:'Hi'}]),/not configured/);
