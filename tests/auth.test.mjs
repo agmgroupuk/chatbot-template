@@ -10,7 +10,7 @@ function load(file,dependencies={}) {
  const exports={}; const {outputText}=ts.transpileModule(readFileSync(new URL(`../${file}`,import.meta.url),'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022,esModuleInterop:true}});
  runInNewContext(outputText,{exports,require:name=>name==='server-only'?{}:dependencies[name]||require(name),Buffer,process,console}); return exports;
 }
-test('native authentication verifies email, hashes passwords, expires tokens and atomically revokes sessions on reset',async()=>{
+test('native authentication signs users in without email verification, hashes passwords and revokes sessions on reset',async()=>{
  const db=new PGlite(); const sent=[];
  try {
   await db.exec(readFileSync(new URL('../migrations/railway/001_schema.sql',import.meta.url),'utf8'));
@@ -21,11 +21,19 @@ test('native authentication verifies email, hashes passwords, expires tokens and
   });
   await assert.rejects(auth.register('bad-email','a-secure-password'),/valid email/);
   await assert.rejects(password.hashPassword('short'),/12 and 128/);
-  await auth.register('  Person@Example.test ','first-secure-password');
+  const registration=await auth.register('  Person@Example.test ','first-secure-password');
   const [user]=(await db.query('select * from app_users')).rows;
+  assert.equal(registration.id,user.id);
+  assert.equal(registration.email,user.email);
   assert.equal(user.email,'person@example.test'); assert.ok(!user.password_hash.includes('first-secure-password'));
-  await assert.rejects(auth.authenticate(user.email,'first-secure-password'),/confirm your email/);
+  assert.ok(user.email_verified_at,'New registrations are immediately usable without a verification email.');
+  assert.equal(sent.length,0,'Registration does not require configured email delivery.');
+  assert.equal(await auth.authenticate(user.email,'first-secure-password'),user.id);
+  await assert.rejects(auth.register(user.email,'another-secure-password'),/already exists/);
   await assert.rejects(auth.authenticate(user.email,'incorrect-password'),/incorrect/);
+  await db.query('update app_users set email_verified_at=null where id=$1',[user.id]);
+  assert.equal(await auth.authenticate(user.email,'first-secure-password'),user.id,'Existing unverified users can sign in.');
+  await auth.requestEmailToken(user.email,'verify');
   const verification=new URL(sent[0].url).searchParams.get('token');
   assert.equal(await auth.consumeVerification(verification),user.id);
   await assert.rejects(auth.consumeVerification(verification),/expired/);

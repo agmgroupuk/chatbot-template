@@ -21,16 +21,15 @@ export async function sendToken(userId:string,email:string,purpose:'verify'|'res
 export async function register(emailInput:string,password:string) {
   const email=normalizeEmail(emailInput);
   await throttle(`signup:${email}`,5);
-  if(!emailConfigured()) throw new Error('Signup email delivery is not configured yet. Please try again later.');
   const hash=await hashPassword(password);
   const user=await transaction(async client=>{
-    const {rows}=await client.query(`insert into app_users(email,password_hash) values($1,$2) on conflict(email) do nothing returning id,email`,[email,hash]);
+    const {rows}=await client.query(`insert into app_users(email,password_hash,email_verified_at) values($1,$2,now()) on conflict(email) do nothing returning id,email`,[email,hash]);
     if(!rows.length) return null;
     await client.query('insert into profiles(id) values($1)',[rows[0].id]);
     return rows[0];
   });
-  if(user) await sendToken(user.id,email,'verify');
-  return email;
+  if(!user) throw new Error('An account with this email already exists. Please sign in.');
+  return {id:user.id,email:user.email};
 }
 export async function authenticate(emailInput:string,password:string) {
   const email=normalizeEmail(emailInput);
@@ -38,15 +37,14 @@ export async function authenticate(emailInput:string,password:string) {
   const [user]=await query<{id:string;password_hash:string;email_verified_at:string|null}>('select id,password_hash,email_verified_at from app_users where email=$1',[email]);
   const valid=await verifyPassword(password,user?.password_hash || 'scrypt-v1:00000000000000000000000000000000:'+'00'.repeat(64));
   if(!user || !valid) throw new Error('Email or password is incorrect.');
-  if(!user.email_verified_at) throw new Error('Please confirm your email before signing in.');
   return user.id;
 }
 export async function requestEmailToken(emailInput:string,purpose:'verify'|'reset') {
   const email=normalizeEmail(emailInput);
   await throttle(`${purpose}:${email}`,5);
-  if(!emailConfigured()) throw new Error('Email delivery is not configured yet. Please try again later.');
+  if(!emailConfigured()) return; // Skip silently when email is not configured
   const [user]=await query<{id:string;email_verified_at:string|null}>('select id,email_verified_at from app_users where email=$1',[email]);
-  if(user && (purpose==='reset'?user.email_verified_at:!user.email_verified_at)) await sendToken(user.id,email,purpose);
+  if(user && (purpose==='reset' || !user.email_verified_at)) await sendToken(user.id,email,purpose);
 }
 export async function consumeVerification(token:string) {
   if(!/^[A-Za-z0-9_-]{43}$/.test(token)) throw new Error('Invalid or expired confirmation link.');

@@ -17,11 +17,16 @@ export async function signInAction(form:FormData) {
   revalidatePath('/'); redirect(/^\/(?:workspace|subscribe)(?:\?|$)/.test(next)&&!/[\\\r\n]/.test(next)?next:'/dashboard');
 }
 export async function signUpAction(form:FormData) {
-  let email='';
   if(form.get('accept_terms')!=='on') return encodedRedirect('error','/sign-up','Please agree to the Terms & Conditions before creating an account.');
-  try { await authRequestThrottle(); email=await register(String(form.get('email')||''),String(form.get('password')||'')); }
+  let user:{id:string;email:string};
+  try {
+    await authRequestThrottle();
+    user=await register(String(form.get('email')||''),String(form.get('password')||''));
+    await createSession(user.id);
+  }
   catch(error) { return encodedRedirect('error','/sign-up',error instanceof Error?error.message:'Unable to sign up.'); }
-  redirect(`/confirmation?email=${encodeURIComponent(email)}`);
+  revalidatePath('/');
+  redirect('/dashboard');
 }
 export async function signOutAction() { await destroySession(); redirect('/sign-in'); }
 export async function getCurrentUserAction() { return currentUser(); }

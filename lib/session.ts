@@ -7,7 +7,7 @@ export const sessionCookie = process.env.NODE_ENV === 'production' ? '__Host-one
 export type User = { id: string; email: string; email_verified_at: string | null };
 export async function userFromToken(token?: string): Promise<User | null> {
   if (!token || !/^[A-Za-z0-9_-]{43}$/.test(token)) return null;
-  const [user] = await query<User>(`select u.id,u.email,u.email_verified_at from app_sessions s join app_users u on u.id=s.user_id where s.token_hash=$1 and s.expires_at>now() and u.email_verified_at is not null`,[tokenHash(token)]);
+  const [user] = await query<User>(`select u.id,u.email,u.email_verified_at from app_sessions s join app_users u on u.id=s.user_id where s.token_hash=$1 and s.expires_at>now()`,[tokenHash(token)]);
   return user || null;
 }
 export const currentUser = cache(async () => userFromToken((await cookies()).get(sessionCookie)?.value));
