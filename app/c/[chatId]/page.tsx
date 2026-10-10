@@ -19,6 +19,7 @@ function ChatPageContent() {
 
   return (
     <ChatInterface 
+      key={chatId}
       chatId={chatId} 
       // Remove unused initialPrompt prop
       // initialPrompt={initialPrompt ? decodeURIComponent(initialPrompt) : undefined} 

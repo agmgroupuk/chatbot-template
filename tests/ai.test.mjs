@@ -48,3 +48,14 @@ test('missing credentials and rate limits fail safely without leaking provider e
  let error;const limited=provider({OPENAI_API_KEY:'unit-fixture'},()=>{throw error;});error=new limited.APIError(429);
  await assert.rejects(limited.api.generateResponse([{sender:'user',content:'Hi'}]),/service is busy/);
 });
+
+test('streaming providers emit actual deltas and reject interrupted responses',async()=>{
+ const deltas=[];
+ const openai=provider({OPENAI_API_KEY:'unit-fixture'},async function* (options,body){assert.equal(body.stream,true);assert.equal(body.store,false);yield {type:'response.output_text.delta',delta:'Hello '};yield {type:'response.output_text.delta',delta:'world'};yield {type:'response.completed'};});
+ assert.equal(await openai.api.generateResponse([{sender:'user',content:'Hi'}],null,[],{onDelta:text=>deltas.push(text),signal:new AbortController().signal}),'Hello world');
+ assert.deepEqual(deltas,['Hello ','world']);
+ const xai=provider({AI_PROVIDER:'xai',XAI_API_KEY:'fixture'},async function*(){yield {choices:[{delta:{content:'Hello'},finish_reason:null}]};yield {choices:[{delta:{},finish_reason:'stop'}]};});
+ assert.equal(await xai.api.generateResponse([{sender:'user',content:'Hi'}],null,[],{onDelta:()=>{},signal:new AbortController().signal}),'Hello');
+ const interrupted=provider({OPENAI_API_KEY:'fixture'},async function*(){yield {type:'response.output_text.delta',delta:'Partial'};});
+ await assert.rejects(interrupted.api.generateResponse([{sender:'user',content:'Hi'}],null,[],{onDelta:()=>{},signal:new AbortController().signal}),/did not complete/);
+});

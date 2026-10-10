@@ -1,5 +1,6 @@
 "use client";
 
+import { ConversationTools } from "./conversation-tools";
 import { toast } from "sonner";
 import React, { useState, useRef, useEffect } from "react";
 import Link from "next/link";
@@ -19,6 +20,13 @@ import {
   UserPlus,
   User,
   MoreHorizontal,
+  Search,
+  MessageSquare,
+  LayoutDashboard,
+  Blocks,
+  BookOpen,
+  CircleHelp,
+  Info,
 } from "lucide-react";
 import { useRouter, usePathname } from "next/navigation";
 import { logoutAction } from "@/app/actions";
@@ -49,6 +57,8 @@ export interface SidebarProps {
 export function SidebarComponent({ className, onToggleCollapse, collapsed = false, isAuthenticated, isAuthLoading, activePlanName }: SidebarProps) {
   const [isHistoryCollapsed, setIsHistoryCollapsed] = useState(false);
   const [showProfileMenu, setShowProfileMenu] = useState(false);
+  const [historySearch, setHistorySearch] = useState('');
+  const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false);
   const profileMenuRef = useRef<HTMLDivElement>(null);
   const router = useRouter();
@@ -106,6 +116,15 @@ export function SidebarComponent({ className, onToggleCollapse, collapsed = fals
       setIsLoadingHistory(false);
     }
   }, [isAuthenticated, pathname]);
+
+  useEffect(()=>{
+    if(!isAuthenticated)return;
+    let active=true;
+    const refresh=()=>{void getChatHistory().then(history=>{if(active)setChatHistory(history);}).catch(()=>{if(active)setHistoryError('Failed to refresh history.');});};
+    const deleted=(event:Event)=>{if(pathname===`/c/${(event as CustomEvent<string>).detail}`)router.push('/');};
+    window.addEventListener('conversation-history-changed',refresh);window.addEventListener('conversation-deleted',deleted);
+    return()=>{active=false;window.removeEventListener('conversation-history-changed',refresh);window.removeEventListener('conversation-deleted',deleted);};
+  },[isAuthenticated,pathname,router]);
 
   const handleCollapseClick = () => {
     if (onToggleCollapse) {
@@ -167,17 +186,45 @@ export function SidebarComponent({ className, onToggleCollapse, collapsed = fals
       } as React.CSSProperties}
     >
       {collapsed ? (
-        <div className="flex justify-center p-3">
-          <Button
-            variant="ghost"
-            size="icon"
-            className="rounded-full transition-colors hover:bg-stone-200"
-            onClick={handleCollapseClick}
-            aria-label="Expand sidebar"
-            title="Expand sidebar"
-          >
-            <ChevronRight className="h-4 w-4" />
-          </Button>
+        <div className="home-chat-sidebar-rail">
+          <Button variant="ghost" size="icon" className="sidebar-rail-button" onClick={handleCollapseClick} aria-label="Expand sidebar" title="Expand sidebar"><ChevronRight className="h-4 w-4" /></Button>
+          <Link className="sidebar-rail-link sidebar-rail-logo" href="/" aria-label="One Fin home" title="One Fin home">
+            <Image className="home-brand-logo" src="/logo/one-fin-logo.png" alt="" width={30} height={30} />
+          </Link>
+          <Button variant="ghost" size="icon" className="sidebar-rail-button" onClick={() => { setIsHistoryCollapsed(false); setIsSearchOpen(true); handleCollapseClick(); }} aria-label="Search conversations" title="Search conversations"><Search className="h-5 w-5" /></Button>
+          <Button variant="ghost" size="icon" className="sidebar-rail-button" onClick={() => router.push('/')} aria-label="New chat" title="New chat"><Plus className="h-5 w-5" /></Button>
+          <Link className="sidebar-rail-link" href="/dashboard" aria-label="Dashboard" title="Dashboard"><LayoutDashboard className="h-5 w-5" /></Link>
+          <Link className="sidebar-rail-link" href="/workspace" aria-label="Workspace" title="Workspace"><Blocks className="h-5 w-5" /></Link>
+          <Link className="sidebar-rail-link" href="/context" aria-label="Context" title="Context"><BookOpen className="h-5 w-5" /></Link>
+          <div className="sidebar-rail-spacer" />
+          <div className="relative sidebar-rail-profile">
+            <Button variant="ghost" size="icon" className="sidebar-rail-button profile-button" onClick={() => setShowProfileMenu((open) => !open)} aria-label="Open profile menu" aria-expanded={showProfileMenu} title="Profile">
+              <User className="h-5 w-5" />
+            </Button>
+            {showProfileMenu && (
+              <div ref={profileMenuRef} className="sidebar-rail-menu" role="region" aria-label="Profile and application menu">
+                <Link href="/" onClick={() => setShowProfileMenu(false)}><MessageSquare /><span>Homepage chat</span></Link>
+                <Link href="/dashboard" onClick={() => setShowProfileMenu(false)}><LayoutDashboard /><span>Dashboard</span></Link>
+                <Link href="/workspace" onClick={() => setShowProfileMenu(false)}><Blocks /><span>Workspace</span></Link>
+                <Link href="/context" onClick={() => setShowProfileMenu(false)}><BookOpen /><span>Context</span></Link>
+                <Link href="/account" onClick={() => setShowProfileMenu(false)}><User /><span>Account</span></Link>
+                <Link href="/pricing" onClick={() => setShowProfileMenu(false)}><Settings /><span>Chat plans</span></Link>
+                <Link href="/support" onClick={() => setShowProfileMenu(false)}><CircleHelp /><span>Help center</span></Link>
+                <Link href="/about" onClick={() => setShowProfileMenu(false)}><Info /><span>About One Fin</span></Link>
+                {!isAuthLoading && (isAuthenticated ? (
+                  <>
+                    <button type="button" onClick={() => { setIsSettingsModalOpen(true); setShowProfileMenu(false); }}><Settings /><span>Settings</span></button>
+                    <button type="button" onClick={handleSignOut}><LogOut /><span>Sign out</span></button>
+                  </>
+                ) : (
+                  <>
+                    <Link href="/sign-up" onClick={() => setShowProfileMenu(false)}><UserPlus /><span>Sign up</span></Link>
+                    <Link href="/sign-in" onClick={() => setShowProfileMenu(false)}><LogIn /><span>Sign in</span></Link>
+                  </>
+                ))}
+              </div>
+            )}
+          </div>
         </div>
       ) : (
         <>
@@ -202,6 +249,14 @@ export function SidebarComponent({ className, onToggleCollapse, collapsed = fals
           </div>
 
           <div className="px-3 py-2 flex-shrink-0">
+            <Button
+              variant="ghost"
+              className="w-full text-stone-700 hover:bg-stone-200 px-1.5"
+              onClick={() => { setIsSearchOpen((open) => !open); setIsHistoryCollapsed(false); }}
+              aria-label="Search conversations"
+            >
+              <div className="flex items-center gap-2 w-full"><Search className="h-4 w-4" /><span>Search</span></div>
+            </Button>
             <Button
               variant="ghost"
               className="w-full text-stone-700 hover:bg-stone-200 px-1.5"
@@ -230,6 +285,16 @@ export function SidebarComponent({ className, onToggleCollapse, collapsed = fals
                   )}
                 />
               </button>
+              {isSearchOpen && !isHistoryCollapsed && (
+                <input
+                  type="search"
+                  value={historySearch}
+                  onChange={(event) => setHistorySearch(event.target.value)}
+                  placeholder="Search chats"
+                  aria-label="Search chat history"
+                  className="mb-2 w-full rounded-md border border-stone-200 bg-white px-2 py-1.5 text-sm text-stone-900 outline-none focus:ring-2 focus:ring-blue-300"
+                />
+              )}
               {!isHistoryCollapsed && (
                 <div className="mt-1 space-y-1 animate-in fade-in duration-200 w-full overflow-hidden">
                   {/* Loading State */}
@@ -247,8 +312,11 @@ export function SidebarComponent({ className, onToggleCollapse, collapsed = fals
                   {!isLoadingHistory && !historyError && chatHistory.length === 0 && (
                     <p className="px-1.5 py-2 text-sm text-stone-500">No chat history yet.</p>
                   )}
+                  {!isLoadingHistory && !historyError && chatHistory.length > 0 && !chatHistory.some((chat) => chat.title.toLowerCase().includes(historySearch.toLowerCase())) && historySearch && (
+                    <p className="px-1.5 py-2 text-sm text-stone-500">No matching conversations.</p>
+                  )}
                   {/* History List */}
-                  {!isLoadingHistory && !historyError && chatHistory.map((chat) => (
+                  {!isLoadingHistory && !historyError && chatHistory.filter((chat) => chat.title.toLowerCase().includes(historySearch.toLowerCase())).map((chat) => (
                     <div
                       key={chat.id}
                       className="group relative flex items-center w-full overflow-hidden min-w-0"
@@ -284,6 +352,7 @@ export function SidebarComponent({ className, onToggleCollapse, collapsed = fals
             </div>
           </div>
 
+          {!collapsed && isAuthenticated && <details className="px-3 overflow-y-auto max-h-72"><summary>Manage chats and projects</summary><ConversationTools area="chat" onOpen={id=>router.push(`/c/${id}`)}/></details>}
           {/* Profile Section (Moved here) */}
            <div className="p-3 border-t border-stone-200">
              <div className="relative">
@@ -325,13 +394,13 @@ export function SidebarComponent({ className, onToggleCollapse, collapsed = fals
                      <Plus className="h-4 w-4" /><span>Homepage chat</span>
                    </Link>
                    <Link className="flex w-full items-center gap-3 px-4 py-2 text-sm text-stone-700 hover:bg-stone-100" href="/dashboard" onClick={() => setShowProfileMenu(false)}>
-                     <span aria-hidden="true">📊</span><span>Dashboard</span>
+                     <LayoutDashboard className="h-4 w-4" /><span>Dashboard</span>
                    </Link>
                    <Link className="flex w-full items-center gap-3 px-4 py-2 text-sm text-stone-700 hover:bg-stone-100" href="/workspace" onClick={() => setShowProfileMenu(false)}>
-                     <span aria-hidden="true">▦</span><span>Workspace app</span>
+                     <Blocks className="h-4 w-4" /><span>Workspace app</span>
                    </Link>
                    <Link className="flex w-full items-center gap-3 px-4 py-2 text-sm text-stone-700 hover:bg-stone-100" href="/context" onClick={() => setShowProfileMenu(false)}>
-                     <span aria-hidden="true">📖</span><span>Context</span>
+                     <BookOpen className="h-4 w-4" /><span>Context</span>
                    </Link>
                    <Link className="flex w-full items-center gap-3 px-4 py-2 text-sm text-stone-700 hover:bg-stone-100" href="/account" onClick={() => setShowProfileMenu(false)}>
                      <User className="h-4 w-4" /><span>Account</span>
@@ -340,13 +409,13 @@ export function SidebarComponent({ className, onToggleCollapse, collapsed = fals
                      <Settings className="h-4 w-4" /><span>Chat plans</span>
                    </Link>
                    <Link className="flex w-full items-center gap-3 px-4 py-2 text-sm text-stone-700 hover:bg-stone-100" href="/support" onClick={() => setShowProfileMenu(false)}>
-                     <span aria-hidden="true">?</span><span>Help center</span>
+                     <CircleHelp className="h-4 w-4" /><span>Help center</span>
                    </Link>
                    <Link className="flex w-full items-center gap-3 px-4 py-2 text-sm text-stone-700 hover:bg-stone-100" href="/contact" onClick={() => setShowProfileMenu(false)}>
                      <Mail className="h-4 w-4" /><span>Contact</span>
                    </Link>
                    <Link className="flex w-full items-center gap-3 px-4 py-2 text-sm text-stone-700 hover:bg-stone-100" href="/about" onClick={() => setShowProfileMenu(false)}>
-                     <User className="h-4 w-4" /><span>Company information</span>
+                     <Info className="h-4 w-4" /><span>Company information</span>
                    </Link>
                    <Separator className="my-1" />
                    {isAuthLoading ? null : isAuthenticated ? (

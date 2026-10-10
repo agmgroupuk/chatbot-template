@@ -10,7 +10,7 @@ export function aiConfiguration() {
     ? { provider, model: process.env.OPENAI_MODEL || 'gpt-4.1-mini', apiKey: process.env.OPENAI_API_KEY, baseURL:'https://api.openai.com/v1' }
     : { provider, model: process.env.XAI_MODEL || 'grok-4.3', apiKey: process.env.XAI_API_KEY, baseURL:'https://api.x.ai/v1' };
 }
-export async function generateResponse(messages: {sender:'user'|'ai';content:string}[], context?: string | null, images:AIImage[] = []) {
+export async function generateResponse(messages: {sender:'user'|'ai';content:string}[], context?: string | null, images:AIImage[] = [], streaming?:{onDelta:(text:string)=>void;signal:AbortSignal}) {
   const configuration = aiConfiguration();
   if (!configuration.apiKey) throw new Error('AI is not configured yet. Please try again later.');
   const client = new OpenAI({apiKey:configuration.apiKey,baseURL:configuration.baseURL,timeout:60000,maxRetries:1});
@@ -29,6 +29,17 @@ export async function generateResponse(messages: {sender:'user'|'ai';content:str
         }
         return {role:message.sender==='user'?'user':'assistant',content:message.content};
       });
+      if(streaming) {
+        const stream=await client.responses.create({model:configuration.model,store:false,max_output_tokens:2048,instructions:context?`Use the following user-supplied reference when relevant:\n${context}`:undefined,input,stream:true},{signal:streaming.signal});
+        let text='',completed=false;
+        for await(const event of stream) {
+          if(event.type==='response.output_text.delta'){text+=event.delta;streaming.onDelta(event.delta);}
+          if(event.type==='response.completed')completed=true;
+          if(event.type==='error'||event.type==='response.failed'||event.type==='response.incomplete')throw new Error('The AI response did not complete. Please retry.');
+        }
+        if(!completed || !text.trim())throw new Error('The AI response did not complete. Please retry.');
+        return text;
+      }
       const result = await client.responses.create({model:configuration.model,store:false,max_output_tokens:2048,instructions:context ? `Use the following user-supplied reference when relevant:\n${context}` : undefined,input});
       if (!result.output_text?.trim()) throw new Error('The AI returned an empty response. Please try again.');
       return result.output_text;
@@ -50,6 +61,13 @@ export async function generateResponse(messages: {sender:'user'|'ai';content:str
           : {role:'assistant' as const,content:message.content};
       }),
     ];
+    if(streaming) {
+      const stream=await client.chat.completions.create({model:configuration.model,messages:completionMessages,stream:true,max_tokens:2048},{signal:streaming.signal});
+      let text='',completed=false;
+      for await(const event of stream){const choice=event.choices[0];const delta=choice?.delta.content;if(delta){text+=delta;streaming.onDelta(delta);}if(choice?.finish_reason==='stop')completed=true;}
+      if(!completed || !text.trim())throw new Error('The AI response did not complete. Please retry.');
+      return text;
+    }
     const result = await client.chat.completions.create({model:configuration.model,messages:completionMessages});
     const text = result.choices[0]?.message.content;
     if (!text?.trim()) throw new Error('The AI returned an empty response. Please try again.');

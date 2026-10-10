@@ -1,6 +1,6 @@
 "use server";
 import { currentUser, createSession, destroySession } from '@/lib/session';
-import { authenticate, register } from '@/lib/auth-service';
+import { authenticate, register, throttle } from '@/lib/auth-service';
 import { authRequestThrottle } from '@/app/auth-actions';
 import { ownedQuery, transaction } from '@/lib/db';
 import { availableModels, defaultModel, normalizeModel } from '@/lib/models';
@@ -244,6 +244,7 @@ export async function getAIResponse(messages:ClientMessage[],model:string,contex
     if(!membership) throw new Error('An active chat subscription is required. Choose a plan to continue.');
     const context=contextItemId?await getContextItemById(contextItemId):null;
     if(contextItemId && !context) throw new Error('Context item was not found.');
+    await throttle(`chat:${user.id}`,60);
     const response=await generateResponse(messages,context?.content,images);
     await ownedQuery(user.id,"insert into chat_usage(id,user_id,status,model_id) values(gen_random_uuid(),$1,'completed',$2)",[user.id,model]);
     return {success:true,response};
@@ -297,7 +298,7 @@ export async function updateAssistantMessage(chatId:string,messageId:string,cont
 }
 export async function getChatHistory():Promise<{id:string;title:string}[]> {
   const user=await currentUser(); if(!user) return [];
-  return ownedQuery(user.id,"select id,coalesce(name,'Untitled chat') as title from chats where user_id=$1 order by updated_at desc",[user.id]);
+  return ownedQuery(user.id,"select id,coalesce(name,'Untitled chat') as title from chats where user_id=$1 and area='chat' and archived=false order by pinned desc,updated_at desc",[user.id]);
 }
 export async function getMessagesForChat(chatId:string):Promise<{id:string;sender:'user'|'ai';content:string;created_at:string}[]> {
   const user=await currentUser(); if(!user || !uuid.test(chatId)) return [];

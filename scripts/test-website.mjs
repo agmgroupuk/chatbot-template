@@ -47,6 +47,7 @@ try {
   page.on('requestfinished',request=>{pending.delete(request);if(request.method()==='POST')actionLog.push(['done',new URL(request.url()).pathname]);});
   page.on('requestfailed',request=>{pending.delete(request);actionLog.push(['failed',new URL(request.url()).pathname,request.failure()?.errorText]);});
   async function check(path,title){console.log(`Checking ${path}`);const response=await page.goto(`${origin}${path}`);assert.equal(response.status(),200,path);await page.getByRole('heading',{level:1,name:title}).waitFor();assert.equal(await page.locator('h1').count(),1,`${path}: one page heading`);if(path!=='/')assert.ok(await page.locator('footer').isVisible());checks++;}
+  if(!process.argv.includes('--features-only')) {
   await check('/',/Build custom chatbots/);
   assert.equal(await page.locator('link[rel="canonical"]').getAttribute('href'),'https://onefinsolution.online','Homepage canonical URL');
   assert.equal(await page.locator('meta[property="og:title"]').getAttribute('content'),'One Fin Solution | AI Chat and Software Workspace');
@@ -92,8 +93,11 @@ try {
   await profileButton.click();
   await page.getByRole('button',{name:'Collapse sidebar'}).click();
   assert.ok(await page.getByRole('button',{name:'Expand sidebar'}).isVisible(),'Homepage sidebar can be reopened from its collapsed state');
+  for(const label of ['Search conversations','New chat','Dashboard','Workspace','Context','Open profile menu'])assert.ok(await page.getByRole(label==='Dashboard'||label==='Workspace'||label==='Context'?'link':'button',{name:label}).isVisible(),`Collapsed homepage rail shows ${label} icon`);
+  assert.ok(await page.locator('.home-chat-sidebar-rail .home-brand-logo').isVisible(),'Collapsed homepage rail retains the logo');
   await page.getByRole('button',{name:'Expand sidebar'}).click();
   await page.waitForFunction(()=>document.querySelector('.home-chat-sidebar')?.getBoundingClientRect().width>200);
+  assert.ok(await page.getByRole('button',{name:'Start speech input'}).isVisible(),'Homepage composer exposes speech-to-text');
   assert.equal(await page.getByText(/daily message cap|visitor allowance/i).count(),0,'Homepage does not advertise guest access');
   assert.equal(await page.locator('footer').count(),0,'Chat homepage fills the viewport without the marketing footer');
   assert.equal(await page.locator('.site-header').count(),0,'Chat homepage has no public marketing header');
@@ -113,7 +117,7 @@ try {
   page.setViewportSize({width:1440,height:1000});
   for(const [path,title] of [['/about','Software with a practical purpose.'],['/privacy','Privacy Policy'],['/terms','Terms & Conditions'],['/payment-policy','Payment, Cancellation & Refund Policy'],['/support','A little help goes a long way.'],['/contact','Let’s get you to the right place.'],['/pricing','Choose the time that fits your work.'],['/forgot-password','Forgot your password?'],['/reset-password','Request a fresh reset link.'],['/sign-in','Your workspace is waiting.'],['/sign-up','A place for your next idea.']]) await check(path,title);
   for(const path of ['/dashboard','/dashboard/activity','/dashboard/billing','/account/security']){await page.goto(`${origin}${path}`);assert.equal(new URL(page.url()).pathname,'/sign-in');checks++;}
-  await page.goto(`${origin}/workspace`);await page.getByRole('heading',{level:1,name:'Build something useful.'}).waitFor();assert.equal(await page.locator('.home-chat-sidebar').count(),0,'Guest Workspace view is separate from homepage chat');assert.ok(await page.getByText('Sign in when you’re ready to use Workspace.',{exact:true}).isVisible());await page.getByRole('textbox',{name:'Describe a Workspace task'}).fill('Build a sample website');await page.getByRole('button',{name:'Sign in to run'}).click();assert.ok(await page.getByRole('dialog').getByRole('link',{name:'Sign in'}).isVisible(),'Workspace requests login only when a guest tries to use it');checks++;
+  await page.goto(`${origin}/workspace`);await page.getByRole('heading',{level:1,name:'Build something useful.'}).waitFor();assert.equal(await page.locator('.home-chat-sidebar').count(),0,'Guest Workspace view is separate from homepage chat');await page.getByRole('button',{name:'Collapse Workspace navigation'}).click();for(const label of ['Overview','Credits and usage','Payment settings','Transactions','Activity','Account settings','Sign in to Workspace'])assert.ok(await page.locator(`.workspace-sidebar a[aria-label="${label}"]`).isVisible(),`Collapsed Workspace rail shows ${label} icon`);assert.ok(await page.locator('.workspace-brand-mark').isVisible(),'Collapsed Workspace rail retains the logo');await page.getByRole('button',{name:'Expand Workspace navigation'}).click();assert.ok(await page.getByText('Sign in when you’re ready to use Workspace.',{exact:true}).isVisible());await page.getByRole('textbox',{name:'Describe a Workspace task'}).fill('Build a sample website');await page.getByRole('button',{name:'Sign in to run'}).click();assert.ok(await page.getByRole('dialog').getByRole('link',{name:'Sign in'}).isVisible(),'Workspace requests login only when a guest tries to use it');checks++;
   await page.goto(`${origin}/chat`);assert.equal(new URL(page.url()).pathname,'/sign-in');checks++;
   await page.goto(`${origin}/pricing`);
   for(const interval of ['Daily','Weekly','Monthly','Yearly']) assert.ok(await page.getByRole('heading',{name:interval,exact:true}).isVisible());
@@ -125,6 +129,48 @@ try {
   await db.query('update app_users set email_verified_at=null where id=$1',[user]);
   await page.goto(`${origin}/sign-in`);await page.getByLabel('Email address').fill('browser@example.test');await page.getByLabel('Password',{exact:true}).fill(password);await page.getByRole('button',{name:'Sign in',exact:true}).click();await page.waitForURL('**/dashboard');await page.getByRole('heading',{name:'Welcome back, Browser.'}).waitFor();assert.ok(await page.getByRole('link',{name:'My saved conversation',exact:true}).isVisible());assert.equal(await page.getByText('Other user private conversation',{exact:true}).count(),0);checks++;
   await page.goto(`${origin}/`);await page.locator('.home-chat-sidebar .profile-button').click();const signedInMenu=page.getByRole('region',{name:'Profile and application menu'});await signedInMenu.getByRole('button',{name:'Settings'}).waitFor({state:'visible'});assert.ok(await signedInMenu.getByRole('button',{name:'Settings'}).isVisible(),'Signed-in profile menu offers Settings');assert.ok(await signedInMenu.getByRole('button',{name:'Sign out'}).isVisible(),'Signed-in profile menu offers Sign out');assert.equal(await signedInMenu.getByRole('link',{name:'Sign in'}).count(),0);await signedInMenu.getByRole('button',{name:'Settings'}).click();const settings=page.getByRole('dialog',{name:'Settings'});await settings.waitFor();assert.ok(await settings.getByRole('tab',{name:'Account'}).isVisible());assert.ok(await settings.getByRole('tab',{name:'Models'}).isVisible());assert.ok(await settings.getByRole('tab',{name:'Subscription'}).isVisible());await settings.getByRole('button',{name:'Close settings'}).click();await settings.waitFor({state:'detached'});checks++;
+  } else {
+    // A real database-backed session isolates conversation tests from unrelated form redirects.
+    const token='s'.repeat(43);await db.query("insert into app_sessions(token_hash,user_id,expires_at) values($1,$2,now()+interval '1 day')",[createHash('sha256').update(token).digest('hex'),user]);
+    await context.addCookies([{name:'__Host-onefin-session',value:token,domain:'localhost',path:'/',secure:true,httpOnly:true,sameSite:'Lax'}]);
+  }
+  // Conversation features use persisted fixtures, never external AI calls.
+  const answerId=randomUUID();
+  await db.query("insert into messages(id,chat_id,user_id,sender,content) values($1,$2,$3,'ai',$4)",[answerId,chat,user,'## Rendered answer\n\n| A | B |\n| --- | --- |\n| 1 | 2 |\n\n```js\nconst answer = 42;\n```']);
+  await page.goto(`${origin}/c/${chat}`);await page.getByRole('heading',{name:'Rendered answer'}).waitFor();
+  assert.equal(await page.locator('.message-markdown table').count(),1);assert.ok(await page.getByRole('button',{name:'Copy code',exact:true}).isVisible());
+  await context.grantPermissions(['clipboard-read','clipboard-write']);await page.getByRole('button',{name:'Copy code',exact:true}).click();assert.equal((await page.evaluate(()=>navigator.clipboard.readText())).trim(),'const answer = 42;');
+  assert.equal(await page.locator('.home-chat-sidebar').count(),1,'Saved conversations keep the chat navigation shell');
+  await page.getByRole('button',{name:'Helpful',exact:true}).click();await page.getByText('Feedback saved.',{exact:true}).waitFor();
+  assert.equal((await db.query('select rating from message_feedback where message_id=$1',[answerId])).rows[0].rating,'positive');checks++;
+  page.on('dialog',async dialog=>{if(dialog.type()==='prompt')await dialog.accept('My fixture message edited');else await dialog.accept();});
+  await page.getByRole('button',{name:'Edit',exact:true}).click();await page.getByText('Edit saved. Send a follow-up to continue.',{exact:true}).waitFor();assert.equal(await page.getByRole('heading',{name:'Rendered answer'}).count(),0);
+  assert.equal((await db.query('select count(*)::int as count from messages where chat_id=$1',[chat])).rows[0].count,1,'Editing retains the selected message at full timestamp precision');
+  await page.reload();await page.getByText('My fixture message edited',{exact:true}).waitFor();
+  await page.getByRole('button',{name:'Branch here',exact:true}).click();await page.waitForURL(url=>url.pathname.startsWith('/c/')&&url.pathname!==`/c/${chat}`);
+  const branchId=new URL(page.url()).pathname.split('/').at(-1);assert.equal((await db.query('select count(*)::int as count from messages where chat_id=$1',[branchId])).rows[0].count,1);
+  await db.query('delete from chats where id=$1',[branchId]);await page.goto(`${origin}/c/${chat}`);await page.getByText('My fixture message edited',{exact:true}).waitFor();checks++;
+
+  await page.locator('summary').filter({hasText:'Manage chats and projects'}).click();
+  const manager=page.getByRole('region',{name:'chat conversations'});
+  await manager.getByRole('searchbox').fill('fixture message');await manager.getByRole('button',{name:'My saved conversation',exact:true}).waitFor();
+  assert.equal(await manager.getByRole('button',{name:'Other user private conversation',exact:true}).count(),0);
+  await manager.locator('summary').click();await manager.getByRole('button',{name:'Pin',exact:true}).click();await manager.getByRole('button',{name:'Unpin',exact:true}).waitFor();
+  await manager.getByRole('button',{name:'Archive',exact:true}).click();await manager.getByText('No conversations found.',{exact:true}).waitFor();
+  await manager.getByRole('checkbox',{name:'Archived'}).check();await manager.getByRole('button',{name:/My saved conversation/}).waitFor();await manager.locator('summary').click();await manager.getByRole('button',{name:'Restore',exact:true}).click();await manager.getByText('No conversations found.',{exact:true}).waitFor();checks++;
+  const taskId=randomUUID();await db.query("insert into chats(id,user_id,name,area) values($1,$2,'Saved Workspace task','workspace')",[taskId,user]);
+  await db.query("insert into messages(chat_id,user_id,sender,content,created_at) values($1,$2,'user','Persisted task prompt',now()-interval '1 second'),($1,$2,'ai','Persisted task answer',now())",[taskId,user]);
+  await page.goto(`${origin}/workspace?task=${taskId}`);await page.getByText('Persisted task answer',{exact:true}).waitFor();await page.reload();await page.getByText('Persisted task answer',{exact:true}).waitFor();
+  const taskManager=page.getByRole('region',{name:'workspace conversations'});await taskManager.getByRole('button',{name:'Saved Workspace task',exact:true}).waitFor();
+  await page.locator('input[type=file]').setInputFiles({name:'notes.csv',mimeType:'text/csv',buffer:Buffer.from('name,value\na,1')});await page.getByRole('button',{name:'Remove notes.csv'}).waitFor();await page.getByRole('button',{name:'Remove notes.csv'}).click();
+  await page.locator('input[type=file]').setInputFiles({name:'unsafe.pdf',mimeType:'application/pdf',buffer:Buffer.from('unsupported')});await page.getByRole('alert').filter({hasText:'Use supported text files'}).waitFor();
+  for(const width of [768,390]){await page.setViewportSize({width,height:900});assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth+1),'Saved Workspace task layout fits the viewport');assert.ok(await page.locator('.workspace-task-messages').evaluate(element=>element.scrollWidth<=element.clientWidth+1),'Task messages do not clip horizontally');}
+  await page.screenshot({path:fileURLToPath(new URL('chat-workspace-mobile.png',artifacts)),fullPage:true});
+  await page.setViewportSize({width:1440,height:1000});
+  await page.screenshot({path:fileURLToPath(new URL('chat-workspace-desktop.png',artifacts)),fullPage:true});
+  const rejected=await context.request.post(`${origin}/api/workspace`,{headers:{Origin:origin},data:{conversationId:chat,messages:[{sender:'user',content:'Wrong area'}]}});assert.equal(rejected.status(),404);
+  await db.query('delete from chats where id=$1',[taskId]);checks++;
+  if(!process.argv.includes('--features-only')) {
   await page.goto(`${origin}/workspace`);await page.getByRole('heading',{level:1,name:'Build something useful.'}).waitFor();
   assert.equal(await page.locator('.home-chat-sidebar').count(),0,'Workspace never mounts the homepage chat sidebar');
   assert.equal(await page.locator('.site-header, footer').count(),0,'Workspace keeps its dedicated app shell');
@@ -158,12 +204,13 @@ try {
   for(const path of ['/account/security','/account/plugins','/account/privacy','/dashboard/activity','/dashboard/billing']){const response=await page.goto(`${origin}${path}`);assert.equal(response.status(),200);await page.locator('h1').waitFor();assert.equal(await page.getByRole('heading',{name:/Something went wrong/}).count(),0);checks++;}
   await page.goto(`${origin}/dashboard/activity`);await page.getByRole('button',{name:'Delete',exact:true}).click();await page.getByRole('button',{name:'Keep it',exact:true}).click();assert.ok(await page.getByRole('link',{name:'My saved conversation',exact:true}).isVisible());await page.getByRole('button',{name:'Delete',exact:true}).click();await page.getByRole('button',{name:'Delete permanently',exact:true}).click();await page.getByText('No conversations yet.',{exact:false}).waitFor();checks++;
   await context.clearCookies();await context.addCookies([{name:'onefin-reset',value:resetToken,url:origin,httpOnly:true,sameSite:'Lax'}]);await page.goto(`${origin}/reset-password`);await page.getByLabel('New password',{exact:true}).fill('browser-replacement-password');await page.getByLabel('Confirm new password',{exact:true}).fill('browser-replacement-password');await page.getByRole('button',{name:'Update password',exact:true}).click();await page.waitForURL('**/sign-in?success=*');checks++;
-  await page.goto(`${origin}/forgot-password`);await page.getByLabel('Email address').fill('browser@example.test');await page.getByRole('button',{name:'Send reset link',exact:true}).click();await page.getByRole('alert').filter({hasText:'Email delivery is not configured'}).waitFor();checks++;
+  await page.goto(`${origin}/forgot-password`);await page.getByLabel('Email address').fill('browser@example.test');await page.getByRole('button',{name:'Send reset link',exact:true}).click();await page.getByRole('status').filter({hasText:'If an account exists, a reset link has been sent.'}).waitFor();checks++;
   await page.goto(`${origin}/workspace`);await page.getByRole('heading',{level:1,name:'Build something useful.'}).waitFor();assert.equal(await page.locator('.home-chat-sidebar').count(),0,'Unauthenticated Workspace requests do not reveal homepage chat');assert.match(await page.locator('meta[name="robots"]').getAttribute('content')||'',/noindex/,'Workspace is excluded from indexing');checks++;
   await page.setViewportSize({width:390,height:844});
-  for(const path of ['/','/pricing','/support','/contact','/privacy','/forgot-password','/workspace']){await page.goto(`${origin}${path}`);await page.locator('h1').waitFor();assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth+1),`${path} mobile overflow`);checks++;}
+  for(const path of ['/','/pricing','/support','/contact','/privacy','/forgot-password','/workspace']){await page.goto(`${origin}${path}`);await page.locator('h1').waitFor();assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth+1),`${path} mobile overflow`);if(path==='/'){assert.ok(await page.locator('.home-chat-sidebar-rail .sidebar-rail-logo').isVisible(),'Mobile homepage keeps the icon rail visible when its panel is closed');assert.ok(await page.getByRole('button',{name:'Open chat menu'}).isVisible(),'Mobile homepage can expand its navigation drawer');}if(path==='/workspace'){assert.ok(await page.locator('.workspace-sidebar .workspace-brand-mark').isVisible(),'Mobile Workspace keeps its icon rail visible when closed');await page.locator('.workspace-sidebar-toggle').click();assert.ok(await page.locator('.workspace-sidebar.is-mobile-expanded').isVisible(),'Mobile Workspace navigation can expand');await page.locator('.workspace-sidebar-backdrop').click({position:{x:350,y:300}});}checks++;}
   await page.goto(`${origin}/`);await page.getByRole('button',{name:'Open chat menu'}).click();await page.locator('.home-chat-sidebar .profile-button').click();await page.getByRole('region',{name:'Profile and application menu'}).getByRole('link',{name:'Company information'}).click();await page.waitForURL('**/about');await page.getByRole('heading',{level:1}).waitFor();checks++;
   await page.goto(`${origin}/pricing`);await page.getByRole('heading',{name:'Daily',exact:true}).waitFor();await page.screenshot({path:new URL('pricing-mobile.png',artifacts).pathname.replace(/^\/([A-Z]:)/,'$1'),fullPage:true});
+  }
   assert.deepEqual(failures,[],'No browser JavaScript errors');
   console.log(`Passed ${checks} website checks against an isolated local database.`);
 } catch(error) {

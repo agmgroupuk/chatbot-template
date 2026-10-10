@@ -1,12 +1,18 @@
 'use client';
 
+import { readChatStream } from '@/lib/read-chat-stream';
+import { duplicateConversation } from '@/app/conversation-actions';
+import { useRouter } from 'next/navigation';
+import { MessageContent } from './message-content';
+import { exportConversation } from './conversation-tools';
+import { editConversationMessage, saveMessageFeedback } from '@/app/conversation-actions';
 import { availableModels } from '@/lib/models';
 import { useWorkspacePreferences } from './workspace-preferences';
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import Image from 'next/image';
 import { ArrowUp, Bookmark, Check, Clipboard, FileUp, Image as ImageIcon, Link2, Loader2, Mic, PlusIcon, BookText, RotateCcw, Share2, Volume2, X } from 'lucide-react';
 import { createPortal } from 'react-dom';
-import { getUserModelSettings, updateUserSelectedModel, getAIResponse, addMessage, addContextItem, getMessagesForChat, updateAssistantMessage } from '@/app/actions';
+import { getUserModelSettings, updateUserSelectedModel, addMessage, addContextItem, getMessagesForChat, updateAssistantMessage } from '@/app/actions';
 import { SettingsModal } from './settings-modal';
 import { v4 as uuidv4 } from 'uuid';
 import { Skeleton } from "@/components/ui/skeleton";
@@ -63,6 +69,19 @@ interface ChatInterfaceProps {
 }
 
 export function ChatInterface({ chatId }: ChatInterfaceProps) {
+  const router=useRouter();
+  const [streamText,setStreamText]=useState('');
+  const responseAbort=useRef<AbortController|null>(null);
+  const requestAIResponse=useCallback(async(conversation:{id:string;sender:'user'|'ai';content:string}[],model:string,contextItemId?:string|null,images:{mimeType:'image/jpeg'|'image/png'|'image/webp'|'image/gif';data:string}[]=[])=>{
+    const controller=new AbortController();responseAbort.current=controller;setStreamText('');
+    try {
+      const response=await fetch('/api/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({messages:conversation,model,contextItemId,images}),signal:controller.signal});
+      const text=await readChatStream(response,delta=>setStreamText(previous=>previous+delta));
+      return {success:true,response:text,error:undefined};
+    }catch(error){return {success:false,response:undefined,error:controller.signal.aborted?'Generation stopped. Retry when ready.':error instanceof Error?error.message:'Unable to generate response.'};}
+    finally{if(responseAbort.current===controller)responseAbort.current=null;setStreamText('');}
+  },[]);
+  useEffect(()=>()=>responseAbort.current?.abort(),[chatId]);
   const preferences = useWorkspacePreferences();
   const [prompt, setPrompt] = useState("");
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -161,7 +180,7 @@ export function ChatInterface({ chatId }: ChatInterfaceProps) {
 
   // --- Function to trigger the initial AI response ---
   // Renamed from handleInitialPromptFlow
-  const triggerInitialResponse = useCallback(async (initialUserMessage: Message) => {
+  const triggerInitialResponse = useCallback(async (initialUserMessage: Message, history: Message[] = [initialUserMessage]) => {
       const currentModel = selectedModel;
       if (!currentModel) {
         setMessageError('No AI model selected for initial response.');
@@ -173,7 +192,7 @@ export function ChatInterface({ chatId }: ChatInterfaceProps) {
 
       try {
         // Use the potentially updated currentModel
-        const result = await getAIResponse([initialUserMessage], currentModel);
+        const result = await requestAIResponse(history, currentModel, contextByMessage[initialUserMessage.id]||null,imageAttachmentsByMessage[initialUserMessage.id]||[]);
 
         let aiContent: string;
         let messageToSave: Message | null = null;
@@ -204,7 +223,7 @@ export function ChatInterface({ chatId }: ChatInterfaceProps) {
           textareaRef.current?.focus();
         }, 50); // 50ms delay
       }
-  }, [chatId, selectedModel]); // Dependencies
+  }, [chatId, selectedModel, requestAIResponse, contextByMessage, imageAttachmentsByMessage]); // Dependencies
 
   // Effect to trigger initial response if messages load BEFORE models
    useEffect(() => {
@@ -273,9 +292,8 @@ export function ChatInterface({ chatId }: ChatInterfaceProps) {
     reader.readAsDataURL(file);
   });
 
-  const handleFilesSelected = async (event:React.ChangeEvent<HTMLInputElement>) => {
-    const files = Array.from(event.target.files || []);
-    event.target.value = '';
+  const addFiles = async (files:File[]) => {
+    if(isAiResponding || isReadingAttachments)return;
     if (!files.length) return;
     setIsReadingAttachments(true);
     setAttachmentStatus('Reading selected files…');
@@ -314,6 +332,8 @@ export function ChatInterface({ chatId }: ChatInterfaceProps) {
       setIsReadingAttachments(false);
     }
   };
+
+  const handleFilesSelected = (event:React.ChangeEvent<HTMLInputElement>) => {const files=Array.from(event.target.files||[]);event.target.value='';void addFiles(files);};
 
   const handleAddLink = (event:React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -448,7 +468,7 @@ export function ChatInterface({ chatId }: ChatInterfaceProps) {
     setAttachmentStatus('Regenerating response…');
     try {
       const retryConversation = messages.slice(0,userIndex+1).map(({id,sender,content})=>({id,sender,content}));
-      const result = await getAIResponse(retryConversation,selectedModel,contextByMessage[userMessage.id]||null,images);
+      const result = await requestAIResponse(retryConversation,selectedModel,contextByMessage[userMessage.id]||null,images);
       if (!result.success || !result.response) {
         setAttachmentStatus(result.error||'Unable to regenerate this response.');
         return;
@@ -526,7 +546,8 @@ export function ChatInterface({ chatId }: ChatInterfaceProps) {
         setAttachedContextItem(contextItem);
         return;
       }
-      const result = await getAIResponse(updatedMessagesForApi,selectedModel,contextItem?.id||null,images);
+      setMessages(current=>current.map(message=>message.id===newUserMessage.id?{...message,persisted:true}:message));
+      const result = await requestAIResponse(updatedMessagesForApi,selectedModel,contextItem?.id||null,images);
 
       let aiContent: string;
       let messageToSave: Message | null = null;
@@ -595,10 +616,11 @@ export function ChatInterface({ chatId }: ChatInterfaceProps) {
   // ... JSX for the Active Chat View ---
   return (
     <div className="h-full flex flex-col">
+      <div className="conversation-toolbar"><button type="button" disabled={!messages.length || isAiResponding} onClick={()=>exportConversation(messages)}>Export Markdown</button><button type="button" disabled={!messages.length || isAiResponding} onClick={()=>exportConversation(messages,'json')}>Export JSON</button><button type="button" onClick={()=>messagesEndRef.current?.scrollIntoView({behavior:"smooth"})}>Jump to latest</button></div>
       {/* Chat message display area - Removed padding from main */}
       <main> { /* Removed p-6 pb-24 and other classes*/ }
         {/* Added bottom padding here to prevent overlap with sticky input */}
-        <div className="w-full max-w-3xl mx-auto space-y-6 pb-24">
+        <div className="w-full max-w-3xl mx-auto space-y-6 pb-24" role="log" aria-label="Conversation messages">
           {/* Loading state for messages */}
           {isLoadingMessages && (
             <>
@@ -617,7 +639,14 @@ export function ChatInterface({ chatId }: ChatInterfaceProps) {
                 { /* User Message Styling */ }
                 {msg.sender === 'user' && (
                     <div className="max-w-[75%] px-4 py-2 rounded-xl bg-gray-100 text-gray-800">
-                        <p className="whitespace-pre-wrap">{msg.content}</p>
+                        <MessageContent content={msg.content}/>
+                        <div className="conversation-toolbar"><button type="button" onClick={()=>handleCopyResponse(msg.content)}>Copy</button><button type="button" disabled={isAiResponding} onClick={()=>{setPrompt(msg.content);textareaRef.current?.focus();}}>Resend</button><button type="button" disabled={isAiResponding || !msg.persisted} onClick={async()=>{
+                          const text=window.prompt('Edit message. Later turns will be removed; send a follow-up or regenerate to continue.',msg.content);
+                          if(text===null || !text.trim() || text===msg.content)return;
+                          if(!window.confirm('Save this edit and remove all later messages?'))return;
+                          setIsAiResponding(true);
+                          try {const result=await editConversationMessage(chatId,msg.id,text);if(!result.success)throw new Error(result.error);const saved=await getMessagesForChat(chatId);setHasTriggeredInitialResponse(true);setMessages(saved.map(m=>({...m,persisted:true})));setAttachmentStatus('Edit saved. Send a follow-up to continue.');}catch{setAttachmentStatus('Unable to edit message.');}finally{setIsAiResponding(false);}
+                        }}>Edit</button>{messages.at(-1)?.id===msg.id && <button type="button" disabled={isAiResponding || !selectedModel} onClick={()=>{setHasTriggeredInitialResponse(true);void triggerInitialResponse(msg,messages);}}>Generate response</button>}<button type="button" disabled={isAiResponding || !msg.persisted} onClick={async()=>{try{const result=await duplicateConversation(chatId,msg.id);if(result.success&&result.id)router.push(`/c/${result.id}`);else setAttachmentStatus(result.error||'Unable to branch conversation.');}catch{setAttachmentStatus('Unable to branch conversation.');}}}>Branch here</button></div>
                         {msg.images?.length ? (
                           <div className="mt-3 flex flex-wrap gap-2">
                             {msg.images.map(image=><Image key={`${msg.id}-${image.name}`} src={image.dataUrl} alt={`Attached image: ${image.name}`} width={224} height={192} unoptimized className="max-h-48 max-w-56 rounded-lg border border-gray-200 object-contain" />)}
@@ -628,8 +657,9 @@ export function ChatInterface({ chatId }: ChatInterfaceProps) {
                 { /* AI Message Styling */ }
                 {msg.sender === 'ai' && (
                     <div className="max-w-[90%] text-gray-800">
-                        <p className="whitespace-pre-wrap">{msg.content}</p>
+                        <MessageContent content={msg.content}/>
                         <div className="mt-2 flex flex-wrap items-center gap-1 text-gray-500" aria-label="Response actions">
+                          {(['positive','negative','report'] as const).map(rating=><button key={rating} type="button" disabled={!msg.persisted || isAiResponding} onClick={async()=>{const detail=rating==='report'?window.prompt('Describe the issue (up to 2,000 characters)'):'';if(detail===null)return;try{const result=await saveMessageFeedback(msg.id,rating,detail);setAttachmentStatus(result.success?'Feedback saved.':result.error||'Unable to save feedback.');}catch{setAttachmentStatus('Unable to save feedback.');}}}>{rating==='positive'?'Helpful':rating==='negative'?'Not helpful':'Report'}</button>)}
                           <button type="button" onClick={()=>handleCopyResponse(msg.content)} aria-label="Copy response" title="Copy response" className="rounded-md p-2 hover:bg-gray-100"><Clipboard className="h-4 w-4" /></button>
                           <button type="button" onClick={()=>handleReadAloud(msg)} aria-label={activeSpeechMessageId===msg.id?'Stop reading response aloud':'Read response aloud'} title={activeSpeechMessageId===msg.id?'Stop reading':'Read aloud'} className="rounded-md p-2 hover:bg-gray-100"><Volume2 className={`h-4 w-4 ${activeSpeechMessageId===msg.id?'text-emerald-700':''}`} /></button>
                           <button type="button" onClick={()=>handleRetryResponse(msg)} disabled={isAiResponding || retryingMessageId===msg.id} aria-label="Regenerate response" title="Regenerate response" className="rounded-md p-2 hover:bg-gray-100 disabled:opacity-50">{retryingMessageId===msg.id?<Loader2 className="h-4 w-4 animate-spin"/>:<RotateCcw className="h-4 w-4"/>}</button>
@@ -641,6 +671,8 @@ export function ChatInterface({ chatId }: ChatInterfaceProps) {
             </div>
           ))}
 
+          {isAiResponding && streamText && <div aria-label="Streaming response"><MessageContent content={streamText}/></div>}
+          {isAiResponding && <button type="button" onClick={()=>responseAbort.current?.abort()}>Stop generation</button>}
           {/* AI Loading Indicator */}
           {isAiResponding && (
             <div className="flex justify-start">
@@ -658,7 +690,7 @@ export function ChatInterface({ chatId }: ChatInterfaceProps) {
 
       {/* Input area - Sticky at the bottom */}
       <div className="w-full max-w-3xl mx-auto pb-4 sticky bottom-0 bg-gradient-to-t from-white via-white/90 to-transparent pt-4">
-        <div className="relative rounded-2xl border border-gray-200 bg-white overflow-hidden shadow-sm">
+        <div className="relative rounded-2xl border border-gray-200 bg-white overflow-hidden shadow-sm" onDragOver={event=>{if(event.dataTransfer.types.includes('Files'))event.preventDefault();}} onDrop={event=>{if(event.dataTransfer.files.length){event.preventDefault();void addFiles(Array.from(event.dataTransfer.files));}}}>
           {/* Input Row */}
           <div className="flex flex-col">
             {/* Text input section */}
@@ -671,6 +703,8 @@ export function ChatInterface({ chatId }: ChatInterfaceProps) {
                 className={`w-full resize-none text-base focus:outline-none text-stone-900 placeholder:text-gray-500 bg-transparent px-5 py-3 min-h-[48px] max-h-[360px] pr-10`}
                 placeholder={"Ask follow-up..."} // Reverted placeholder
                 value={prompt}
+                maxLength={32000}
+                onPaste={event=>{const images=Array.from(event.clipboardData.files).filter(file=>file.type.startsWith('image/'));if(images.length){event.preventDefault();void addFiles(images);}}}
                 onChange={handlePromptChange}
                 onKeyDown={handleTextareaKeyDown}
                 rows={1}

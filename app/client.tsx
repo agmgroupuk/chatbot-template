@@ -16,7 +16,7 @@ interface ClientLayoutProps {
 function ClientLayoutContent({ children }: ClientLayoutProps) {
   const pathname = usePathname();
   const { isAuthenticated, isLoading: isAuthLoading } = useAuth();
-  const isHomePage = pathname === '/';
+  const isHomePage = pathname === '/' || pathname.startsWith('/c/');
   const isWorkspacePage = pathname === '/workspace';
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
@@ -45,6 +45,27 @@ function ClientLayoutContent({ children }: ClientLayoutProps) {
     };
   }, [isAuthenticated, isHomePage]);
 
+  useEffect(() => {
+    const syncSidebarToViewport = () => {
+      const isSmallScreen = window.matchMedia('(max-width: 760px)').matches;
+      setIsSidebarCollapsed(isSmallScreen);
+      setIsMobileSidebarOpen(false);
+    };
+    syncSidebarToViewport();
+    window.addEventListener('resize', syncSidebarToViewport);
+    return () => window.removeEventListener('resize', syncSidebarToViewport);
+  }, []);
+
+  const toggleSidebarCollapse = () => {
+    if (window.matchMedia('(max-width: 760px)').matches) {
+      const shouldExpand = isSidebarCollapsed;
+      setIsSidebarCollapsed(!shouldExpand);
+      setIsMobileSidebarOpen(shouldExpand);
+    } else {
+      setIsSidebarCollapsed((collapsed) => !collapsed);
+    }
+  };
+
   return (
     <ThemeProvider attribute="class" defaultTheme="light" disableTransitionOnChange>
       <CheckoutSuccessHandler />
@@ -55,7 +76,7 @@ function ClientLayoutContent({ children }: ClientLayoutProps) {
             isAuthenticated={isAuthenticated}
             isAuthLoading={isAuthLoading}
             collapsed={isSidebarCollapsed}
-            onToggleCollapse={() => setIsSidebarCollapsed((collapsed) => !collapsed)}
+            onToggleCollapse={toggleSidebarCollapse}
             activePlanName={activePlanName}
           />
           {isMobileSidebarOpen && (
@@ -63,7 +84,7 @@ function ClientLayoutContent({ children }: ClientLayoutProps) {
               className="home-chat-backdrop"
               type="button"
               aria-label="Close workspace menu"
-              onClick={() => setIsMobileSidebarOpen(false)}
+              onClick={() => { setIsMobileSidebarOpen(false); setIsSidebarCollapsed(true); }}
             />
           )}
           <main className="home-chat-main">
@@ -72,7 +93,10 @@ function ClientLayoutContent({ children }: ClientLayoutProps) {
               type="button"
               aria-label="Open chat menu"
               aria-expanded={isMobileSidebarOpen}
-              onClick={() => setIsMobileSidebarOpen((open) => !open)}
+              onClick={() => {
+                setIsSidebarCollapsed(false);
+                setIsMobileSidebarOpen(true);
+              }}
             >
               <span /><span /><span />
             </button>

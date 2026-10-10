@@ -3,7 +3,7 @@
 import { availableModels } from '@/lib/models';
 import { useWorkspacePreferences } from './workspace-preferences';
 import React, { useState, useRef, useEffect, useCallback } from "react";
-import { ArrowUp, Check, Loader2, PlusIcon, BookText } from "lucide-react";
+import { ArrowUp, Check, Loader2, PlusIcon, BookText, Mic } from "lucide-react";
 import { createPortal } from "react-dom";
 import { Button } from "@/components/ui/button";
 import {
@@ -39,12 +39,26 @@ const placeholderPrompts = [
   "what features should I add to my support chatbot?"
 ];
 
+interface SpeechRecognitionLike {
+  lang: string;
+  continuous: boolean;
+  interimResults: boolean;
+  onresult: ((event: { resultIndex: number; results: ArrayLike<{ isFinal: boolean; [index: number]: { transcript: string } }> }) => void) | null;
+  onerror: ((event: { error: string }) => void) | null;
+  onend: (() => void) | null;
+  start: () => void;
+  stop: () => void;
+}
+
+type SpeechRecognitionConstructor = new () => SpeechRecognitionLike;
+
 export function IdeInterfaceComponent() {
   const preferences = useWorkspacePreferences();
   const router = useRouter();
 
   const [prompt, setPrompt] = useState("");
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const speechRecognitionRef = useRef<SpeechRecognitionLike | null>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
   // State for animated placeholder
@@ -74,6 +88,8 @@ export function IdeInterfaceComponent() {
   const [selectedModel, setSelectedModel] = useState<string | null>(null);
   const [isLoadingModels, setIsLoadingModels] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isRecording, setIsRecording] = useState(false);
+  const [voiceNotice, setVoiceNotice] = useState('');
   const { isAuthenticated, isLoading: isAuthLoading } = useAuth();
 
   // --- State for Settings Modal ---
@@ -110,6 +126,7 @@ export function IdeInterfaceComponent() {
 
   // --- Initial Load Effect ---
   useEffect(() => { loadModels(); }, [loadModels]);
+  useEffect(() => () => speechRecognitionRef.current?.stop(), []);
 
   // --- Callback for when settings are changed in the modal ---
   const handleSettingsChanged = useCallback(() => {
@@ -272,6 +289,49 @@ export function IdeInterfaceComponent() {
   const handleRemoveContext = () => {
     setAttachedContextItem(null);
     textareaRef.current?.focus();
+  };
+
+  const handleToggleMicrophone = () => {
+    if (isRecording) {
+      speechRecognitionRef.current?.stop();
+      setIsRecording(false);
+      return;
+    }
+    const speechWindow = window as Window & {
+      SpeechRecognition?: SpeechRecognitionConstructor;
+      webkitSpeechRecognition?: SpeechRecognitionConstructor;
+    };
+    const Recognition = speechWindow.SpeechRecognition || speechWindow.webkitSpeechRecognition;
+    if (!Recognition) {
+      setVoiceNotice('Speech input is not supported in this browser. Try a current version of Chrome or Edge.');
+      return;
+    }
+    const recognition = new Recognition();
+    recognition.lang = navigator.language || 'en-US';
+    recognition.continuous = true;
+    recognition.interimResults = false;
+    recognition.onresult = (event) => {
+      const transcript = Array.from(event.results).slice(event.resultIndex).filter((result) => result.isFinal).map((result) => result[0].transcript).join('');
+      if (transcript.trim()) setPrompt((current) => `${current}${current.trim() ? ' ' : ''}${transcript.trim()}`);
+    };
+    recognition.onerror = (event) => {
+      setIsRecording(false);
+      setVoiceNotice(event.error === 'not-allowed' ? 'Allow microphone access in your browser to dictate a message.' : 'Speech input stopped. Please try again.');
+    };
+    recognition.onend = () => {
+      setIsRecording(false);
+      speechRecognitionRef.current = null;
+    };
+    try {
+      setVoiceNotice('Listening… Speak your message, then tap the microphone to stop.');
+      speechRecognitionRef.current = recognition;
+      recognition.start();
+      setIsRecording(true);
+    } catch {
+      speechRecognitionRef.current = null;
+      setIsRecording(false);
+      setVoiceNotice('Could not start speech input. Check microphone permission and try again.');
+    }
   };
 
   const handleSubmit = async () => {
@@ -466,6 +526,18 @@ export function IdeInterfaceComponent() {
                     </DropdownMenuContent>
                   </DropdownMenu>
 
+                  <button
+                    type="button"
+                    onClick={handleToggleMicrophone}
+                    disabled={isSubmitting}
+                    aria-pressed={isRecording}
+                    aria-label={isRecording ? 'Stop speech input' : 'Start speech input'}
+                    title={isRecording ? 'Stop speech input' : 'Dictate a message'}
+                    className={`grid h-8 w-8 place-items-center rounded-md transition-colors disabled:opacity-50 ${isRecording ? 'bg-red-50 text-red-700' : 'text-gray-500 hover:bg-gray-100'}`}
+                  >
+                    <Mic className="h-4 w-4" />
+                  </button>
+
                   {/* --- Hidden File Input (remains) --- */}
 
                 </div>
@@ -482,6 +554,7 @@ export function IdeInterfaceComponent() {
                   )}
                 </button>
               </div>
+              {voiceNotice && <p className="px-4 pb-2 text-xs text-gray-500" role="status" aria-live="polite">{voiceNotice}</p>}
             </div>
           </div>
 
