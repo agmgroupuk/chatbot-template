@@ -235,7 +235,7 @@ export function SidebarComponent({ className, onToggleCollapse, collapsed = fals
                      onClick={() => router.push('/context')}
                    >
                      <div className="flex items-center gap-2 w-full text-left">
-                       <span>ðŸ“–</span> <span>Context</span>
+                       <span>📖</span> <span>Context</span>
                      </div>
                    </Button>
 
