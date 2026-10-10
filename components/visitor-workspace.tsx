@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
+import Image from 'next/image';
 import { IdeInterfaceComponent } from './ide-interface';
 import {
   ArrowUp,
@@ -161,7 +162,7 @@ export function VisitorWorkspace({ landing = false }: { landing?: boolean }) {
       <aside className={`chat-sidebar${sidebarOpen ? ' is-open' : ''}`} aria-label="Chat sidebar">
         <div className="chat-sidebar-brand">
           <Link href="/" className="chat-brand" aria-label="One Fin home">
-            <span className="chat-brand-mark"><Sparkles size={17} /></span>
+            <Image className="chat-brand-mark" src="/logo/one-fin-logo.png" alt="" width={40} height={40} />
             <span>One Fin</span>
           </Link>
           <button className="chat-icon-button sidebar-close" aria-label="Close sidebar" onClick={() => setSidebarOpen(false)}>
@@ -233,7 +234,7 @@ export function VisitorWorkspace({ landing = false }: { landing?: boolean }) {
 
           {messages.length === 0 ? (
             <section className="chat-welcome" aria-labelledby="chat-welcome-title">
-              <div className="chat-welcome-mark"><Sparkles size={24} /></div>
+              <Image className="chat-welcome-mark" src="/logo/one-fin-logo.png" alt="" width={64} height={64} />
               <p className="chat-welcome-eyebrow">A fresh space for your ideas</p>
               <h1 id="chat-welcome-title">What can I help you with?</h1>
               <p className="chat-welcome-copy">Ask anything, work through an idea, or get a hand with your next task.</p>

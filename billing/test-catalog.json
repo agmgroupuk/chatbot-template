@@ -1,8 +1,45 @@
 {
-  "description": "Initial Test Mode catalog. Review business pricing before any Live migration.",
+  "description": "Clean test catalog with separate products per plan",
   "products": [
-    { "code": "credits_50", "name": "Workspace Credit Pack", "description": "50 credits for Workspace only. One-time payment; does not start or extend a homepage chat subscription.", "prices": [
-      { "code": "credits_50", "amount": 500, "credits": 50 }
-    ] }
+    {
+      "code": "daily",
+      "name": "Daily Plan",
+      "description": "Unlimited homepage chat. Billed daily. 1-day trial.",
+      "prices": [
+        { "code": "daily", "amount": 500, "interval": "day" }
+      ]
+    },
+    {
+      "code": "weekly",
+      "name": "Weekly Plan",
+      "description": "Unlimited homepage chat. Billed weekly. 3-day trial.",
+      "prices": [
+        { "code": "weekly", "amount": 1300, "interval": "week" }
+      ]
+    },
+    {
+      "code": "monthly",
+      "name": "Monthly Plan",
+      "description": "Unlimited homepage chat. Billed monthly. 5-day trial.",
+      "prices": [
+        { "code": "monthly", "amount": 3000, "interval": "month" }
+      ]
+    },
+    {
+      "code": "yearly",
+      "name": "Yearly Plan",
+      "description": "Unlimited homepage chat. Billed yearly. 15-day trial.",
+      "prices": [
+        { "code": "yearly", "amount": 24900, "interval": "year" }
+      ]
+    },
+    {
+      "code": "credits_50",
+      "name": "Workspace Credit Pack",
+      "description": "50 credits for Workspace only. One-time payment; does not start or extend a homepage chat subscription.",
+      "prices": [
+        { "code": "credits_50", "amount": 500, "credits": 50 }
+      ]
+    }
   ]
 }

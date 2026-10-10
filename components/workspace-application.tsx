@@ -2,10 +2,11 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
+import Image from 'next/image';
 import { useRouter } from 'next/navigation';
 import { Elements, PaymentElement, useElements, useStripe } from '@stripe/react-stripe-js';
 import { loadStripe } from '@stripe/stripe-js';
-import { ArrowUp, CreditCard, FileText, History, LayoutGrid, Plus, Settings, Sparkles, Wallet } from 'lucide-react';
+import { ArrowUp, CreditCard, FileText, History, LayoutGrid, Plus, Settings, Wallet } from 'lucide-react';
 import { createWorkspaceCreditPaymentIntent, getWorkspaceBillingData, prepareWorkspaceCardUpdate, saveWorkspaceCard, workspaceCreditPurchaseStatus } from '@/app/workspace-actions';
 import { workspaceCreditPack } from '@/lib/workspace-credit-pack';
 
@@ -261,7 +262,7 @@ export function WorkspaceApplication({
     <div className="workspace-app">
       <aside className="workspace-sidebar">
         <Link className="workspace-brand" href="/" aria-label="One Fin Solution homepage">
-          <span className="workspace-brand-mark"><Sparkles size={17} /></span>
+          <Image className="workspace-brand-mark" src="/logo/one-fin-logo.png" alt="" width={44} height={44} />
           <span>One Fin <small>WORKSPACE</small></span>
         </Link>
         <p className="workspace-sidebar-label">WORKSPACE</p>

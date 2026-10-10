@@ -3,6 +3,7 @@
 import { toast } from "sonner";
 import React, { useState, useRef, useEffect } from "react";
 import Link from "next/link";
+import Image from "next/image";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { cn } from "@/lib/utils";
@@ -183,7 +184,7 @@ export function SidebarComponent({ className, onToggleCollapse, collapsed = fals
           <div className="flex items-center justify-between p-4 flex-shrink-0">
             <div className="flex items-center h-[26px]">
               <div className="flex items-center gap-2">
-                <span className="inline-flex h-6 w-6 items-center justify-center rounded bg-emerald-600 text-white text-xs font-bold">OF</span>
+                <Image className="home-brand-logo" src="/logo/one-fin-logo.png" alt="" width={32} height={32} />
                 <span className="font-bold text-2xl text-zinc-900 tracking-tight">One Fin</span>
               </div>
             </div>

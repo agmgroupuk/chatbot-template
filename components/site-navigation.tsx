@@ -1,6 +1,7 @@
 'use client';
 
 import Link from 'next/link';
+import Image from 'next/image';
 import { usePathname } from 'next/navigation';
 import { useState } from 'react';
 import { useAuth } from '@/lib/auth';
@@ -26,7 +27,7 @@ export function SiteHeader() {
   return (
     <header className="site-header">
       <Link className="site-brand" href="/" onClick={closeMenu} aria-label="One Fin Solution home">
-        <span className="brand-mark" aria-hidden="true">OF</span>
+        <span className="brand-mark" aria-hidden="true"><Image src="/logo/one-fin-logo.png" alt="" width={44} height={44} priority /></span>
         <span>One Fin <span className="site-brand-light">Solution</span></span>
       </Link>
 
@@ -91,7 +92,7 @@ export function SiteFooter() {
       <div className="footer-top">
         <div>
           <Link className="site-brand footer-brand" href="/">
-            <span className="brand-mark" aria-hidden="true">OF</span>
+            <span className="brand-mark" aria-hidden="true"><Image src="/logo/one-fin-logo.png" alt="" width={52} height={52} /></span>
             <span>One Fin <span className="site-brand-light">Solution</span></span>
           </Link>
           <p>Practical software and AI tools for the work ahead.</p>
