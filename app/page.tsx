@@ -1,4 +1,4 @@
-import { VisitorWorkspace } from '@/components/visitor-workspace';
+import { IdeInterfaceComponent } from '@/components/ide-interface';
 
 export const metadata = {
   title: 'AI Chat | One Fin Solution',
@@ -6,5 +6,5 @@ export const metadata = {
 };
 
 export default function Home() {
-  return <VisitorWorkspace landing />;
+  return <IdeInterfaceComponent />;
 }

@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
+import { IdeInterfaceComponent } from './ide-interface';
 import {
   ArrowUp,
   CircleHelp,
@@ -144,38 +145,41 @@ export function VisitorWorkspace({ landing = false }: { landing?: boolean }) {
   }
 
   if (landing) {
-    return (
-      <div className="chat-app">
-        <a className="skip-link" href="#chat-main">Skip to chat</a>
-        {sidebarOpen && (
-          <button
-            className="chat-sidebar-backdrop"
-            aria-label="Close sidebar"
-            onClick={() => setSidebarOpen(false)}
-          />
-        )}
-        <aside className={`chat-sidebar${sidebarOpen ? ' is-open' : ''}`} aria-label="Chat sidebar">
-          <div className="chat-sidebar-brand">
-            <Link href="/" className="chat-brand" aria-label="One Fin home">
-              <span className="chat-brand-mark"><Sparkles size={17} /></span>
-              <span>One Fin</span>
-            </Link>
-            <button className="chat-icon-button sidebar-close" aria-label="Close sidebar" onClick={() => setSidebarOpen(false)}>
-              <X size={18} />
-            </button>
-          </div>
+    return <IdeInterfaceComponent />;
+  }
 
-          <button className="chat-new-button" onClick={startNewChat} disabled={busy}>
-            <Plus size={18} />
-            <span>New chat</span>
-            <span className="new-chat-shortcut">Ctrl K</span>
+  return (
+    <div className="chat-app">
+      <a className="skip-link" href="#chat-main">Skip to chat</a>
+      {sidebarOpen && (
+        <button
+          className="chat-sidebar-backdrop"
+          aria-label="Close sidebar"
+          onClick={() => setSidebarOpen(false)}
+        />
+      )}
+      <aside className={`chat-sidebar${sidebarOpen ? ' is-open' : ''}`} aria-label="Chat sidebar">
+        <div className="chat-sidebar-brand">
+          <Link href="/" className="chat-brand" aria-label="One Fin home">
+            <span className="chat-brand-mark"><Sparkles size={17} /></span>
+            <span>One Fin</span>
+          </Link>
+          <button className="chat-icon-button sidebar-close" aria-label="Close sidebar" onClick={() => setSidebarOpen(false)}>
+            <X size={18} />
           </button>
+        </div>
 
-          <div className="chat-sidebar-section">
-            <span className="chat-sidebar-label">Explore</span>
-            <Link className="chat-sidebar-link" href="/pricing">
-              <Compass size={17} /><span>Explore plans</span>
-            </Link>
+        <button className="chat-new-button" onClick={startNewChat} disabled={busy}>
+          <Plus size={18} />
+          <span>New chat</span>
+          <span className="new-chat-shortcut">Ctrl K</span>
+        </button>
+
+        <div className="chat-sidebar-section">
+          <span className="chat-sidebar-label">Explore</span>
+          <Link className="chat-sidebar-link" href="/pricing">
+            <Compass size={17} /><span>Explore plans</span>
+          </Link>
             <Link className="chat-sidebar-link" href="/support">
               <CircleHelp size={17} /><span>Help center</span>
             </Link>
@@ -315,49 +319,4 @@ export function VisitorWorkspace({ landing = false }: { landing?: boolean }) {
       </div>
     );
   }
-
-  return (
-    <div className="visitor-workspace">
-      <div className="setting-row">
-        <Link className="button secondary small" href="/pricing">Explore plans & subscribe</Link>
-      </div>
-      <section className="panel stack" aria-label="Workspace conversation">
-        <div role="log" aria-live="polite" className="stack">
-          {messages.length ? messages.map((message, index) => (
-            <div className="notice" key={index}>
-              <strong>{message.sender === 'user' ? 'You' : 'One Fin'}</strong>
-              <p className="whitespace-pre-wrap break-words">{message.content}</p>
-            </div>
-          )) : (
-            <div className="empty-state">
-              <h2>What would you like to work on?</h2>
-              <p>Ask a question or bring an idea. You can start here immediately.</p>
-            </div>
-          )}
-        </div>
-        {error && <p className="notice error" role="alert">{error}</p>}
-        <form onSubmit={send} className="stack">
-          <label className="field">
-            Your message
-            <textarea
-              aria-label="Workspace message"
-              required
-              maxLength={4000}
-              rows={4}
-              value={input}
-              onChange={event => setInput(event.target.value)}
-              disabled={busy}
-            />
-          </label>
-          <button className="button" disabled={busy || !fingerprint || !input.trim()}>
-            {busy ? 'Thinking...' : 'Send message'}
-          </button>
-        </form>
-      </section>
-      <p className="small-copy">
-        Guest conversations are kept only for this page session and are cleared when you leave.{' '}
-        <Link className="text-link" href="/privacy">Privacy details</Link>.
-      </p>
-    </div>
-  );
 }

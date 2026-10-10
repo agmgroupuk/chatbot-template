@@ -181,12 +181,10 @@ export function SidebarComponent({ className, onToggleCollapse, collapsed = fals
         <>
           <div className="flex items-center justify-between p-4 flex-shrink-0">
             <div className="flex items-center h-[26px]">
-              <span
-                className="font-bold text-2xl text-zinc-900"
-                style={{ lineHeight: '26px', marginTop: '-3px' }}
-              >
-                start
-              </span>
+              <div className="flex items-center gap-2">
+                <span className="inline-flex h-6 w-6 items-center justify-center rounded bg-emerald-600 text-white text-xs font-bold">OF</span>
+                <span className="font-bold text-2xl text-zinc-900 tracking-tight">One Fin</span>
+              </div>
             </div>
             <Button
               variant="ghost"
@@ -202,11 +200,11 @@ export function SidebarComponent({ className, onToggleCollapse, collapsed = fals
             <Button
               variant="ghost"
               className="w-full text-stone-700 hover:bg-stone-200 px-1.5"
-              onClick={() => router.push('/')}
+              onClick={() => router.push('/chat')}
             >
               <div className="flex items-center gap-2 w-full">
                 <Plus className="h-4 w-4" />
-                <span>New project</span>
+                <span>New chat</span>
               </div>
             </Button>
           </div>
@@ -232,13 +230,30 @@ export function SidebarComponent({ className, onToggleCollapse, collapsed = fals
                    <Button
                      variant="ghost"
                      className="justify-start w-full text-stone-700 hover:bg-stone-200 text-sm px-1.5"
+                     onClick={() => router.push('/dashboard')}
+                   >
+                     <div className="flex items-center gap-2 w-full text-left">
+                       <span>📊</span> <span>Dashboard</span>
+                     </div>
+                   </Button>
+                   <Button
+                     variant="ghost"
+                     className="justify-start w-full text-stone-700 hover:bg-stone-200 text-sm px-1.5"
                      onClick={() => router.push('/context')}
                    >
                      <div className="flex items-center gap-2 w-full text-left">
                        <span>📖</span> <span>Context</span>
                      </div>
                    </Button>
-
+                   <Button
+                     variant="ghost"
+                     className="justify-start w-full text-stone-700 hover:bg-stone-200 text-sm px-1.5"
+                     onClick={() => router.push('/account')}
+                   >
+                     <div className="flex items-center gap-2 w-full text-left">
+                       <span>⚙️</span> <span>Account</span>
+                     </div>
+                   </Button>
                 </div>
               )}
             </div>
@@ -335,7 +350,7 @@ export function SidebarComponent({ className, onToggleCollapse, collapsed = fals
             <h3 className="text-sm font-medium text-stone-800 mb-3">Feedback? DM us!</h3>
             <div className="space-y-2.5">
               <SocialLink icon={User} text="Company information" href="/about" />
-              <SocialLink icon={Mail} text="Your account" href="/account" />
+              <SocialLink icon={Mail} text="Contact us" href="/contact" />
             </div>
           </div>
 
