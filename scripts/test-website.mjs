@@ -53,8 +53,13 @@ try {
   assert.ok(await page.getByRole('button',{name:'New chat'}).isVisible(),'Homepage can start a new chat');
   assert.ok(await page.getByRole('button',{name:'customer support',exact:true}).isVisible(),'Homepage offers prompt starters');
   assert.ok(await page.getByRole('button',{name:/Profile/}).isVisible(),'Homepage sidebar shows the account menu');
-  assert.ok(await page.getByRole('button',{name:'Workspace app'}).isVisible(),'Homepage links to the separate Workspace');
+  assert.ok(await page.locator('.home-chat-sidebar a[href="/workspace"]').isVisible(),'Homepage links to the separate Workspace');
+  assert.equal(await page.locator('.home-chat-sidebar a[href="/context"]').count(),1,'Context navigation has its own destination');
+  assert.equal(await page.locator('.home-chat-sidebar a[href="/account"]').count(),1,'Account navigation has its own destination');
   assert.ok(await page.getByRole('link',{name:'Company information'}).isVisible(),'Homepage sidebar links to company information');
+  await page.getByRole('button',{name:'Collapse sidebar'}).click();
+  assert.ok(await page.getByRole('button',{name:'Expand sidebar'}).isVisible(),'Homepage sidebar can be reopened from its collapsed state');
+  await page.getByRole('button',{name:'Expand sidebar'}).click();
   assert.equal(await page.getByText(/daily message cap|visitor allowance/i).count(),0,'Homepage does not advertise guest access');
   assert.equal(await page.locator('footer').count(),0,'Chat homepage fills the viewport without the marketing footer');
   assert.equal(await page.locator('.site-header').count(),0,'Chat homepage has no public marketing header');
@@ -74,7 +79,7 @@ try {
   page.setViewportSize({width:1440,height:1000});
   for(const [path,title] of [['/about','Software with a practical purpose.'],['/privacy','Privacy Policy'],['/terms','Terms & Conditions'],['/payment-policy','Payment, Cancellation & Refund Policy'],['/support','A little help goes a long way.'],['/contact','Let’s get you to the right place.'],['/pricing','Choose the time that fits your work.'],['/forgot-password','Forgot your password?'],['/reset-password','Request a fresh reset link.'],['/sign-in','Your workspace is waiting.'],['/sign-up','A place for your next idea.']]) await check(path,title);
   for(const path of ['/dashboard','/dashboard/activity','/dashboard/billing','/account/security']){await page.goto(`${origin}${path}`);assert.equal(new URL(page.url()).pathname,'/sign-in');checks++;}
-  await page.goto(`${origin}/workspace`);assert.equal(new URL(page.url()).pathname,'/sign-in');assert.equal(new URL(page.url()).searchParams.get('next'),'/workspace');checks++;
+  await page.goto(`${origin}/workspace`);await page.getByRole('heading',{level:1,name:'Build something useful.'}).waitFor();assert.equal(await page.locator('.home-chat-sidebar').count(),0,'Guest Workspace view is separate from homepage chat');assert.ok(await page.getByText('Sign in when you’re ready to use Workspace.',{exact:true}).isVisible());await page.getByRole('textbox',{name:'Describe a Workspace task'}).fill('Build a sample website');await page.getByRole('button',{name:'Sign in to run'}).click();assert.ok(await page.getByRole('dialog').getByRole('link',{name:'Sign in'}).isVisible(),'Workspace requests login only when a guest tries to use it');checks++;
   await page.goto(`${origin}/chat`);assert.equal(new URL(page.url()).pathname,'/sign-in');checks++;
   await page.goto(`${origin}/pricing`);
   for(const interval of ['Daily','Weekly','Monthly','Yearly']) assert.ok(await page.getByRole('heading',{name:interval,exact:true}).isVisible());
@@ -94,6 +99,13 @@ try {
   await page.reload();await page.getByRole('heading',{level:1,name:'Build something useful.'}).waitFor();
   assert.equal(await page.locator('.workspace-balance-card strong').innerText(),'10','Failed Workspace task returns the reserved credit');
   assert.equal((await db.query("select count(*)::int as count from credit_usage where user_id=$1 and status='refunded'",[user])).rows[0].count,1);
+  await db.query("update credit_buckets set remaining=0 where user_id=$1 and reference=$2",[user,`signup:${user}`]);
+  await page.reload();await page.getByRole('heading',{level:1,name:'Build something useful.'}).waitFor();await page.getByRole('textbox',{name:'Describe a Workspace task'}).fill('Try with no available credits');await page.getByRole('button',{name:'Run task'}).click();await page.getByRole('dialog').getByRole('heading',{name:'Add credits to continue'}).waitFor();checks++;
+  await page.getByRole('dialog').getByRole('button',{name:'Not now'}).click();await db.query("update credit_buckets set remaining=10 where user_id=$1 and reference=$2",[user,`signup:${user}`]);
+  await page.goto(`${origin}/`);await page.locator('.home-chat-sidebar a[href="/dashboard"]').click();await page.waitForURL('**/dashboard');await page.getByRole('heading',{name:'Welcome back, Browser.'}).waitFor();assert.equal(new URL(page.url()).pathname,'/dashboard','Dashboard sidebar link opens the dashboard rather than Workspace');checks++;
+  await page.goto(`${origin}/`);await page.locator('.home-chat-sidebar a[href="/context"]').click();await page.waitForURL('**/context');assert.equal(new URL(page.url()).pathname,'/context','Context sidebar link opens its own page');checks++;
+  await page.goto(`${origin}/`);await page.locator('.home-chat-sidebar a[href="/account"]').click();await page.waitForURL('**/account');await page.getByRole('heading',{name:'Make yourself at home.'}).waitFor();assert.equal(new URL(page.url()).pathname,'/account','Account sidebar link opens its own page');checks++;
+  await page.goto(`${origin}/`);await page.locator('.home-chat-sidebar a[href="/workspace"]').click();await page.waitForURL('**/workspace');assert.equal(new URL(page.url()).pathname,'/workspace','Workspace sidebar link opens Workspace');checks++;
   page.setViewportSize({width:390,height:844});
   assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth+1),'Workspace has no mobile horizontal overflow');
   assert.ok(await page.getByRole('textbox',{name:'Describe a Workspace task'}).isVisible(),'Workspace task composer remains usable on mobile');
@@ -109,9 +121,9 @@ try {
   await page.goto(`${origin}/dashboard/activity`);await page.getByRole('button',{name:'Delete',exact:true}).click();await page.getByRole('button',{name:'Keep it',exact:true}).click();assert.ok(await page.getByRole('link',{name:'My saved conversation',exact:true}).isVisible());await page.getByRole('button',{name:'Delete',exact:true}).click();await page.getByRole('button',{name:'Delete permanently',exact:true}).click();await page.getByText('No conversations yet.',{exact:false}).waitFor();checks++;
   await context.clearCookies();await context.addCookies([{name:'onefin-reset',value:resetToken,url:origin,httpOnly:true,sameSite:'Lax'}]);await page.goto(`${origin}/reset-password`);await page.getByLabel('New password',{exact:true}).fill('browser-replacement-password');await page.getByLabel('Confirm new password',{exact:true}).fill('browser-replacement-password');await page.getByRole('button',{name:'Update password',exact:true}).click();await page.waitForURL('**/sign-in?success=*');checks++;
   await page.goto(`${origin}/forgot-password`);await page.getByLabel('Email address').fill('browser@example.test');await page.getByRole('button',{name:'Send reset link',exact:true}).click();await page.getByRole('alert').filter({hasText:'Email delivery is not configured'}).waitFor();checks++;
-  await page.goto(`${origin}/workspace`);await page.waitForURL(url=>url.pathname==='/sign-in'&&url.searchParams.get('next')==='/workspace');assert.equal(await page.locator('.home-chat-sidebar').count(),0,'Unauthenticated Workspace requests do not reveal homepage chat');checks++;
+  await page.goto(`${origin}/workspace`);await page.getByRole('heading',{level:1,name:'Build something useful.'}).waitFor();assert.equal(await page.locator('.home-chat-sidebar').count(),0,'Unauthenticated Workspace requests do not reveal homepage chat');checks++;
   await page.setViewportSize({width:390,height:844});
-  for(const path of ['/','/pricing','/support','/contact','/privacy','/forgot-password']){await page.goto(`${origin}${path}`);await page.locator('h1').waitFor();assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth+1),`${path} mobile overflow`);checks++;}
+  for(const path of ['/','/pricing','/support','/contact','/privacy','/forgot-password','/workspace']){await page.goto(`${origin}${path}`);await page.locator('h1').waitFor();assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth+1),`${path} mobile overflow`);checks++;}
   await page.goto(`${origin}/`);await page.getByRole('button',{name:'Open chat menu'}).click();await page.locator('.home-chat-sidebar').getByRole('link',{name:'Company information'}).click();await page.waitForURL('**/about');await page.getByRole('heading',{level:1}).waitFor();checks++;
   await page.goto(`${origin}/pricing`);await page.getByRole('heading',{name:'Daily',exact:true}).waitFor();await page.screenshot({path:new URL('pricing-mobile.png',artifacts).pathname.replace(/^\/([A-Z]:)/,'$1'),fullPage:true});
   assert.deepEqual(failures,[],'No browser JavaScript errors');

@@ -2,11 +2,13 @@
 
 import { toast } from "sonner";
 import React, { useState, useRef, useEffect } from "react";
+import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { cn } from "@/lib/utils";
 import {
   ChevronLeft,
+  ChevronRight,
   ChevronDown,
   Plus,
   Mail,
@@ -170,14 +172,27 @@ export function SidebarComponent({ className, onToggleCollapse, collapsed = fals
     <div
       className={cn(
         "relative flex flex-col h-full border-r border-stone-200 bg-stone-50 transition-all duration-300 ease-in-out",
-        collapsed ? "w-0" : "w-[260px]",
+        collapsed ? "home-chat-sidebar-collapsed w-[52px]" : "w-[260px]",
         className
       )}
       style={{
         "--sidebar-mask": "linear-gradient(to right, black calc(100% - 80px), transparent calc(100% - 20px))"
       } as React.CSSProperties}
     >
-      {!collapsed && (
+      {collapsed ? (
+        <div className="flex justify-center p-3">
+          <Button
+            variant="ghost"
+            size="icon"
+            className="rounded-full transition-colors hover:bg-stone-200"
+            onClick={handleCollapseClick}
+            aria-label="Expand sidebar"
+            title="Expand sidebar"
+          >
+            <ChevronRight className="h-4 w-4" />
+          </Button>
+        </div>
+      ) : (
         <>
           <div className="flex items-center justify-between p-4 flex-shrink-0">
             <div className="flex items-center h-[26px]">
@@ -230,42 +245,18 @@ export function SidebarComponent({ className, onToggleCollapse, collapsed = fals
               </button>
               {!isWorkspaceCollapsed && (
                 <div className="mt-1 space-y-1 animate-in fade-in duration-200">
-                   <Button
-                     variant="ghost"
-                     className="justify-start w-full text-stone-700 hover:bg-stone-200 text-sm px-1.5"
-                     onClick={() => router.push('/dashboard')}
-                   >
-                     <div className="flex items-center gap-2 w-full text-left">
-                       <span>📊</span> <span>Dashboard</span>
-                     </div>
-                   </Button>
-                   <Button
-                     variant="ghost"
-                     className="justify-start w-full text-stone-700 hover:bg-stone-200 text-sm px-1.5"
-                     onClick={() => router.push('/workspace')}
-                   >
-                     <div className="flex items-center gap-2 w-full text-left">
-                       <span>▦</span> <span>Workspace app</span>
-                     </div>
-                   </Button>
-                   <Button
-                     variant="ghost"
-                     className="justify-start w-full text-stone-700 hover:bg-stone-200 text-sm px-1.5"
-                     onClick={() => router.push('/context')}
-                   >
-                     <div className="flex items-center gap-2 w-full text-left">
-                       <span>📖</span> <span>Context</span>
-                     </div>
-                   </Button>
-                   <Button
-                     variant="ghost"
-                     className="justify-start w-full text-stone-700 hover:bg-stone-200 text-sm px-1.5"
-                     onClick={() => router.push('/account')}
-                   >
-                     <div className="flex items-center gap-2 w-full text-left">
-                       <span>⚙️</span> <span>Account</span>
-                     </div>
-                   </Button>
+                   <Link className="flex w-full items-center gap-2 rounded-md px-1.5 py-2 text-sm text-stone-700 hover:bg-stone-200" href="/dashboard" aria-current={pathname === '/dashboard' ? 'page' : undefined}>
+                     <span aria-hidden="true">📊</span><span>Dashboard</span>
+                   </Link>
+                   <Link className="flex w-full items-center gap-2 rounded-md px-1.5 py-2 text-sm text-stone-700 hover:bg-stone-200" href="/workspace" aria-current={pathname === '/workspace' ? 'page' : undefined}>
+                     <span aria-hidden="true">▦</span><span>Workspace app</span>
+                   </Link>
+                   <Link className="flex w-full items-center gap-2 rounded-md px-1.5 py-2 text-sm text-stone-700 hover:bg-stone-200" href="/context" aria-current={pathname === '/context' || pathname.startsWith('/context/') ? 'page' : undefined}>
+                     <span aria-hidden="true">📖</span><span>Context</span>
+                   </Link>
+                   <Link className="flex w-full items-center gap-2 rounded-md px-1.5 py-2 text-sm text-stone-700 hover:bg-stone-200" href="/account" aria-current={pathname === '/account' ? 'page' : undefined}>
+                     <span aria-hidden="true">⚙️</span><span>Account</span>
+                   </Link>
                 </div>
               )}
             </div>

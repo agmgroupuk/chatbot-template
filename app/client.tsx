@@ -19,6 +19,7 @@ function ClientLayoutContent({ children }: ClientLayoutProps) {
   const isHomePage = pathname === '/';
   const isWorkspacePage = pathname === '/workspace';
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [activePlanName, setActivePlanName] = useState<string | null>(null);
   const [isSubscriptionLoading, setIsSubscriptionLoading] = useState(false);
 
@@ -57,9 +58,10 @@ function ClientLayoutContent({ children }: ClientLayoutProps) {
       {isHomePage ? (
         <div className="home-chat-shell">
           <SidebarComponent
-            className={`home-chat-sidebar${isMobileSidebarOpen ? ' is-mobile-open' : ''}`}
+            className={`home-chat-sidebar${isMobileSidebarOpen ? ' is-mobile-open' : ''}${isSidebarCollapsed ? ' is-collapsed' : ''}`}
             isAuthenticated={isAuthenticated}
-            collapsed={false}
+            collapsed={isSidebarCollapsed}
+            onToggleCollapse={() => setIsSidebarCollapsed((collapsed) => !collapsed)}
             activePlanName={activePlanName}
             isSubscriptionLoading={isSubscriptionLoading}
           />

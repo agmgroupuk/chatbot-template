@@ -107,11 +107,13 @@ function WorkspaceCardForm({ onComplete }: { onComplete: () => void }) {
 
 export function WorkspaceApplication({
   email,
+  isAuthenticated,
   publishableKey,
   initialData,
   paymentConfirmed,
 }: {
-  email: string;
+  email: string | null;
+  isAuthenticated: boolean;
   publishableKey: string;
   initialData: WorkspaceData;
   paymentConfirmed: boolean;
@@ -127,6 +129,7 @@ export function WorkspaceApplication({
   const [paymentSecret, setPaymentSecret] = useState('');
   const [setupSecret, setSetupSecret] = useState('');
   const [purchaseId, setPurchaseId] = useState('');
+  const [accessPrompt, setAccessPrompt] = useState<'signin' | 'credits' | null>(null);
   const stripePromise = useMemo(() => publishableKey ? loadStripe(publishableKey) : null, [publishableKey]);
   const balance = 'balance' in data ? data.balance : null;
   const transactions = 'transactions' in data ? data.transactions : [];
@@ -173,6 +176,14 @@ export function WorkspaceApplication({
     event.preventDefault();
     const text = prompt.trim();
     if (!text || busy) return;
+    if (!isAuthenticated) {
+      setAccessPrompt('signin');
+      return;
+    }
+    if (balance !== null && 'creditCost' in data && balance < data.creditCost) {
+      setAccessPrompt('credits');
+      return;
+    }
     const optimistic = [...messages, { sender: 'user' as const, content: text }].slice(-19);
     const requestMessages = optimistic.map((message) => ({ ...message, content: message.content.slice(0, 4000) }));
     while (requestMessages.length > 1 && requestMessages.reduce((total, message) => total + message.content.length, 0) > 16000) {
@@ -200,14 +211,26 @@ export function WorkspaceApplication({
     } catch (failure) {
       setMessages(messages);
       const message = failure instanceof Error ? failure.message : 'Unable to complete this Workspace task.';
-      setError(message);
-      if (message.includes('Not enough Workspace credits')) setNotice('Add a credit pack below. Chat subscriptions do not provide Workspace credits.');
+      if (message.includes('Not enough Workspace credits')) {
+        setAccessPrompt('credits');
+        setError('');
+        setNotice('');
+      } else if (message.includes('Please sign in')) {
+        setAccessPrompt('signin');
+        setError('');
+      } else {
+        setError(message);
+      }
     } finally {
       setBusy(false);
     }
   }
 
   async function beginPurchase() {
+    if (!isAuthenticated) {
+      setAccessPrompt('signin');
+      return;
+    }
     setError('');
     setNotice('');
     const id = crypto.randomUUID();
@@ -221,6 +244,10 @@ export function WorkspaceApplication({
   }
 
   async function beginCardSetup() {
+    if (!isAuthenticated) {
+      setAccessPrompt('signin');
+      return;
+    }
     setError('');
     setNotice('');
     const result = await prepareWorkspaceCardUpdate();
@@ -244,19 +271,21 @@ export function WorkspaceApplication({
         <a className="workspace-side-link" href="#workspace-transactions"><History size={17} />Transactions</a>
         <a className="workspace-side-link" href="#workspace-activity"><FileText size={17} />Activity</a>
         <div className="workspace-sidebar-spacer" />
-        <Link className="workspace-side-link" href="/account"><Settings size={17} />Account settings</Link>
-        <div className="workspace-user">
-          <span className="workspace-user-avatar">{email.slice(0, 1).toUpperCase()}</span>
-          <span><strong>{email}</strong><small>Workspace account</small></span>
-        </div>
+        <Link className="workspace-side-link" href={isAuthenticated ? '/account' : '/sign-in?next=%2Fworkspace'}><Settings size={17} />Account settings</Link>
+        {isAuthenticated && email
+          ? <div className="workspace-user">
+              <span className="workspace-user-avatar">{email.slice(0, 1).toUpperCase()}</span>
+              <span><strong>{email}</strong><small>Workspace account</small></span>
+            </div>
+          : <Link className="workspace-side-link" href="/sign-in?next=%2Fworkspace">Sign in to your Workspace</Link>}
       </aside>
 
       <main className="workspace-main" id="workspace-home">
         <header className="workspace-topbar">
           <div><span className="workspace-breadcrumb">One Fin /</span> Workspace</div>
           <div className="workspace-top-actions">
-            <Link href="/dashboard/billing">Subscription billing</Link>
-            <span className="workspace-mode-badge">Credit balance · {loading ? '…' : balance ?? 'Unavailable'}</span>
+            {isAuthenticated && <Link href="/dashboard/billing">Subscription billing</Link>}
+            <span className="workspace-mode-badge">Credit balance · {loading ? '…' : balance ?? (isAuthenticated ? 'Unavailable' : 'Sign in required')}</span>
           </div>
         </header>
 
@@ -275,19 +304,18 @@ export function WorkspaceApplication({
           {(error || notice) && (
             <div className={error ? 'workspace-alert' : 'workspace-notice'} role={error ? 'alert' : 'status'}>
               {error || notice}
-              {error?.includes('Not enough Workspace credits') && <a href="#workspace-credits">Add credits</a>}
             </div>
           )}
 
           <section className="workspace-metrics" id="workspace-credits" aria-label="Workspace credits">
             <article className="workspace-metric-card workspace-balance-card">
               <span className="workspace-metric-label">AVAILABLE WORKSPACE CREDITS</span>
-              <strong>{loading ? '…' : balance ?? '—'}</strong>
-              <span className="workspace-muted-copy">{'creditCost' in data ? `${data.creditCost} credit${data.creditCost === 1 ? '' : 's'} used when a task completes successfully.` : 'Credit pricing is temporarily unavailable.'}</span>
-              <button className="workspace-primary-button" type="button" onClick={() => void beginPurchase()} disabled={!publishableKey}>
-                <Plus size={16} /> Add 50 credits · $5
+              <strong>{loading ? '…' : balance ?? (isAuthenticated ? '—' : 'Sign in')}</strong>
+              <span className="workspace-muted-copy">{'creditCost' in data ? `${data.creditCost} credit${data.creditCost === 1 ? '' : 's'} used when a task completes successfully.` : isAuthenticated ? 'Credit pricing is temporarily unavailable.' : 'Sign in to view your balance and Workspace credit usage.'}</span>
+              <button className="workspace-primary-button" type="button" onClick={() => void beginPurchase()} disabled={isAuthenticated && !publishableKey}>
+                <Plus size={16} /> {isAuthenticated ? 'Add 50 credits · $5' : 'Sign in to add credits'}
               </button>
-              {!publishableKey && <span className="workspace-muted-copy">Credit checkout is not configured yet.</span>}
+              {isAuthenticated && !publishableKey && <span className="workspace-muted-copy">Credit checkout is not configured yet.</span>}
             </article>
             <article className="workspace-metric-card">
               <span className="workspace-metric-label">COMPLETED TASKS</span>
@@ -296,9 +324,9 @@ export function WorkspaceApplication({
             </article>
             <article className="workspace-metric-card">
               <span className="workspace-metric-label">PAYMENT METHOD</span>
-              <strong className="workspace-card-value">{card?.card_last4 ? `•••• ${card.card_last4}` : 'Not added'}</strong>
+              <strong className="workspace-card-value">{card?.card_last4 ? `•••• ${card.card_last4}` : isAuthenticated ? 'Not added' : 'Sign in required'}</strong>
               <span className="workspace-muted-copy">{card?.card_brand ? `${card.card_brand} · Expires ${card.card_exp_month}/${card.card_exp_year}` : 'Cards are used only for one-time Workspace purchases.'}</span>
-              <button className="workspace-link-button" type="button" onClick={() => void beginCardSetup()} disabled={!publishableKey}>Manage payment method</button>
+              <button className="workspace-link-button" type="button" onClick={() => void beginCardSetup()} disabled={isAuthenticated && !publishableKey}>Manage payment method</button>
             </article>
           </section>
 
@@ -340,20 +368,27 @@ export function WorkspaceApplication({
                 value={prompt}
                 onChange={(event) => setPrompt(event.target.value)}
                 placeholder="Describe the task you want to work on…"
-                disabled={busy || balance === null || balance === 0}
+                disabled={busy}
               />
               <div className="workspace-task-form-footer">
                 <span>{prompt.length}/4000 characters · Shift + Enter for a new line</span>
-                <button className="workspace-primary-button" type="submit" disabled={busy || !prompt.trim() || balance === null || balance === 0}>
-                  {busy ? 'Working…' : 'Run task'} <ArrowUp size={16} />
+                <button className="workspace-primary-button" type="submit" disabled={busy || !prompt.trim()}>
+                  {busy ? 'Working…' : isAuthenticated ? 'Run task' : 'Sign in to run'} <ArrowUp size={16} />
                 </button>
               </div>
             </form>
-            {!loading && balance === 0 && (
+            {!loading && isAuthenticated && balance === 0 && (
               <div className="workspace-empty-credits">
                 <strong>You’re out of Workspace credits.</strong>
                 <span>Add a one-time credit pack to continue. Chat subscriptions do not include Workspace credits.</span>
-                <button className="workspace-link-button" type="button" onClick={() => void beginPurchase()}>Add credits</button>
+                <button className="workspace-link-button" type="button" onClick={() => setAccessPrompt('credits')}>Add credits</button>
+              </div>
+            )}
+            {!loading && !isAuthenticated && (
+              <div className="workspace-empty-credits">
+                <strong>Sign in when you’re ready to use Workspace.</strong>
+                <span>Your credits, payment methods, transactions, and task history stay with your account.</span>
+                <button className="workspace-link-button" type="button" onClick={() => setAccessPrompt('signin')}>Sign in to continue</button>
               </div>
             )}
           </section>
@@ -365,14 +400,14 @@ export function WorkspaceApplication({
                 <div className="workspace-table-wrap"><table className="workspace-table"><thead><tr><th>Date</th><th>Credits</th><th>Amount</th><th>Status</th></tr></thead><tbody>
                   {transactions.map((item) => <tr key={item.id}><td>{dateTime(item.created_at)}</td><td>+{item.credits}</td><td>{(item.amount / 100).toLocaleString(undefined, { style: 'currency', currency: item.currency.toUpperCase() })}</td><td><span className="workspace-status-pill">Paid</span></td></tr>)}
                 </tbody></table></div>
-              ) : <p className="workspace-empty-copy">Completed credit purchases will appear here.</p>}
-              <Link className="workspace-inline-link" href="/dashboard/billing">View subscription billing separately →</Link>
+              ) : <p className="workspace-empty-copy">{isAuthenticated ? 'Completed credit purchases will appear here.' : 'Sign in to view your private Workspace transactions.'}</p>}
+              {isAuthenticated && <Link className="workspace-inline-link" href="/dashboard/billing">View subscription billing separately →</Link>}
             </article>
             <article className="workspace-panel" id="workspace-activity">
               <div className="workspace-panel-heading"><div><p className="workspace-eyebrow">USAGE</p><h2>Recent activity</h2></div><span className="workspace-muted-copy">Latest 20 operations</span></div>
               {usage.length ? (
                 <ul className="workspace-activity-list">{usage.map((item) => <li key={item.id}><span><strong>Workspace AI task</strong><small>{dateTime(item.created_at)}</small></span><span className="workspace-status-pill">{item.status === 'completed' ? `−${item.credits} credit${item.credits === 1 ? '' : 's'}` : item.status}</span></li>)}</ul>
-              ) : <p className="workspace-empty-copy">Your completed Workspace tasks will appear here.</p>}
+              ) : <p className="workspace-empty-copy">{isAuthenticated ? 'Your completed Workspace tasks will appear here.' : 'Sign in to view private task history.'}</p>}
             </article>
           </section>
 
@@ -382,6 +417,37 @@ export function WorkspaceApplication({
           </section>
         </div>
       </main>
+      {accessPrompt && (
+        <div className="workspace-access-backdrop" onClick={(event) => { if (event.target === event.currentTarget) setAccessPrompt(null); }}>
+          <section className="workspace-access-dialog" role="dialog" aria-modal="true" aria-labelledby="workspace-access-title">
+            <button className="workspace-access-close" type="button" aria-label="Close dialog" onClick={() => setAccessPrompt(null)}>×</button>
+            {accessPrompt === 'signin' ? (
+              <>
+                <p className="workspace-eyebrow">WORKSPACE ACCESS</p>
+                <h2 id="workspace-access-title">Sign in to continue</h2>
+                <p>Sign in to verify your Workspace credits and start using credit-based tools. A homepage chat subscription does not include Workspace credits.</p>
+                <div className="workspace-access-actions">
+                  <Link className="workspace-primary-button" href="/sign-in?next=%2Fworkspace">Sign in</Link>
+                  <Link className="workspace-link-button" href="/sign-up">Create account</Link>
+                </div>
+              </>
+            ) : (
+              <>
+                <p className="workspace-eyebrow">WORKSPACE CREDITS</p>
+                <h2 id="workspace-access-title">Add credits to continue</h2>
+                <p>You need more Workspace credits to run this task. Add a one-time credit pack; it does not start a chat subscription.</p>
+                <div className="workspace-access-actions">
+                  <button className="workspace-primary-button" type="button" disabled={!publishableKey} onClick={() => { setAccessPrompt(null); void beginPurchase(); }}>
+                    <Plus size={16} /> Add 50 credits · $5
+                  </button>
+                  {!publishableKey && <span className="workspace-muted-copy">Credit checkout is not configured yet.</span>}
+                  <button className="workspace-link-button" type="button" onClick={() => setAccessPrompt(null)}>Not now</button>
+                </div>
+              </>
+            )}
+          </section>
+        </div>
+      )}
     </div>
   );
 }
