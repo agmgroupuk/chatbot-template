@@ -1,0 +1,13 @@
+{
+  "accountId": "acct_1UOhth9TlJVLQeem",
+  "mode": "test",
+  "prices": {
+    "credits_50": {
+      "priceId": "price_1UOzQJ9TlJVLQeemKI6N5Bdk",
+      "interval": null,
+      "credits": 50
+    }
+  },
+  "webhookId": "we_1UOly09TlJVLQeemU6aTIuHV",
+  "webhookUrl": "https://onefinsolution.online/api/stripe/webhook"
+}

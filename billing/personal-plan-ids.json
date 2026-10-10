@@ -1,11 +1,11 @@
 {
   "accountId": "acct_1UOhth9TlJVLQeem",
   "mode": "test",
-  "productId": "prod_VPb78DHvXX4Ty4",
   "prices": {
     "daily": "price_1UOlv29TlJVLQeemV0tVfWaO",
     "weekly": "price_1UOlv89TlJVLQeemV3kkXPjQ",
     "monthly": "price_1UOlv89TlJVLQeems5S5nXQY",
-    "yearly": "price_1UOlv99TlJVLQeem2ClmBDE5"
+    "yearly": "price_1UOlv99TlJVLQeem2ClmBDE5",
+    "custom": "price_1UP7wW9TlJVLQeem2m6hztRI"
   }
 }
