@@ -1,6 +1,52 @@
 import Link from 'next/link';
+import { Layers, Globe2, ShieldCheck } from 'lucide-react';
 import { PageHeading } from '@/components/page-heading';
 import { company } from '@/lib/company';
-import { Layers, Globe2, ShieldCheck } from 'lucide-react';
-export const metadata={title:'About Us | One Fin Solution'};
-export default function About() { return <div className="page-wrap"><PageHeading eyebrow="ABOUT ONE FIN" title="Software with a practical purpose." description="We bring software access, AI conversations, and useful workspace tools together so people can spend more time on the work that matters." /><div className="two-grid"><section className="panel"><h2>Who we are</h2><p>{company.name} is the company behind One Fin Solution. Our registered business activity is maintaining rights to reproduce finished software for sale or distribution.</p><p>Our website gives users a place to manage their account, organize conversations and reference material, and explore software plans. We serve an international audience, with product and payment availability depending on location.</p></section><section className="hero-preview"><p className="eyebrow">OUR APPROACH</p><h2>Useful tools.<br />Clear choices.<br />A human point of contact.</h2><p className="mt-6">We believe the basics should be easy: finding a plan, understanding your account, and knowing where to ask for help.</p></section></div><section className="three-grid section-space">{[{icon:Layers,title:'A connected workspace',body:'Conversations and reusable context in one account.'},{icon:ShieldCheck,title:'Control over your account',body:'Profile preferences, password controls, and session management.'},{icon:Globe2,title:'An international outlook',body:'Clear product information and online support wherever you work.'}].map(({icon:Icon,title,body})=><article key={title} className="panel"><Icon className="feature-icon" /><h3>{title}</h3><p>{body}</p></article>)}</section><section className="callout"><div><h2>Company information</h2><p>{company.name}<br />Registration number: {company.registrationNumber}</p></div><Link href="/contact" className="button">Contact our team</Link></section><footer className="site-footer"><div className="footer-top"><div><p className="text-sm text-stone-500">One Fin Solution is a product of ONE FIN SOLUTION COMPANY LIMITED.<br />All rights reserved.</p></div><div className="footer-links"><div><strong>Product</strong><Link href="/pricing">Pricing Plans</Link><Link href="/subscribe">Subscribe</Link><Link href="/dashboard">Dashboard</Link></div><div><strong>Company</strong><Link href="/about">About</Link><Link href="/contact">Contact Us</Link><Link href="/support">Support</Link></div><div><strong>Legal</strong><Link href="/privacy">Privacy Policy</Link><Link href="/terms">Terms &amp; Conditions</Link><Link href="/payment-policy">Payments &amp; Refunds</Link><Link href="/account/plugins">Model Comparison</Link></div></div></div><div className="footer-bottom"><div>© {new Date().getFullYear()} One Fin Solution. All rights reserved.</div><div className="flex gap-6"><Link href="/privacy" className="hover:text-stone-900">Privacy</Link><Link href="/terms" className="hover:text-stone-900">Terms</Link></div></div></footer></div>; }
+
+export const metadata = { title: 'About Us | One Fin Solution' };
+
+const principles = [
+  { icon: Layers, title: 'A connected workspace', body: 'Conversations and reusable context in one account.' },
+  { icon: ShieldCheck, title: 'Control over your account', body: 'Profile preferences, password controls, and session management.' },
+  { icon: Globe2, title: 'An international outlook', body: 'Clear product information and online support wherever you work.' },
+];
+
+export default function About() {
+  return (
+    <div className="page-wrap">
+      <PageHeading
+        eyebrow="ABOUT ONE FIN"
+        title="Software with a practical purpose."
+        description="We bring software access, AI conversations, and useful workspace tools together so people can spend more time on the work that matters."
+      />
+      <div className="two-grid">
+        <section className="panel">
+          <h2>Who we are</h2>
+          <p>{company.name} is the company behind One Fin Solution. Our registered business activity is maintaining rights to reproduce finished software for sale or distribution.</p>
+          <p>Our website gives users a place to manage their account, organize conversations and reference material, and explore software plans. We serve an international audience, with product and payment availability depending on location.</p>
+        </section>
+        <section className="hero-preview">
+          <p className="eyebrow">OUR APPROACH</p>
+          <h2>Useful tools.<br />Clear choices.<br />A human point of contact.</h2>
+          <p className="mt-6">We believe the basics should be easy: finding a plan, understanding your account, and knowing where to ask for help.</p>
+        </section>
+      </div>
+      <section className="three-grid section-space" aria-label="Our principles">
+        {principles.map(({ icon: Icon, title, body }) => (
+          <article key={title} className="panel">
+            <Icon className="feature-icon" aria-hidden="true" />
+            <h3>{title}</h3>
+            <p>{body}</p>
+          </article>
+        ))}
+      </section>
+      <section className="callout">
+        <div>
+          <h2>Company information</h2>
+          <p>{company.name}<br />Registration number: {company.registrationNumber}</p>
+        </div>
+        <Link href="/contact" className="button">Contact our team</Link>
+      </section>
+    </div>
+  );
+}

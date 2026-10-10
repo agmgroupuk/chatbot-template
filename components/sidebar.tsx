@@ -186,21 +186,24 @@ export function SidebarComponent({ className, onToggleCollapse, collapsed = fals
                 <span className="font-bold text-2xl text-zinc-900 tracking-tight">One Fin</span>
               </div>
             </div>
-            <Button
-              variant="ghost"
-              size="icon"
-              className="rounded-full transition-all duration-300 ease-in-out hover:bg-stone-200"
-              onClick={handleCollapseClick}
-            >
-              <ChevronLeft className="h-4 w-4" />
-            </Button>
+            {onToggleCollapse && (
+              <Button
+                variant="ghost"
+                size="icon"
+                className="rounded-full transition-all duration-300 ease-in-out hover:bg-stone-200"
+                onClick={handleCollapseClick}
+                aria-label="Collapse sidebar"
+              >
+                <ChevronLeft className="h-4 w-4" />
+              </Button>
+            )}
           </div>
 
           <div className="px-3 py-2 flex-shrink-0">
             <Button
               variant="ghost"
               className="w-full text-stone-700 hover:bg-stone-200 px-1.5"
-              onClick={() => router.push('/chat')}
+              onClick={() => router.push('/')}
             >
               <div className="flex items-center gap-2 w-full">
                 <Plus className="h-4 w-4" />
