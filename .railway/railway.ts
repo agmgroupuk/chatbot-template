@@ -12,7 +12,7 @@ export default defineRailway(() => {
     env: {
       DATABASE_URL: preserve(),
       NEXT_PUBLIC_SITE_URL: preserve(), PORT: preserve(),
-      BILLING_PROVIDER: 'stripe', STRIPE_MODE: 'test', SIGNUP_CREDITS: '10', CHAT_CREDIT_COST: '1',
+      BILLING_PROVIDER: 'stripe', STRIPE_MODE: 'test', SIGNUP_CREDITS: '10', WORKSPACE_CREDIT_COST: '1',
       AI_PROVIDER: 'openai', OPENAI_MODEL: 'gpt-4.1-mini', XAI_MODEL: 'grok-4.3',
     },
     build: "npm run build",

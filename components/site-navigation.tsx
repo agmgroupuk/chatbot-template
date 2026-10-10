@@ -44,7 +44,7 @@ export function SiteHeader() {
             ? <Link className="button small secondary header-account-link" href="/dashboard">Dashboard</Link>
             : <Link className="header-sign-in" href="/sign-in">Sign in</Link>
         )}
-        <Link className="button small" href="/">Open workspace</Link>
+        <Link className="button small" href="/workspace">Workspace</Link>
         <button
           className="mobile-toggle"
           type="button"
@@ -78,7 +78,7 @@ export function SiteHeader() {
               ? <Link href="/dashboard" onClick={closeMenu}>Dashboard</Link>
               : <Link href="/sign-in" onClick={closeMenu}>Sign in</Link>
           )}
-          <Link href="/" onClick={closeMenu}>Open workspace</Link>
+          <Link href="/workspace" onClick={closeMenu}>Workspace</Link>
         </nav>
       )}
     </header>
@@ -99,7 +99,7 @@ export function SiteFooter() {
         <nav className="footer-links" aria-label="Footer navigation">
           <div>
             <strong>Explore</strong>
-            <Link href="/">AI workspace</Link>
+            <Link href="/">Homepage chat</Link>
             <Link href="/pricing">Plans &amp; pricing</Link>
             <Link href="/support">Help center</Link>
           </div>

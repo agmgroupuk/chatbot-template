@@ -1,15 +1,7 @@
 {
   "description": "Initial Test Mode catalog. Review business pricing before any Live migration.",
   "products": [
-    { "code": "basic", "name": "Basic", "description": "100 credits per monthly payment, or 1200 credits per annual payment. One standard AI response costs one credit.", "prices": [
-      { "code": "basic_month", "amount": 900, "interval": "month", "credits": 100 },
-      { "code": "basic_year", "amount": 9000, "interval": "year", "credits": 1200 }
-    ] },
-    { "code": "pro", "name": "Pro", "description": "300 credits per monthly payment, or 3600 credits per annual payment. One standard AI response costs one credit.", "prices": [
-      { "code": "pro_month", "amount": 1900, "interval": "month", "credits": 300 },
-      { "code": "pro_year", "amount": 19000, "interval": "year", "credits": 3600 }
-    ] },
-    { "code": "credits_50", "name": "50 Credit Pack", "description": "50 additional credits. Purchased credit packs do not expire.", "prices": [
+    { "code": "credits_50", "name": "Workspace Credit Pack", "description": "50 credits for Workspace only. One-time payment; does not start or extend a homepage chat subscription.", "prices": [
       { "code": "credits_50", "amount": 500, "credits": 50 }
     ] }
   ]

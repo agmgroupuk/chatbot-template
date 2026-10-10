@@ -3,6 +3,7 @@ import { fulfillStripeEvent } from '@/lib/stripe-fulfillment';
 import Stripe from 'stripe';
 
 export const runtime = 'nodejs';
+export const dynamic = 'force-dynamic';
 export async function POST(request: Request) {
   const secret = process.env.STRIPE_WEBHOOK_SECRET;
   if (!secret || !process.env.STRIPE_SECRET_KEY) return Response.json({ error: 'Webhook not configured.' }, { status: 503 });
@@ -14,6 +15,18 @@ export async function POST(request: Request) {
   try { event = stripeClient().webhooks.constructEvent(body, signature, secret); }
   catch { return Response.json({ error: 'Invalid signature.' }, { status: 400 }); }
   if (event.livemode) return Response.json({ error: 'Live events are disabled.' }, { status: 400 });
+  if (![
+    'payment_intent.succeeded',
+    'payment_intent.payment_failed',
+    'payment_intent.canceled',
+    'invoice.paid',
+    'checkout.session.completed',
+    'checkout.session.async_payment_succeeded',
+    'customer.subscription.created',
+    'customer.subscription.updated',
+    'customer.subscription.deleted',
+    'customer.subscription.trial_will_end',
+  ].includes(event.type)) return Response.json({ received: true });
   try {
     await fulfillStripeEvent(await verifiedStripe(), event);
     return Response.json({ received: true });

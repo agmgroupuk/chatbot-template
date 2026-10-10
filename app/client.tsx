@@ -17,6 +17,7 @@ function ClientLayoutContent({ children }: ClientLayoutProps) {
   const pathname = usePathname();
   const { isAuthenticated } = useAuth();
   const isHomePage = pathname === '/';
+  const isWorkspacePage = pathname === '/workspace';
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
   const [activePlanName, setActivePlanName] = useState<string | null>(null);
   const [isSubscriptionLoading, setIsSubscriptionLoading] = useState(false);
@@ -74,7 +75,7 @@ function ClientLayoutContent({ children }: ClientLayoutProps) {
             <button
               className="home-chat-menu"
               type="button"
-              aria-label="Open workspace menu"
+              aria-label="Open chat menu"
               aria-expanded={isMobileSidebarOpen}
               onClick={() => setIsMobileSidebarOpen((open) => !open)}
             >
@@ -83,6 +84,8 @@ function ClientLayoutContent({ children }: ClientLayoutProps) {
             {children}
           </main>
         </div>
+      ) : isWorkspacePage ? (
+        <div className="workspace-route-shell">{children}</div>
       ) : (
         <div className="site-shell">
           <a className="skip-link" href="#main-content">Skip to content</a>

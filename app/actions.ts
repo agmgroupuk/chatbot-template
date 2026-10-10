@@ -5,7 +5,6 @@ import { authRequestThrottle } from '@/app/auth-actions';
 import { ownedQuery, transaction } from '@/lib/db';
 import { availableModels, defaultModel, normalizeModel } from '@/lib/models';
 import { generateResponse, aiConfiguration } from '@/lib/ai';
-import { reserveChatCredits, finishChatCredits } from '@/lib/credits';
 import { createBillingClient } from '@/lib/billing';
 import { encodedRedirect } from '@/utils/redirect';
 import { revalidatePath } from 'next/cache';
@@ -230,17 +229,16 @@ export async function getAIResponse(messages:ClientMessage[],model:string,contex
   if(!Array.isArray(messages) || !messages.length || messages.length>100 || messages.some(m=>!m || typeof m.content!=='string' || m.content.length>32000 || !['user','ai'].includes(m.sender)) || messages.reduce((n,m)=>n+m.content.length,0)>128000) return {success:false,error:'Invalid or oversized conversation.'};
   const settings=await getUserModelSettings();
   if(!settings.enabledModels.includes(model)) return {success:false,error:'This model is not enabled.'};
-  let request:string|undefined;
   try {
     if(!aiConfiguration().apiKey) throw new Error('AI is not configured yet. Please try again later.');
+    const [membership]=await ownedQuery(user.id,'select subscription_id from membership_access where user_id=$1 and expires_at>now() limit 1',[user.id]);
+    if(!membership) throw new Error('An active chat subscription is required. Choose a plan to continue.');
     const context=contextItemId?await getContextItemById(contextItemId):null;
     if(contextItemId && !context) throw new Error('Context item was not found.');
-    request=await reserveChatCredits(user.id);
     const response=await generateResponse(messages,context?.content);
-    await finishChatCredits(user.id,request,true);
+    await ownedQuery(user.id,"insert into chat_usage(id,user_id,status,model_id) values(gen_random_uuid(),$1,'completed',$2)",[user.id,model]);
     return {success:true,response};
   } catch(error) {
-    if(request) { try { await finishChatCredits(user.id,request,false); } catch { console.error('Credit reconciliation required',{requestId:request}); } }
     return {success:false,error:error instanceof Error?error.message:'Unable to generate a response.'};
   }
 }
@@ -249,6 +247,8 @@ export async function startNewChat(chatId:string,prompt:string,model:string|null
   const user=await currentUser(); if(!user) return {success:false,error:'Please sign in.'};
   if(!uuid.test(chatId) || !prompt.trim() || prompt.length>32000) return {success:false,error:'Invalid chat request.'};
   try {
+    const [membership]=await ownedQuery(user.id,'select subscription_id from membership_access where user_id=$1 and expires_at>now() limit 1',[user.id]);
+    if(!membership) return {success:false,error:'An active chat subscription is required. Choose a plan to continue.'};
     const context=contextItemId?await getContextItemById(contextItemId):null;
     if(contextItemId && !context) throw new Error('Context item not found.');
     const finalPrompt=context?`Reference: ${context.name}\n${context.content}\n\n${prompt}`:prompt;

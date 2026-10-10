@@ -34,14 +34,14 @@ export async function currentCustomer(create=false) {
 async function catalog() {
   const stripe = await verifiedStripe();
   const ids = Object.keys(creditPlans());
-  if (ids.length === 0) throw new Error('No Stripe credit plans are configured.');
+  if (ids.length === 0) throw new Error('No Workspace credit packs are configured.');
   const products = new Map<string, ProductWithPrices>();
   for (const id of ids) {
     const price = await stripe.prices.retrieve(id, { expand: ['product'] });
     const product = price.product as Stripe.Product;
     if (price.livemode || !price.active || price.currency !== 'usd' || price.unit_amount === null || product.deleted || !product.active) throw new Error('Configured catalog contains an unavailable price.');
     const plan = creditPlans()[id];
-    if (Boolean(price.recurring) !== (plan.kind === 'subscription')) throw new Error('Credit plan type does not match Stripe price.');
+    if (price.recurring || plan.kind !== 'pack') throw new Error('Workspace credit packs must use one-time Stripe prices.');
     const existing = products.get(product.id) || { ...productView(product), prices: [] };
     existing.prices.push(priceView(price));
     products.set(product.id, existing);

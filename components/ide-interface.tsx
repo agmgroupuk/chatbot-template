@@ -307,6 +307,10 @@ export function IdeInterfaceComponent() {
         router.push(`/c/${newChatId}`);
       } else {
         console.error("Failed to start new chat:", result.error);
+        if (result.error?.includes('active chat subscription')) {
+          router.push('/pricing');
+          return;
+        }
         alert(`Error: ${result.error || 'Could not start chat.'}`);
       }
     } catch (error) {

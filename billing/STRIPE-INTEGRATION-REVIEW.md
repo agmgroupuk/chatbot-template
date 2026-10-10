@@ -1,4 +1,4 @@
-> Implementation update October 10, 2026: the personal subscription flow now uses custom Elements with SetupIntents, trials, unlimited memberships, renewal-scheduled changes, and One Fin billing-email outbox. Guest chat is unlimited, with per-visitor request throttling for abuse prevention, and account sessions expire after 30 days. [Current implementation and remaining configuration](PLANS-AND-WORKSPACE.md). Connect and standalone B2B invoicing remain deferred. The findings below record the earlier review.
+> Implementation update October 10, 2026: the personal subscription flow uses custom Elements with SetupIntents, trials, homepage-chat-only memberships, renewal-scheduled changes, and the One Fin billing-email outbox. The authenticated Workspace uses a separate one-time credit purchase and usage ledger; neither payment path grants access or balance in the other product. Automatic and scheduled Workspace reloads remain deferred. [Current implementation and remaining configuration](PLANS-AND-WORKSPACE.md). Connect and standalone B2B invoicing remain deferred. The findings below record the earlier review.
 
 # One Fin Stripe integration plan and review
 

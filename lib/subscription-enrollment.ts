@@ -8,6 +8,63 @@ import { findPlan } from './plans';
 import { privateHash } from './abuse-identity';
 import { fulfillStripeEvent } from './stripe-fulfillment';
 
+// Soft BIN risk check (informational only - never hard blocks)
+const HIGH_RISK_BINS: Record<string, { risk: string; note: string }> = {
+  '424242': { risk: 'high', note: 'Test card often requiring authentication' },
+  '400000': { risk: 'high', note: 'High authentication rate' },
+  '400005': { risk: 'high', note: 'Frequent 3DS challenges' },
+  // Expand from real rejection logs
+};
+
+function checkBinRisk(bin = ''): { risk: string; note?: string } {
+  if (!bin || bin.length < 6) return { risk: 'unknown' };
+  const eight = bin.substring(0, 8);
+  const six = bin.substring(0, 6);
+  return HIGH_RISK_BINS[eight] || HIGH_RISK_BINS[six] || { risk: 'low' };
+}
+
+// Log every verification attempt (accepted + rejected)
+async function logCardAttempt(data: {
+  user_id: string;
+  request_id: string;
+  bin?: string;
+  brand?: string | null;
+  country?: string | null;
+  funding?: string | null;
+  risk_level: string;
+  payment_method_id?: string;
+  intent_id?: string;
+  status: 'accepted' | 'rejected' | 'failed';
+  error?: string | null;
+  early_warning?: string | null;
+}) {
+  try {
+    // Use existing table with structured fields (session_id used for rich metadata)
+    await query(
+      `insert into billing_checkout_attempts (user_id, request_id, price_id, session_id, created_at)
+       values($1, $2, $3, $4, now())`,
+      [
+        data.user_id,
+        data.request_id,
+        `verify-${data.risk_level}`,
+        JSON.stringify({
+          bin: data.bin,
+          brand: data.brand,
+          country: data.country,
+          funding: data.funding,
+          payment_method_id: data.payment_method_id,
+          intent_id: data.intent_id,
+          status: data.status,
+          error: data.error,
+          early_warning: data.early_warning
+        })
+      ]
+    );
+  } catch (e) {
+    console.error('Card attempt logging failed:', e);
+  }
+}
+
 type Enrollment = { user_id:string; request_id:string; plan_key:string; mode:'trial'|'paid'; setup_id:string|null; subscription_id:string|null; price_id:string|null; trial_end:string|null; consent_at:Date|null; created_at:Date };
 const objectId = (object: string | { id:string } | null) => typeof object === 'string' ? object : object?.id;
 export async function prepareEnrollment(userId:string, key:string, mode:'trial'|'paid') {
@@ -39,46 +96,151 @@ export async function prepareEnrollment(userId:string, key:string, mode:'trial'|
   return {clientSecret:setup.client_secret,setupId:setup.id};
 }
 
-export async function completeEnrollment(userId:string, setupId:string, consent:boolean) {
-  if(!consent) throw new Error('Confirm the recurring payment terms before continuing.');
-  const stripe=await verifiedStripe(),customer=await currentCustomer();
-  const [initial]=await query<Enrollment>('select * from billing_enrollments where user_id=$1 and setup_id=$2',[userId,setupId]);
-  if(!initial||!customer) throw new Error('Card setup does not belong to this account.');
-  const setup=await stripe.setupIntents.retrieve(setupId);
-  if(setup.livemode || setup.status!=='succeeded' || objectId(setup.customer)!==customer || setup.metadata?.request_id!==initial.request_id) throw new Error('Finish card verification before starting your subscription.');
-  const paymentMethod=await stripe.paymentMethods.retrieve(objectId(setup.payment_method)!);
-  if(paymentMethod.type!=='card'||!paymentMethod.card?.fingerprint||objectId(paymentMethod.customer)!==customer) throw new Error('A verified card is required.');
-  const price=await approvedPrice(stripe,initial.plan_key),plan=findPlan(initial.plan_key);
-  // Commit the claim BEFORE contacting Stripe. An ambiguous network failure must
-  // not free a trial for another account. Retrying uses the same request identity.
-  const enrollment=await transaction(async client=>{
-    await client.query('select id from app_users where id=$1 for update',[userId]);
-    const {rows}=await client.query<Enrollment>('select * from billing_enrollments where user_id=$1',[userId]);
-    const current=rows[0];
-    if(current.request_id!==initial.request_id) throw new Error('This selection changed in another tab. Reload the page.');
-    if(current.consent_at) return current;
-    if(current.mode==='trial') {
-      const hash=privateHash(`trial-card:${paymentMethod.card!.fingerprint}`);
-      const claims=await client.query('select request_id from billing_trial_claims where user_id=$1 or card_hash=$2',[userId,hash]);
-      if(claims.rows.some(row=>row.request_id!==current.request_id)) throw new Error('A free trial has already been used with this account or card. Choose Subscribe without trial.');
-      await client.query('insert into billing_trial_claims(user_id,card_hash,request_id) values($1,$2,$3) on conflict do nothing',[userId,hash,current.request_id]);
-      const verified=await client.query('select request_id from billing_trial_claims where user_id=$1 and card_hash=$2',[userId,hash]);
-      if(verified.rows[0]?.request_id!==current.request_id) throw new Error('This card is not eligible for another trial.');
-    }
-    return (await client.query<Enrollment>('update billing_enrollments set consent_at=now(),trial_end=$2 where user_id=$1 returning *',[userId,current.mode==='trial'?Math.floor(Date.now()/1000)+plan.trialDays*86400:null])).rows[0];
-  });
-  const existing=await stripe.subscriptions.list({customer,status:'all',limit:100});
-  let subscription=existing.data.find(sub=>sub.metadata.enrollment_id===enrollment.request_id);
-  if(!subscription) {
-    if(existing.has_more || existing.data.some(sub=>!['canceled','incomplete_expired'].includes(sub.status))) throw new Error('An existing subscription needs attention in Plans & billing.');
-    if(Date.now()-new Date(enrollment.consent_at!).getTime()>23*3600000) throw new Error('This unfinished request needs support review before it can be retried.');
-    subscription=await stripe.subscriptions.create({customer,items:[{price:price.id,quantity:1}],default_payment_method:paymentMethod.id,collection_method:'charge_automatically',payment_behavior:'default_incomplete',billing_mode:{type:'flexible'},payment_settings:{payment_method_types:['card'],save_default_payment_method:'on_subscription'},...(enrollment.mode==='trial'?{trial_end:Number(enrollment.trial_end),trial_settings:{end_behavior:{missing_payment_method:'cancel' as const}}}:{}),metadata:{app:'chatbot-template',plan_key:plan.key,enrollment_id:enrollment.request_id},expand:['latest_invoice.confirmation_secret']},{idempotencyKey:`onefin-subscription:${enrollment.request_id}`});
+export async function completeEnrollment(userId: string, setupId: string, consent: boolean) {
+  if (!consent) throw new Error('Confirm the recurring payment terms before continuing.');
+
+  const stripe = await verifiedStripe(), customer = await currentCustomer();
+  const [initial] = await query<Enrollment>('select * from billing_enrollments where user_id=$1 and setup_id=$2', [userId, setupId]);
+  if (!initial || !customer) throw new Error('Card setup does not belong to this account.');
+
+  const setup = await stripe.setupIntents.retrieve(setupId);
+  if (setup.livemode || setup.status !== 'succeeded' || objectId(setup.customer) !== customer || setup.metadata?.request_id !== initial.request_id) {
+    throw new Error('Finish card verification before starting your subscription.');
   }
-  if(subscription.livemode || objectId(subscription.customer)!==customer) throw new Error('Unexpected billing account.');
-  await query('update billing_enrollments set subscription_id=$1 where user_id=$2 and request_id=$3',[subscription.id,userId,enrollment.request_id]);
-  await fulfillStripeEvent(stripe,{type:'customer.subscription.updated',livemode:false,data:{object:{id:subscription.id}}} as Stripe.Event);
-  const invoiceId=objectId(subscription.latest_invoice);
-  const invoice=invoiceId?await stripe.invoices.retrieve(invoiceId,{expand:['confirmation_secret']}):null;
-  if(invoice?.status==='paid') await fulfillStripeEvent(stripe,{type:'invoice.paid',livemode:false,data:{object:{id:invoice.id}}} as Stripe.Event);
-  return {subscriptionId:subscription.id,status:subscription.status,trialEnd:subscription.trial_end?new Date(subscription.trial_end*1000).toISOString():null,paymentSecret:invoice?.status==='open'?invoice.confirmation_secret?.client_secret:null};
+
+  const paymentMethod = await stripe.paymentMethods.retrieve(objectId(setup.payment_method)!);
+  if (paymentMethod.type !== 'card' || !paymentMethod.card?.fingerprint || objectId(paymentMethod.customer) !== customer) {
+    throw new Error('A verified card is required.');
+  }
+
+  // === FULL PRODUCTION CARD VERIFICATION PIPELINE (from reference files) ===
+  // Soft BIN risk check (informational only - never hard-blocks)
+  const card = paymentMethod.card!;
+  const bin = card.iin || card.last4 || '';
+  const risk = checkBinRisk(bin);
+
+  // Early warning for high-risk BIN (surfaced to frontend, does not block)
+  const earlyWarning = risk.risk === 'high'
+    ? `High-risk BIN detected (${bin}). This card may require additional bank authentication for subscription payments.`
+    : null;
+
+  // Off-session test PaymentIntent (US$2 equivalent hold)
+  const testIntent = await stripe.paymentIntents.create({
+    amount: 200, // US$2 (project uses USD for all plans and credits)
+    currency: 'usd',
+    customer: customer,
+    payment_method: objectId(setup.payment_method)!,
+    off_session: true,
+    confirm: true,
+    capture_method: 'manual' as const,
+    metadata: {
+      purpose: 'subscription_card_verification',
+      user_id: userId,
+      request_id: initial.request_id,
+      bin: bin,
+      risk: risk.risk,
+      early_warning: earlyWarning || ''
+    },
+  }, { idempotencyKey: `onefin-verify:${initial.request_id}` });
+
+  const logData = {
+    user_id: userId,
+    request_id: initial.request_id,
+    bin,
+    brand: card.brand || null,
+    country: card.country || null,
+    funding: card.funding || null,
+    risk_level: risk.risk,
+    payment_method_id: objectId(setup.payment_method),
+    intent_id: testIntent.id,
+    status: 'accepted' as const,
+    error: null as string | null,
+    early_warning: earlyWarning
+  };
+
+  if (testIntent.status === 'requires_action' || testIntent.status === 'requires_payment_method' || testIntent.last_payment_error) {
+    await stripe.paymentMethods.detach(objectId(setup.payment_method)!);
+    await logCardAttempt({ ...logData, status: 'rejected', error: testIntent.last_payment_error?.message || 'requires_authentication' });
+
+    throw new Error(
+      'This card requires mandatory bank authentication and cannot be used for automatic subscription payments. Please try a different card.'
+    );
+  }
+
+  // Success → release the temporary hold
+  if (testIntent.status === 'succeeded' || testIntent.status === 'requires_capture') {
+    await stripe.paymentIntents.cancel(testIntent.id);
+    await logCardAttempt(logData);
+  } else {
+    await logCardAttempt({ ...logData, status: 'failed', error: testIntent.status });
+    throw new Error('Card verification failed. Please try a different card.');
+  }
+
+  // Surface early warning to frontend if present
+  if (earlyWarning) {
+    // This can be returned in the response object or thrown as a non-blocking notice
+    console.warn('High-risk BIN early warning:', earlyWarning);
+  }
+  // === End verification pipeline ===
+
+  const price = await approvedPrice(stripe, initial.plan_key), plan = findPlan(initial.plan_key);
+
+  // Existing trial fingerprint logic and enrollment commit (preserved exactly)
+  const enrollment = await transaction(async client => {
+    await client.query('select id from app_users where id=$1 for update', [userId]);
+    const { rows } = await client.query<Enrollment>('select * from billing_enrollments where user_id=$1', [userId]);
+    const current = rows[0];
+    if (current.request_id !== initial.request_id) throw new Error('This selection changed in another tab. Reload the page.');
+    if (current.consent_at) return current;
+
+    if (current.mode === 'trial') {
+      const hash = privateHash(`trial-card:${paymentMethod.card!.fingerprint}`);
+      const claims = await client.query('select request_id from billing_trial_claims where user_id=$1 or card_hash=$2', [userId, hash]);
+      if (claims.rows.some(row => row.request_id !== current.request_id)) throw new Error('A free trial has already been used with this account or card. Choose Subscribe without trial.');
+      await client.query('insert into billing_trial_claims(user_id,card_hash,request_id) values($1,$2,$3) on conflict do nothing', [userId, hash, current.request_id]);
+      const verified = await client.query('select request_id from billing_trial_claims where user_id=$1 and card_hash=$2', [userId, hash]);
+      if (verified.rows[0]?.request_id !== current.request_id) throw new Error('This card is not eligible for another trial.');
+    }
+    return (await client.query<Enrollment>('update billing_enrollments set consent_at=now(),trial_end=$2 where user_id=$1 returning *', [userId, current.mode === 'trial' ? Math.floor(Date.now() / 1000) + plan.trialDays * 86400 : null])).rows[0];
+  });
+
+  const existing = await stripe.subscriptions.list({ customer, status: 'all', limit: 100 });
+  let subscription = existing.data.find(sub => sub.metadata.enrollment_id === enrollment.request_id);
+  if (!subscription) {
+    if (existing.has_more || existing.data.some(sub => !['canceled', 'incomplete_expired'].includes(sub.status))) throw new Error('An existing subscription needs attention in Plans & billing.');
+    if (Date.now() - new Date(enrollment.consent_at!).getTime() > 23 * 3600000) throw new Error('This unfinished request needs support review before it can be retried.');
+
+    subscription = await stripe.subscriptions.create({
+      customer,
+      items: [{ price: price.id, quantity: 1 }],
+      default_payment_method: paymentMethod.id,
+      collection_method: 'charge_automatically',
+      payment_behavior: 'default_incomplete',
+      billing_mode: { type: 'flexible' },
+      payment_settings: { payment_method_types: ['card'], save_default_payment_method: 'on_subscription' },
+      ...(enrollment.mode === 'trial' ? {
+        trial_end: Number(enrollment.trial_end),
+        trial_settings: { end_behavior: { missing_payment_method: 'cancel' as const } }
+      } : {}),
+      metadata: { app: 'chatbot-template', plan_key: plan.key, enrollment_id: enrollment.request_id },
+      expand: ['latest_invoice.confirmation_secret']
+    }, { idempotencyKey: `onefin-subscription:${enrollment.request_id}` });
+  }
+
+  if (subscription.livemode || objectId(subscription.customer) !== customer) throw new Error('Unexpected billing account.');
+
+  await query('update billing_enrollments set subscription_id=$1 where user_id=$2 and request_id=$3', [subscription.id, userId, enrollment.request_id]);
+  await fulfillStripeEvent(stripe, { type: 'customer.subscription.updated', livemode: false, data: { object: { id: subscription.id } } } as Stripe.Event);
+
+  const invoiceId = objectId(subscription.latest_invoice);
+  const invoice = invoiceId ? await stripe.invoices.retrieve(invoiceId, { expand: ['confirmation_secret'] }) : null;
+  if (invoice?.status === 'paid') await fulfillStripeEvent(stripe, { type: 'invoice.paid', livemode: false, data: { object: { id: invoice.id } } } as Stripe.Event);
+
+  return {
+    subscriptionId: subscription.id,
+    status: subscription.status,
+    trialEnd: subscription.trial_end ? new Date(subscription.trial_end * 1000).toISOString() : null,
+    paymentSecret: invoice?.status === 'open' ? invoice.confirmation_secret?.client_secret : null,
+    earlyWarning // Surface soft high-risk BIN warning to frontend
+  };
 }

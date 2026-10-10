@@ -1,10 +1,11 @@
 import 'server-only';
 import Stripe from 'stripe';
-import { query } from './db';
+import { query, transaction } from './db';
 import { creditPlans } from './credit-config';
 import { managedPlan } from './subscription-catalog';
 import { queueBillingNotice } from './billing-notices';
 import { priceLabel } from './plans';
+import { workspaceCreditPack } from './workspace-credit-pack';
 
 async function owner(customer: string | Stripe.Customer | Stripe.DeletedCustomer | null) {
   const id = typeof customer === 'string' ? customer : customer?.id;
@@ -13,10 +14,10 @@ async function owner(customer: string | Stripe.Customer | Stripe.DeletedCustomer
   if (!data) throw new Error('Customer mapping unavailable.');
   return data.user_id as string;
 }
-async function grant(user: string, reference: string, price: string, quantity: number, kind: 'subscription' | 'pack', expires?: number) {
+async function grant(user: string, reference: string, price: string, quantity: number) {
   const plan = creditPlans()[price];
-  if (!plan || plan.kind !== kind || quantity !== 1) throw new Error('Unexpected paid price or quantity.');
-  await query('select grant_credits($1,$2,$3,$4)',[user,reference,plan.credits,expires?new Date(expires*1000).toISOString():null]);
+  if (!plan || plan.kind !== 'pack' || quantity !== 1) throw new Error('Unexpected paid price or quantity.');
+  await query('select grant_credits($1,$2,$3)',[user,reference,plan.credits]);
 }
 async function recordSubscription(user: string, sub: Stripe.Subscription) {
   const item = sub.items.data[0];
@@ -39,14 +40,71 @@ async function recordSubscription(user: string, sub: Stripe.Subscription) {
 }
 export async function fulfillStripeEvent(stripe: Stripe, event: Stripe.Event) {
   if (event.livemode) throw new Error('Live events are disabled.');
-  if (['checkout.session.completed', 'checkout.session.async_payment_succeeded'].includes(event.type)) {
+  if (['payment_intent.succeeded', 'payment_intent.payment_failed', 'payment_intent.canceled'].includes(event.type)) {
+    const intent = await stripe.paymentIntents.retrieve((event.data.object as Stripe.PaymentIntent).id, { expand: ['payment_method'] });
+    if (intent.metadata?.app !== 'chatbot-template' || intent.metadata.flow !== 'workspace-credit-purchase') return;
+    const purchaseId = intent.metadata.purchase_id;
+    const userId = intent.metadata.user_id;
+    if (!purchaseId || !userId || !/^[0-9a-f-]{36}$/i.test(purchaseId) || !/^[0-9a-f-]{36}$/i.test(userId)) {
+      throw new Error('Invalid Workspace credit purchase metadata.');
+    }
+    if (event.type !== 'payment_intent.succeeded') {
+      await query(
+        `update workspace_credit_purchases set status='failed'
+         where id=$1 and user_id=$2 and stripe_payment_intent=$3 and status='pending'`,
+        [purchaseId, userId, intent.id],
+      );
+      return;
+    }
+    if (intent.status !== 'succeeded' || intent.livemode || intent.amount !== workspaceCreditPack.amount ||
+        intent.amount_received !== workspaceCreditPack.amount || intent.currency !== workspaceCreditPack.currency ||
+        intent.metadata.pack_id !== workspaceCreditPack.id) {
+      throw new Error('Unexpected Workspace credit payment.');
+    }
+    const customerId = typeof intent.customer === 'string' ? intent.customer : intent.customer?.id;
+    const paymentOwner = await owner(customerId || null);
+    if (paymentOwner !== userId) throw new Error('Workspace credit payment owner mismatch.');
+    const configuredPrice = creditPlans()[intent.metadata.price_id];
+    if (!configuredPrice || configuredPrice.kind !== 'pack' || configuredPrice.credits !== workspaceCreditPack.credits) {
+      throw new Error('Unexpected Workspace credit pack.');
+    }
+    const method = intent.payment_method;
+    await transaction(async client => {
+      const { rows } = await client.query(
+        `select id from workspace_credit_purchases
+         where id=$1 and user_id=$2 and stripe_payment_intent=$3 and amount=$4 and credits=$5 for update`,
+        [purchaseId, userId, intent.id, workspaceCreditPack.amount, workspaceCreditPack.credits],
+      );
+      if (!rows.length) throw new Error('Workspace credit purchase record unavailable.');
+      await client.query('select grant_credits($1,$2,$3)', [userId, `workspace:payment-intent:${intent.id}`, workspaceCreditPack.credits]);
+      await client.query(
+        `insert into workspace_credit_transactions(user_id,purchase_id,stripe_payment_intent,amount,currency,credits)
+         values($1,$2,$3,$4,$5,$6) on conflict(stripe_payment_intent) do nothing`,
+        [userId, purchaseId, intent.id, workspaceCreditPack.amount, workspaceCreditPack.currency, workspaceCreditPack.credits],
+      );
+      await client.query(
+        `update workspace_credit_purchases set status='succeeded',completed_at=coalesce(completed_at,now())
+         where id=$1 and user_id=$2 and stripe_payment_intent=$3`,
+        [purchaseId, userId, intent.id],
+      );
+      if (method && typeof method !== 'string' && method.type === 'card' && method.card) {
+        await client.query(
+          `insert into workspace_credit_settings(user_id,payment_method_id,card_brand,card_last4,card_exp_month,card_exp_year,updated_at)
+           values($1,$2,$3,$4,$5,$6,now())
+           on conflict(user_id) do update set payment_method_id=excluded.payment_method_id,card_brand=excluded.card_brand,
+             card_last4=excluded.card_last4,card_exp_month=excluded.card_exp_month,card_exp_year=excluded.card_exp_year,updated_at=now()`,
+          [userId, method.id, method.card.brand, method.card.last4, method.card.exp_month, method.card.exp_year],
+        );
+      }
+    });
+  } else if (['checkout.session.completed', 'checkout.session.async_payment_succeeded'].includes(event.type)) {
     const session = await stripe.checkout.sessions.retrieve((event.data.object as Stripe.Checkout.Session).id);
     if (session.metadata?.app !== 'chatbot-template' || session.mode !== 'payment' || session.payment_status !== 'paid') return;
     if (session.livemode || session.currency !== 'usd') throw new Error('Unexpected checkout currency or mode.');
     const user = await owner(session.customer);
     for await (const item of stripe.checkout.sessions.listLineItems(session.id, { limit: 100 })) {
       if (!item.price) throw new Error('Missing price.');
-      await grant(user, `checkout:${session.id}:${item.id}`, item.price.id, item.quantity || 0, 'pack');
+      await grant(user, `checkout:${session.id}:${item.id}`, item.price.id, item.quantity || 0);
     }
   } else if (event.type === 'invoice.paid') {
     const invoice = await stripe.invoices.retrieve(event.data.object.id);
@@ -75,14 +133,7 @@ export async function fulfillStripeEvent(stripe: Stripe, event: Stripe.Event) {
       await queueBillingNotice(`paid:${invoice.id}`,user,'Payment received',`Payment of ${(invoice.amount_paid/100).toFixed(2)} ${invoice.currency.toUpperCase()} received. Review your plan and renewal at https://onefinsolution.online/dashboard/billing.`);
       return;
     }
-    for await (const line of stripe.invoices.listLineItems(invoice.id, { limit: 100 })) {
-      // Plan changes are scheduled at renewal, so prorations must not allocate a full allowance.
-      if (line.parent?.subscription_item_details?.proration || line.amount < 0) continue;
-      const price = line.pricing?.price_details?.price;
-      const id = typeof price === 'string' ? price : price?.id;
-      if (!id) throw new Error('Missing invoice price.');
-      await grant(user, `subscription:${subscriptionId}:invoice:${invoice.id}:${line.id}`, id, line.quantity || 0, 'subscription', sub.ended_at ? Math.min(sub.ended_at,line.period.end) : line.period.end);
-    }
+    return;
   } else if (['customer.subscription.created', 'customer.subscription.updated', 'customer.subscription.deleted', 'customer.subscription.trial_will_end'].includes(event.type)) {
     // Retrieve current state so delayed events cannot restore an old subscription status.
     const sub = await stripe.subscriptions.retrieve((event.data.object as Stripe.Subscription).id);
@@ -90,10 +141,6 @@ export async function fulfillStripeEvent(stripe: Stripe, event: Stripe.Event) {
     const user = await owner(sub.customer);
     await recordSubscription(user,sub);
     if(event.type==='customer.subscription.trial_will_end' && sub.status==='trialing') await queueBillingNotice(`trial-ending:${sub.id}:${sub.trial_end}`,user,'Your trial is ending',`Your trial ends ${new Date(sub.trial_end!*1000).toISOString()}. Your saved card will be charged automatically unless you cancel. Review the price or cancel at https://onefinsolution.online/dashboard/billing.`);
-    if (sub.status === 'canceled') {
-      const expires = new Date((sub.ended_at || Math.floor(Date.now()/1000)) * 1000).toISOString();
-      await query('update credit_buckets set expires_at=$1 where user_id=$2 and reference like $3 and expires_at>$1',[expires,user,`subscription:${sub.id}:%`]);
-    }
   } else if(['invoice.payment_failed','invoice.payment_action_required'].includes(event.type)) {
     const invoice=await stripe.invoices.retrieve((event.data.object as Stripe.Invoice).id);
     if(invoice.parent?.subscription_details?.metadata?.app!=='chatbot-template') return;
@@ -101,5 +148,4 @@ export async function fulfillStripeEvent(stripe: Stripe, event: Stripe.Event) {
     await queueBillingNotice(`${event.type}:${invoice.id}`,user,'Your payment needs attention','We could not complete your payment. Access will not extend until payment is confirmed. Open https://onefinsolution.online/dashboard/billing to update your card or authenticate the payment.');
   }
   // Failed/cancelled checkout, unpaid invoice and cancelled subscriptions grant nothing.
-  // Subscription bucket expiry is enforced in every atomic reservation.
 }

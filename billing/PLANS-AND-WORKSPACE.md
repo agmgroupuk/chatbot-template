@@ -1,4 +1,4 @@
-# Personal subscriptions and visitor workspace
+# Homepage chat subscriptions and Workspace credits
 
 Implemented October 10, 2026 for One Fin sandbox `acct_1UOhth9TlJVLQeem`.
 
@@ -9,7 +9,7 @@ Implemented October 10, 2026 for One Fin sandbox `acct_1UOhth9TlJVLQeem`.
 | Monthly | 30 / month | 3 days |
 | Yearly | 249 / year | 5 days |
 
-Personal memberships and trials include unlimited responses. Business is a separate contact-sales option; team workspaces are not included yet. Legacy credit balances and subscriptions remain intact. New prices use `onefin_v2_*` lookup keys; IDs are recorded in `personal-plan-ids.json`.
+Personal memberships and trials grant access exclusively to the homepage chat during an active trial or verified paid period. They do not grant Workspace credits. Workspace is a separate authenticated application: completed Workspace tasks consume credits, which are purchased separately. Workspace credit purchases do not create or extend a chat subscription. Business is a separate contact-sales option; team workspaces are not included yet. New subscription prices use `onefin_v2_*` lookup keys; IDs are recorded in `personal-plan-ids.json`.
 
 ## Payment flow
 
@@ -21,13 +21,13 @@ Subscriptions use automatic card collection and flexible billing. No hosted Chec
 
 Plan changes use Subscription Schedules at the current period end, without proration. A trial change preserves the existing trial expiry and does not create another trial. Selecting the current plan removes a pending switch. Cancellation releases a managed pending schedule and stops renewal at period end. Payment-method updates and outstanding invoice recovery stay on-domain.
 
-## Visitors and monthly login
+## Workspace credit flow
 
-`/workspace` and the homepage chat open without an account prompt. Visitors can send unlimited messages; conversations remain in the current page session and are not saved. Per-visitor request throttling remains enabled to protect the service from abuse. Account sessions expire absolutely after 30 days; activity does not extend them.
+`/workspace` requires a signed-in account and redirects unauthenticated visitors to sign-in. Workspace uses the existing credit ledger with atomic reservation and refund on failed AI tasks. The current fixed pack is 50 credits for USD 5, purchased as a one-time Stripe PaymentIntent. Verified PaymentIntent fulfillment grants the pack once and records an owner-scoped transaction. Subscription invoices never grant Workspace credits; a credit purchase never grants membership access. Saved cards are optional and do not authorize reloads. Automatic and scheduled reloads are intentionally not enabled.
 
-Counters use a signed HttpOnly cookie, keyed browser-characteristic hashes, and a keyed network identifier. Railway's overwritten `X-Real-IP` header is trusted; arbitrary `X-Forwarded-For` is not. IPv6 privacy addresses are grouped by /64. Raw addresses and raw browser profiles are not stored in these tables. Visitor records are removed after 32 days.
+Migration `005_workspace_credits.sql` adds separate chat usage, Workspace purchase, transaction, and saved-card metadata tables. The credit pack must be provisioned in the selected Stripe test account and the resulting `STRIPE_CREDIT_PLANS` mapping configured before checkout can work. Apply migrations before deployment. Existing account sessions expire absolutely after 30 days; activity does not extend them.
 
-Visitor identifiers support abuse throttling only; they do not impose a daily message quota. They are not proof of a person's identity. Reliable cross-device identity requires authentication; there is no claim of unbreakable fingerprinting.
+The homepage chat requires an active membership and records usage separately from the Workspace credit ledger. Workspace tasks require an authenticated user and available credits. Signup or legacy credit balances, if present, remain Workspace-only and do not replace a chat subscription.
 
 ## Deployment and configuration
 
@@ -45,13 +45,13 @@ Runtime prerequisites:
 
 Optional Stripe receipt, trial, and recovery emails must be disabled in Stripe Dashboard before customer launch; One Fin uses its own outbox. Bank authentication messages are controlled by the bank. SMTP uses stable message IDs and retry leases; it is at-least-once delivery, not a guarantee against duplicate email after a delivery/commit failure.
 
-The Stripe plugin provisioned the new prices and webhook. The workspace helper configured the expected account, webhook secret, and workspace key without printing secrets. At implementation time Stripe API/publishable keys, AI keys, and SMTP were absent from Railway. No real charge, inbox delivery, or real AI response is claimed while those prerequisites remain missing. Test mode remains enforced even in production.
+Stripe Test mode is enforced even in production. At implementation time, the production deployment did not have a credit-pack price mapping or AI credentials configured. Provision the one-time pack and webhook, set `STRIPE_CREDIT_PLANS`, apply migration 005, and configure the AI provider before claiming live Workspace checkout or AI operation. No real charge, inbox delivery, or real AI response is claimed until the respective prerequisites are verified.
 
 ## Verification and references
 
 Verification: 24 backend tests (including the added 30-day session test) and 43 browser checks passed; production build, TypeScript and lint passed. External card charging, email delivery and AI generation remain unverified without runtime credentials.
 
-Backend tests cover unlimited guest reservations and one-time failed-request refunds, card-first trial activation, ambiguous Stripe response recovery, repeated card rejection, unlimited-access expiry, scheduled changes, and invoice replay ordering. Browser tests cover pricing, trial entry, guest chat and provider failure/refund behavior, plus existing account functionality.
+Backend tests cover card-first trial activation, ambiguous Stripe response recovery, repeated card rejection, paid-access expiry, scheduled changes, invoice replay ordering, and the separation between membership access and Workspace credit reservations. Workspace purchase/webhook tests should verify idempotent pack fulfillment and owner-scoped history.
 
 Planner guide: `iguide_61VY9k80xpO7gGMfI419TlJVLQeem`. Its generated Checkout/Accounts v2 example was not adopted because the merchant explicitly requires custom Elements and preserving existing Customer IDs.
 

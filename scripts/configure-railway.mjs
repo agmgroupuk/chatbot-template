@@ -27,7 +27,8 @@ const optional=['OPENAI_API_KEY','XAI_API_KEY','SMTP_HOST','SMTP_PORT','SMTP_USE
 const values = { ...Object.fromEntries([...required,...optional].filter(name=>process.env[name]).map(name => [name,process.env[name]])),
   AI_PROVIDER:process.env.AI_PROVIDER||'openai',OPENAI_MODEL:process.env.OPENAI_MODEL||'gpt-4.1-mini',XAI_MODEL:process.env.XAI_MODEL||'grok-4.3',
   NEXT_PUBLIC_SITE_URL:'https://onefinsolution.online', STRIPE_MODE:'test', BILLING_PROVIDER:'stripe', PORT:'8080',
-  SIGNUP_CREDITS: process.env.SIGNUP_CREDITS || '10', CHAT_CREDIT_COST: process.env.CHAT_CREDIT_COST || '1',
+  SIGNUP_CREDITS: process.env.SIGNUP_CREDITS || '10',
+  WORKSPACE_CREDIT_COST: process.env.WORKSPACE_CREDIT_COST || process.env.CHAT_CREDIT_COST || '1',
 };
 if (!process.argv.includes('--apply')) {
   console.log(`Dry run: verified project. Would configure these names only: ${Object.keys(values).join(', ')}`);

@@ -28,7 +28,7 @@ See `.env.example`. Configure actual values in Railway or ignored `.env.local`, 
 - Mail: `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASSWORD`, `EMAIL_FROM` with a verified sender.
 - AI: `AI_PROVIDER=openai`, `OPENAI_MODEL=gpt-4.1-mini`, `OPENAI_API_KEY`; alternatively `AI_PROVIDER=xai`, `XAI_MODEL=grok-4.3`, `XAI_API_KEY`.
 - Billing: `BILLING_PROVIDER=stripe`, `STRIPE_MODE=test`, `STRIPE_SECRET_KEY`, `STRIPE_EXPECTED_ACCOUNT_ID`, `STRIPE_WEBHOOK_SECRET`, `STRIPE_CREDIT_PLANS`.
-- Credits: `SIGNUP_CREDITS=10`, `CHAT_CREDIT_COST=1`.
+- Workspace credits: `SIGNUP_CREDITS=10`, `WORKSPACE_CREDIT_COST=1`. `CHAT_CREDIT_COST` is accepted only as a legacy fallback for existing deployments; it does not affect homepage chat subscriptions.
 - Optional `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY` for future embedded Elements. Current hosted Checkout does not use a browser key.
 
 Opaque sessions require no JWT/signing secret. No Supabase, Update.dev, or Anthropic configuration is required. Never supply the Sanbay account's credentials.
@@ -41,19 +41,16 @@ OpenAI uses the official SDK's Responses API with `store:false`; xAI uses its co
 
 These initial USD test amounts are implementation defaults, not approved Live business prices:
 
-| Plan | Price | Allowance |
+| Product | Price | Access |
 | --- | --- | --- |
-| Basic monthly | $9/month | 100 credits/month |
-| Basic annual | $90/year | 1,200 credits per paid year |
-| Pro monthly | $19/month | 300 credits/month |
-| Pro annual | $190/year | 3,600 credits per paid year |
-| Credit pack | $5 once | 50 credits |
+| Homepage chat plans | Daily $5, Weekly $13, Monthly $30, Yearly $249 | Subscription access to homepage chat only; no Workspace credits |
+| Workspace credit pack | $5 once | 50 Workspace credits; no chat subscription |
 
 `node scripts/provision-stripe.mjs` verifies the intended account and Test Mode before any write. Its default is dry-run; `--apply` creates only app-marked/idempotent Test products, prices and webhook. IDs go to `billing/stripe-test-ids.json`; a new signing secret goes only to ignored `.env.stripe-generated`. Existing unmanaged/mismatched objects fail closed. `node scripts/configure-railway.mjs --apply` transfers available configuration through stdin, suppressing values. No actual Stripe products or Price IDs have been created without the correct account credentials.
 
-The raw-body webhook `/api/stripe/webhook` verifies signatures, rejects Live events and grants only paid configured prices. Checkout reconciliation verifies the authenticated owner's Stripe customer and actual payment state. Stable references prevent duplicate credits. Subscription state is fetched from Stripe, not trusted from stale events. Plan changes take effect at renewal without proration. Cancellation preserves access through the paid period; immediate cancellation expires subscription allowances. Packs and signup credits do not expire; subscription buckets expire at their paid period end.
+The raw-body webhook `/api/stripe/webhook` verifies signatures, rejects Live events and grants only verified one-time Workspace credit-pack payments. Homepage chat subscriptions are processed separately and grant access only; they never create Workspace credit. Checkout reconciliation verifies the authenticated owner's Stripe customer and actual payment state. Stable references prevent duplicate credits. Subscription state is fetched from Stripe, not trusted from stale events. Plan changes take effect at renewal without proration. Cancellation preserves chat access through the paid period. Workspace packs and signup credits do not expire.
 
-Credit reservations serialize on the user row, consume expiring allowances first, reject overspending, and refund failures exactly once. Abandoned reservations are reconciled after ten minutes. Browser roles cannot mint, spend, or refund directly.
+Workspace credit reservations serialize on the user row, reject overspending, and refund failed tasks exactly once. Abandoned reservations are reconciled after ten minutes. Browser roles cannot mint, spend, or refund directly.
 
 ## Verification
 
@@ -61,7 +58,7 @@ Commands: `npm ci`, `npm test`, `npm run typecheck`, `npm run lint`, `npm run bu
 
 Tests use actual PostgreSQL SQL through PGlite for native schema/RLS, atomic credits, auth confirmation/reset, expiry, hashing, session revocation, rate limits and concurrency. Stripe signature tests use real signature verification with mocked network fulfillment. Provider mocks do not establish real provider availability.
 
-After credentials arrive, test actual email receipt; signup/confirmation/signin/profile/logout/recovery; session persistence and guest protection; context CRUD and chat persistence; OpenAI/xAI successful and failed requests; paid/declined/cancelled Stripe Test checkout; duplicate/out-of-order webhooks; renewal/plan changes/cancellation; and credit allocation/expiry. Inspect Railway runtime logs afterwards. The custom domain serving HTTP 200 alone does not prove these integrations work.
+After credentials arrive, test actual email receipt; signup/confirmation/signin/profile/logout/recovery; session persistence and guest protection; context CRUD and chat persistence; OpenAI/xAI successful and failed Workspace requests; paid/declined/cancelled Stripe Test credit-pack payments; duplicate/out-of-order webhooks; chat-subscription renewal/plan changes/cancellation; and separate Workspace credit fulfillment. Inspect Railway runtime logs afterwards. The custom domain serving HTTP 200 alone does not prove these integrations work.
 
 No repository-owned YAML files exist; deployment uses TypeScript IaC. No extra YAML tooling is needed.
 

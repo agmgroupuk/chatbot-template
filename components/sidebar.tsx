@@ -242,6 +242,15 @@ export function SidebarComponent({ className, onToggleCollapse, collapsed = fals
                    <Button
                      variant="ghost"
                      className="justify-start w-full text-stone-700 hover:bg-stone-200 text-sm px-1.5"
+                     onClick={() => router.push('/workspace')}
+                   >
+                     <div className="flex items-center gap-2 w-full text-left">
+                       <span>▦</span> <span>Workspace app</span>
+                     </div>
+                   </Button>
+                   <Button
+                     variant="ghost"
+                     className="justify-start w-full text-stone-700 hover:bg-stone-200 text-sm px-1.5"
                      onClick={() => router.push('/context')}
                    >
                      <div className="flex items-center gap-2 w-full text-left">

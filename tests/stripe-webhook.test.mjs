@@ -33,7 +33,7 @@ test('webhook rejects missing, modified, stale signatures and every Live Mode ev
   assert.equal((await POST(new Request('https://example.test/api/stripe/webhook', { method: 'POST', body: payload, headers: { 'stripe-signature': sign(payload) } }))).status,200);
   assert.equal(fulfilled,1);
 });
-test('only paid packs and paid renewal invoices allocate credits; retries use stable references', async () => {
+test('only paid standalone packs allocate Workspace credits; subscription invoices grant chat access only', async () => {
   const grants = new Map();
   const { fulfillStripeEvent } = load('lib/stripe-fulfillment.ts', {
     './subscription-catalog':{managedPlan:()=>undefined},
@@ -43,7 +43,8 @@ test('only paid packs and paid renewal invoices allocate credits; retries use st
       if(sql.startsWith('select grant_credits')) grants.set(values[1],{p_user:values[0],p_reference:values[1],p_amount:values[2],p_expires:values[3]});
       return [];
     }},
-    './credit-config': { creditPlans: () => ({ price_pack: { credits: 50, kind: 'pack' }, price_month: { credits: 100, kind: 'subscription' } }) },
+    './credit-config': { creditPlans: () => ({ price_pack: { credits: 50, kind: 'pack' } }) },
+    './workspace-credit-pack': { workspaceCreditPack: { id: 'workspace-50', credits: 50, amount: 500, currency: 'usd' } },
   });
   const session = { id: 'cs_test_1', mode: 'payment', metadata: { app: 'chatbot-template' }, customer: 'cus_test', payment_status: 'unpaid', livemode: false, currency: 'usd' };
   const api = { subscriptions: { retrieve: async () => ({ id: 'sub_test', livemode: false, items: { data: [{ price: { id: 'price_month' }, current_period_start: 1990000000, current_period_end: 2000000000 }] }, status: 'active', cancel_at_period_end: false }) }, checkout: { sessions: { retrieve: async () => session, listLineItems: async function* () { yield { id: 'li_pack', price: { id: 'price_pack' }, quantity: 1 }; } } },
@@ -60,10 +61,9 @@ test('only paid packs and paid renewal invoices allocate credits; retries use st
   assert.equal(grants.get('checkout:cs_test_1:li_pack').p_amount,50);
   await fulfillStripeEvent(api,event('invoice.paid'));
   await fulfillStripeEvent(api,event('invoice.paid'));
-  assert.equal(grants.size,2);
-  assert.equal(grants.get('subscription:sub_test:invoice:in_test:li_invoice').p_amount,100);
-  assert.equal(grants.get('subscription:sub_test:invoice:in_test:li_invoice').p_expires,'2033-05-18T03:33:20.000Z');
+  assert.equal(grants.size,1);
+  assert.equal(grants.has('subscription:sub_test:invoice:in_test:li_invoice'),false);
   await fulfillStripeEvent(api,event('invoice.payment_failed'));
-  assert.equal(grants.size,2);
+  assert.equal(grants.size,1);
   await assert.rejects(fulfillStripeEvent(api,{ ...event('invoice.paid'),livemode:true }),/Live events/);
 });

@@ -41,12 +41,15 @@ for (const definition of catalog.products) {
 const site = new URL(process.env.NEXT_PUBLIC_SITE_URL || 'https://onefinsolution.online');
 if (site.protocol !== 'https:') throw new Error('Webhook requires an HTTPS site URL.');
 const url = `${site.origin}/api/stripe/webhook`;
-const events = ['invoice.paid', 'checkout.session.completed', 'checkout.session.async_payment_succeeded', 'checkout.session.async_payment_failed', 'customer.subscription.created', 'customer.subscription.updated', 'customer.subscription.deleted'];
+const events = ['payment_intent.succeeded', 'payment_intent.payment_failed', 'payment_intent.canceled', 'invoice.paid', 'checkout.session.completed', 'checkout.session.async_payment_succeeded', 'checkout.session.async_payment_failed', 'customer.subscription.created', 'customer.subscription.updated', 'customer.subscription.deleted', 'customer.subscription.trial_will_end'];
 const endpoints = await stripe.webhookEndpoints.list({ limit: 100 });
 let endpoint = endpoints.data.find(endpoint => endpoint.url === url);
 if (endpoint) {
   if (endpoint.livemode || endpoint.metadata.app !== 'chatbot-template') throw new Error('Existing webhook is not managed by this application.');
-  if (endpoint.status !== 'enabled' || !events.every(event => endpoint.enabled_events.includes(event))) throw new Error('Managed webhook event configuration differs.');
+  if (endpoint.status !== 'enabled') throw new Error('Managed webhook is not enabled.');
+  if (!events.every(event => endpoint.enabled_events.includes(event))) {
+    endpoint = await stripe.webhookEndpoints.update(endpoint.id, { enabled_events: [...new Set([...endpoint.enabled_events, ...events])] });
+  }
 } else {
   endpoint = await stripe.webhookEndpoints.create({ url, enabled_events: events, metadata: { app: 'chatbot-template' } }, { idempotencyKey: 'chatbot-test-webhook-v1' });
   // Preserve the one-time signing secret in a gitignored file; never log it.
