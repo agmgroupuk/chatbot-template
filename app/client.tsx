@@ -12,6 +12,9 @@ function SiteLayout({ children }: { children: React.ReactNode }) {
   useEffect(()=>{if(isAuthenticated)setTheme(preferences.theme);},[isAuthenticated,preferences.theme,setTheme]);
   const path = usePathname();
   const [open, setOpen] = useState(false);
+  if (path === '/') {
+    return <div className="site-shell chat-app-shell">{children}</div>;
+  }
   return <div className="site-shell">
     <a className="skip-link" href="#main-content">Skip to content</a>
     <header className="site-header"><Link href="/" className="site-brand" aria-label="One Fin home"><span className="brand-mark"><Sparkles size={19} /></span>One Fin<span className="brand-sub">SOLUTION</span></Link>

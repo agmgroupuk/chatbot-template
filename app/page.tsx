@@ -6,14 +6,5 @@ export const metadata = {
 };
 
 export default function Home() {
-  return (
-    <div className="page-wrap home-chat-page">
-      <section className="home-chat-intro" aria-labelledby="home-chat-title">
-        <p className="eyebrow">ONE FIN AI</p>
-        <h1 id="home-chat-title">What can I help you with?</h1>
-        <p>Ask a question, explore an idea, or get help with your next task.</p>
-      </section>
-      <VisitorWorkspace landing />
-    </div>
-  );
+  return <VisitorWorkspace landing />;
 }

@@ -46,13 +46,33 @@ try {
   page.on('request',request=>{pending.add(request);if(request.method()==='POST')actionLog.push(['start',new URL(request.url()).pathname,request.headers()['next-action']]);});
   page.on('requestfinished',request=>{pending.delete(request);if(request.method()==='POST')actionLog.push(['done',new URL(request.url()).pathname]);});
   page.on('requestfailed',request=>{pending.delete(request);actionLog.push(['failed',new URL(request.url()).pathname,request.failure()?.errorText]);});
-  async function check(path,title){console.log(`Checking ${path}`);const response=await page.goto(`${origin}${path}`);assert.equal(response.status(),200,path);await page.getByRole('heading',{level:1,name:title}).waitFor();assert.equal(await page.locator('h1').count(),1,`${path}: one page heading`);assert.ok(await page.locator('footer').isVisible());checks++;}
+  async function check(path,title){console.log(`Checking ${path}`);const response=await page.goto(`${origin}${path}`);assert.equal(response.status(),200,path);await page.getByRole('heading',{level:1,name:title}).waitFor();assert.equal(await page.locator('h1').count(),1,`${path}: one page heading`);if(path!=='/')assert.ok(await page.locator('footer').isVisible());checks++;}
   await check('/',/What can I help you with\?/);
   assert.ok(await page.getByRole('textbox',{name:'Workspace message'}).isVisible(),'Homepage shows the public chat composer');
-  assert.ok(await page.getByRole('navigation',{name:'Main navigation'}).getByRole('link',{name:'Pricing',exact:true}).isVisible(),'Homepage keeps public site navigation');
+  assert.ok(await page.getByRole('complementary',{name:'Chat sidebar'}).isVisible(),'Homepage shows the chat-app sidebar');
+  assert.ok(await page.getByRole('button',{name:'New chat'}).isVisible(),'Homepage can start a new chat');
+  assert.ok(await page.getByRole('link',{name:'Explore plans'}).isVisible(),'Homepage keeps the plans link in its sidebar');
+  assert.ok(await page.getByRole('button',{name:'Write something'}).isVisible(),'Homepage offers conversation starters');
+  assert.equal(await page.locator('footer').count(),0,'Chat homepage fills the viewport without the marketing footer');
   assert.equal(await page.getByRole('link',{name:'Sign in',exact:true}).count(),0,'Anonymous header has no sign-in prompt');
   assert.equal(await page.getByRole('link',{name:'Get started',exact:true}).count(),0,'Anonymous header has no sign-up prompt');
   await page.screenshot({path:new URL('home-desktop.png',artifacts).pathname.replace(/^\/([A-Z]:)/,'$1'),fullPage:true});
+  await page.getByRole('button',{name:'Write something'}).click();
+  assert.ok((await page.getByRole('textbox',{name:'Workspace message'}).inputValue()).startsWith('Help me write'),'Conversation starters fill the composer');
+  await page.getByRole('button',{name:'New chat'}).click();
+  assert.equal(await page.getByRole('textbox',{name:'Workspace message'}).inputValue(),'','New chat clears the draft');
+  await page.getByRole('textbox',{name:'Workspace message'}).fill('Hello fixture');
+  await page.getByRole('textbox',{name:'Workspace message'}).press('Enter');
+  await page.getByRole('alert').filter({hasText:'AI is not configured'}).waitFor();
+  assert.equal((await db.query('select coalesce(max(used),0)::int as used from visitor_usage')).rows[0].used,0,'Unavailable AI requests do not consume guest messages');
+  await page.getByRole('button',{name:'New chat'}).click();
+  page.setViewportSize({width:390,height:844});
+  await page.getByRole('button',{name:'Open sidebar'}).click();
+  assert.ok(await page.getByRole('complementary',{name:'Chat sidebar'}).getByRole('link',{name:'Help center'}).isVisible(),'Mobile sidebar opens with public links');
+  await page.getByRole('complementary',{name:'Chat sidebar'}).getByRole('link',{name:'Help center'}).click();
+  await page.waitForURL('**/support');
+  assert.equal(new URL(page.url()).pathname,'/support','Mobile sidebar links navigate correctly');
+  page.setViewportSize({width:1440,height:1000});
   for(const [path,title] of [['/about','Software with a practical purpose.'],['/privacy','Privacy Policy'],['/terms','Terms & Conditions'],['/payment-policy','Payment, Cancellation & Refund Policy'],['/support','A little help goes a long way.'],['/contact','Let’s get you to the right place.'],['/pricing','Choose the time that fits your work.'],['/forgot-password','Forgot your password?'],['/reset-password','Request a fresh reset link.'],['/sign-in','Your workspace is waiting.'],['/sign-up','A place for your next idea.']]) await check(path,title);
   for(const path of ['/dashboard','/dashboard/activity','/dashboard/billing','/account/security','/chat']){await page.goto(`${origin}${path}`);assert.equal(new URL(page.url()).pathname,'/sign-in');checks++;}
   await page.goto(`${origin}/pricing`);
@@ -75,7 +95,7 @@ try {
   await db.query('update visitor_usage set used=10');await page.reload();await page.getByRole('heading',{name:'Your visitor allowance is used up.'}).waitFor();assert.ok(await page.getByRole('link',{name:'Start a free trial',exact:true}).isVisible());await context.clearCookies();await page.reload();await page.getByRole('heading',{name:'Your visitor allowance is used up.'}).waitFor();checks++;
   await page.setViewportSize({width:390,height:844});
   for(const path of ['/','/pricing','/support','/contact','/privacy','/forgot-password']){await page.goto(`${origin}${path}`);await page.locator('h1').waitFor();assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth+1),`${path} mobile overflow`);checks++;}
-  await page.goto(`${origin}/`);await page.getByRole('button',{name:'Open navigation'}).click();await page.getByRole('navigation',{name:'Mobile navigation',exact:true}).getByRole('link',{name:'Contact',exact:true}).click();await page.waitForURL('**/contact');await page.getByRole('heading',{level:1}).waitFor();checks++;
+  await page.goto(`${origin}/`);await page.getByRole('button',{name:'Open sidebar'}).click();await page.getByRole('complementary',{name:'Chat sidebar'}).getByRole('link',{name:'Help center'}).click();await page.waitForURL('**/support');await page.getByRole('heading',{level:1}).waitFor();checks++;
   await page.goto(`${origin}/pricing`);await page.getByRole('heading',{name:'Daily',exact:true}).waitFor();await page.screenshot({path:new URL('pricing-mobile.png',artifacts).pathname.replace(/^\/([A-Z]:)/,'$1'),fullPage:true});
   assert.deepEqual(failures,[],'No browser JavaScript errors');
   console.log(`Passed ${checks} website checks against an isolated local database.`);
