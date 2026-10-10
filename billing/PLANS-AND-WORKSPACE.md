@@ -23,11 +23,11 @@ Plan changes use Subscription Schedules at the current period end, without prora
 
 ## Visitors and monthly login
 
-`/workspace` opens without an account prompt. Visitors receive **10 successful responses per UTC day**, with pending requests reserved atomically. Failed requests refund the reservation once. At the limit the editor is replaced by trial, sign-in, and subscription choices. Account sessions expire absolutely after 30 days; activity does not extend them.
+`/workspace` and the homepage chat open without an account prompt. Visitors can send unlimited messages; conversations remain in the current page session and are not saved. Per-visitor request throttling remains enabled to protect the service from abuse. Account sessions expire absolutely after 30 days; activity does not extend them.
 
 Counters use a signed HttpOnly cookie, keyed browser-characteristic hashes, and a keyed network identifier. Railway's overwritten `X-Real-IP` header is trusted; arbitrary `X-Forwarded-For` is not. IPv6 privacy addresses are grouped by /64. Raw addresses and raw browser profiles are not stored in these tables. Visitor records are removed after 32 days.
 
-These are abuse controls, not proof of a person's identity. Clearing browser data alone does not reset server counters, but a changed network plus changed browser characteristics can evade anonymous identification. Shared networks and matching browser characteristics can share a limit. Reliable cross-device identity requires authentication; the UI/privacy policy disclose these limits. There is no claim of unbreakable fingerprinting.
+Visitor identifiers support abuse throttling only; they do not impose a daily message quota. They are not proof of a person's identity. Reliable cross-device identity requires authentication; there is no claim of unbreakable fingerprinting.
 
 ## Deployment and configuration
 
@@ -51,7 +51,7 @@ The Stripe plugin provisioned the new prices and webhook. The workspace helper c
 
 Verification: 24 backend tests (including the added 30-day session test) and 43 browser checks passed; production build, TypeScript and lint passed. External card charging, email delivery and AI generation remain unverified without runtime credentials.
 
-Backend tests cover atomic visitor limits, cache-clearing resistance, one-time refunds, UTC resets, card-first trial activation, ambiguous Stripe response recovery, repeated card rejection, unlimited-access expiry, scheduled changes, and invoice replay ordering. Browser tests cover pricing, trial entry, visitor failure/refund and limit gates, plus existing account functionality.
+Backend tests cover unlimited guest reservations and one-time failed-request refunds, card-first trial activation, ambiguous Stripe response recovery, repeated card rejection, unlimited-access expiry, scheduled changes, and invoice replay ordering. Browser tests cover pricing, trial entry, guest chat and provider failure/refund behavior, plus existing account functionality.
 
 Planner guide: `iguide_61VY9k80xpO7gGMfI419TlJVLQeem`. Its generated Checkout/Accounts v2 example was not adopted because the merchant explicitly requires custom Elements and preserving existing Customer IDs.
 

@@ -4,13 +4,16 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import {
   ArrowUp,
-  Check,
   CircleHelp,
   Compass,
+  Info,
+  LogIn,
   Menu,
   MessageSquare,
   Plus,
+  Settings,
   Sparkles,
+  UserRound,
   X,
 } from 'lucide-react';
 
@@ -41,7 +44,6 @@ async function browserIdentity() {
 
 export function VisitorWorkspace({ landing = false }: { landing?: boolean }) {
   const [fingerprint, setFingerprint] = useState('');
-  const [remaining, setRemaining] = useState<number | null>(10);
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
   const [busy, setBusy] = useState(false);
@@ -63,7 +65,6 @@ export function VisitorWorkspace({ landing = false }: { landing?: boolean }) {
         if (active) {
           if (!response.ok) setError(data.error);
           else {
-            setRemaining(data.remaining);
             setSignedIn(data.signedIn);
           }
         }
@@ -102,7 +103,7 @@ export function VisitorWorkspace({ landing = false }: { landing?: boolean }) {
 
   async function send(event: React.FormEvent) {
     event.preventDefault();
-    if (busy || !input.trim() || remaining === 0) return;
+    if (busy || !input.trim()) return;
     const next = [...messages, { sender: 'user' as const, content: input.trim() }].slice(-19);
     const requestMessages = next.map(message => ({
       ...message,
@@ -124,11 +125,9 @@ export function VisitorWorkspace({ landing = false }: { landing?: boolean }) {
         body: JSON.stringify({ fingerprint, messages: requestMessages }),
       });
       const data = await response.json();
-      if (data.limited) setRemaining(0);
       if (!response.ok) throw new Error(data.error);
       setMessages([...next, { sender: 'ai', content: data.answer }]);
       setInput('');
-      setRemaining(data.remaining);
     } catch (error) {
       setMessages(messages);
       setError(error instanceof Error ? error.message : 'Please try again.');
@@ -145,10 +144,6 @@ export function VisitorWorkspace({ landing = false }: { landing?: boolean }) {
   }
 
   if (landing) {
-    const allowance = signedIn
-      ? 'Your account allowance'
-      : `${remaining ?? 10} of 10 messages left today`;
-
     return (
       <div className="chat-app">
         <a className="skip-link" href="#chat-main">Skip to chat</a>
@@ -177,12 +172,15 @@ export function VisitorWorkspace({ landing = false }: { landing?: boolean }) {
           </button>
 
           <div className="chat-sidebar-section">
-            <span className="chat-sidebar-label">Workspace</span>
+            <span className="chat-sidebar-label">Explore</span>
             <Link className="chat-sidebar-link" href="/pricing">
               <Compass size={17} /><span>Explore plans</span>
             </Link>
             <Link className="chat-sidebar-link" href="/support">
               <CircleHelp size={17} /><span>Help center</span>
+            </Link>
+            <Link className="chat-sidebar-link" href="/about">
+              <Info size={17} /><span>About One Fin</span>
             </Link>
           </div>
 
@@ -199,19 +197,24 @@ export function VisitorWorkspace({ landing = false }: { landing?: boolean }) {
           </div>
 
           <div className="chat-sidebar-bottom">
-            <div className="chat-allowance">
-              <div className="allowance-heading">
-                <span>Daily messages</span>
-                <span>{remaining ?? 10}/10</span>
-              </div>
-              <div className="allowance-track" aria-label={allowance}>
-                <span style={{ width: `${Math.max(0, Math.min(100, ((remaining ?? 10) / 10) * 100))}%` }} />
-              </div>
-              <p>{allowance}</p>
+            <div className="chat-sidebar-section">
+              <span className="chat-sidebar-label">Account</span>
+              <Link className="chat-sidebar-link" href="/account">
+                <UserRound size={17} /><span>Profile</span>
+              </Link>
+              <Link className="chat-sidebar-link" href="/account/preferences">
+                <Settings size={17} /><span>Settings</span>
+              </Link>
+              {signedIn ? (
+                <Link className="chat-sidebar-link" href="/dashboard">
+                  <MessageSquare size={17} /><span>Dashboard</span>
+                </Link>
+              ) : (
+                <Link className="chat-sidebar-link" href="/sign-in?next=%2Faccount">
+                  <LogIn size={17} /><span>Sign in</span>
+                </Link>
+              )}
             </div>
-            <Link className="chat-sidebar-link" href="/privacy">
-              <Check size={17} /><span>Private guest session</span>
-            </Link>
           </div>
         </aside>
 
@@ -221,7 +224,7 @@ export function VisitorWorkspace({ landing = false }: { landing?: boolean }) {
               <Menu size={19} />
             </button>
             <div className="chat-model-name"><Sparkles size={16} /><span>One Fin AI</span></div>
-            <span className="chat-guest-label">Guest</span>
+            <span className="chat-guest-label">{signedIn ? 'Account' : 'Guest'}</span>
           </header>
 
           {messages.length === 0 ? (
@@ -277,14 +280,7 @@ export function VisitorWorkspace({ landing = false }: { landing?: boolean }) {
 
           <div className={`chat-composer-area${messages.length === 0 ? ' welcome-composer-area' : ''}`}>
             {error && <p className="chat-error" role="alert">{error}</p>}
-            {remaining === 0 ? (
-              <div className="chat-limit-panel" role="status">
-                <h2>You’ve reached today’s message limit</h2>
-                <p>Your free guest messages reset at midnight UTC. Explore a plan to keep chatting.</p>
-                <Link className="chat-upgrade-link" href="/pricing">Explore plans</Link>
-              </div>
-            ) : (
-              <form className="chat-composer" onSubmit={send}>
+            <form className="chat-composer" onSubmit={send}>
                 <label className="sr-only" htmlFor="visitor-chat-message">Message One Fin</label>
                 <textarea
                   id="visitor-chat-message"
@@ -310,7 +306,6 @@ export function VisitorWorkspace({ landing = false }: { landing?: boolean }) {
                   </button>
                 </div>
               </form>
-            )}
             <p className="chat-privacy-note">
               One Fin can make mistakes. Don’t share sensitive personal information.{' '}
               <Link href="/privacy">Privacy details</Link>
@@ -324,7 +319,6 @@ export function VisitorWorkspace({ landing = false }: { landing?: boolean }) {
   return (
     <div className="visitor-workspace">
       <div className="setting-row">
-        <span className="badge">{signedIn ? 'Your account allowance' : `${remaining ?? 10} of 10 visitor responses left today`}</span>
         <Link className="button secondary small" href="/pricing">Explore plans & subscribe</Link>
       </div>
       <section className="panel stack" aria-label="Workspace conversation">
@@ -342,39 +336,27 @@ export function VisitorWorkspace({ landing = false }: { landing?: boolean }) {
           )}
         </div>
         {error && <p className="notice error" role="alert">{error}</p>}
-        {remaining === 0 ? (
-          <div className="notice" role="status">
-            <h2>Your visitor allowance is used up.</h2>
-            <p>Continue with a card-backed free trial, sign in to use your account allowance, or subscribe. Visitor access resets at midnight UTC.</p>
-            <div className="button-row">
-              <Link className="button" href="/pricing">Start a free trial</Link>
-              <Link className="button secondary" href="/sign-in?next=/workspace">Sign in</Link>
-              <Link className="text-link" href="/subscribe?plan=monthly&mode=paid">Subscribe now</Link>
-            </div>
-          </div>
-        ) : (
-          <form onSubmit={send} className="stack">
-            <label className="field">
-              Your message
-              <textarea
-                aria-label="Workspace message"
-                required
-                maxLength={4000}
-                rows={4}
-                value={input}
-                onChange={event => setInput(event.target.value)}
-                disabled={busy}
-              />
-            </label>
-            <button className="button" disabled={busy || !fingerprint || !input.trim()}>
-              {busy ? 'Thinking...' : 'Send message'}
-            </button>
-          </form>
-        )}
+        <form onSubmit={send} className="stack">
+          <label className="field">
+            Your message
+            <textarea
+              aria-label="Workspace message"
+              required
+              maxLength={4000}
+              rows={4}
+              value={input}
+              onChange={event => setInput(event.target.value)}
+              disabled={busy}
+            />
+          </label>
+          <button className="button" disabled={busy || !fingerprint || !input.trim()}>
+            {busy ? 'Thinking...' : 'Send message'}
+          </button>
+        </form>
       </section>
       <p className="small-copy">
-        Visitor limits reset daily at midnight UTC. We use a secure cookie, hashed browser characteristics, and a hashed network identifier to limit misuse. Clearing browser data does not reset server records; shared networks can share a limit.{' '}
-        <Link className="text-link" href="/privacy">Privacy details</Link>. This conversation stays in this page and is cleared when you leave. Account sessions require a fresh sign-in every 30 days.
+        Guest conversations are kept only for this page session and are cleared when you leave.{' '}
+        <Link className="text-link" href="/privacy">Privacy details</Link>.
       </p>
     </div>
   );

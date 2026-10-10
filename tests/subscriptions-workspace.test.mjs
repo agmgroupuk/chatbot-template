@@ -9,15 +9,15 @@ import {PGlite} from '@electric-sql/pglite';
 const require=createRequire(import.meta.url);
 function load(file,dependencies={},env={}){const exports={};const {outputText}=ts.transpileModule(readFileSync(new URL(`../${file}`,import.meta.url),'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022,esModuleInterop:true}});runInNewContext(outputText,{exports,require:name=>name==='server-only'?{}:dependencies[name]||require(name),process:{env},Buffer,console,URL,Headers,Error});return exports;}
 async function fixture(){const db=new PGlite();for(const file of readdirSync(new URL('../migrations/railway/',import.meta.url)).filter(name=>name.endsWith('.sql')).sort())await db.exec(readFileSync(new URL(`../migrations/railway/${file}`,import.meta.url),'utf8'));const adapter={query:async(sql,args)=>(await db.query(sql,args)).rows,transaction:work=>db.transaction(tx=>work({query:(sql,args)=>tx.query(sql,args)}))};return {db,adapter};}
-test('visitor limits are atomic, survive local identity clearing, refund once and reset by UTC day',async()=>{
+test('guest chat requests are unlimited and failed reservations can only be refunded once',async()=>{
  const {db,adapter}=await fixture();try{const usage=load('lib/visitor-usage.ts',{'./db':adapter});
- const results=await Promise.allSettled(Array.from({length:11},()=>usage.reserveVisitor(['network','browser','cookie'])));
- assert.equal(results.filter(result=>result.status==='fulfilled').length,10);assert.equal(await usage.visitorRemaining(['network','new-browser','new-cookie']),0);
- await assert.rejects(usage.reserveVisitor(['network','new-browser','new-cookie']),/VISITOR_LIMIT/);
- assert.equal(await usage.visitorRemaining(['new-network','browser','fresh-cookie']),0);
- const id=results.find(result=>result.status==='fulfilled').value;await usage.finishVisitor(id,false);await usage.finishVisitor(id,false);assert.equal(await usage.visitorRemaining(['network']),1);
- const next=await usage.reserveVisitor(['network','browser','cookie']);await usage.finishVisitor(next,true);await usage.finishVisitor(next,false);assert.equal(await usage.visitorRemaining(['network']),0);
- await db.query("update visitor_usage set day=day-1");assert.equal(await usage.visitorRemaining(['network','browser']),10);
+ const reservations=await Promise.all(Array.from({length:25},()=>usage.reserveVisitor(['network','browser','cookie'])));
+ assert.equal(reservations.length,25);assert.equal((await db.query('select count(*)::int as count from visitor_requests')).rows[0].count,25);
+ assert.equal((await db.query('select count(*)::int as count from visitor_usage')).rows[0].count,0);
+ const failed=reservations[0];await usage.finishVisitor(failed,false);await usage.finishVisitor(failed,false);
+ assert.equal((await db.query('select status from visitor_requests where id=$1',[failed])).rows[0].status,'refunded');
+ const completed=reservations[1];await usage.finishVisitor(completed,true);await usage.finishVisitor(completed,false);
+ assert.equal((await db.query('select status from visitor_requests where id=$1',[completed])).rows[0].status,'completed');
  }finally{await db.close();}
 });
 test('trusted network and keyed browser fingerprints persist without exposing raw identifiers',()=>{
