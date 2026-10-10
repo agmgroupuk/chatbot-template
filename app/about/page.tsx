@@ -3,7 +3,22 @@ import { Layers, Globe2, ShieldCheck } from 'lucide-react';
 import { PageHeading } from '@/components/page-heading';
 import { company } from '@/lib/company';
 
-export const metadata = { title: 'About Us | One Fin Solution' };
+export const metadata = {
+  title: 'About One Fin Solution',
+  description: 'Learn about One Fin Solution, the company behind practical software, AI conversations, and online workspace tools.',
+  alternates: { canonical: '/about' },
+  openGraph: {
+    type: 'website',
+    siteName: 'One Fin Solution',
+    title: 'About One Fin Solution',
+    description: 'Learn about the company behind practical software and AI workspace tools.',
+    url: '/about',
+    images: [
+      { url: '/images/iages4.jpg', width: 2000, height: 1094, alt: 'Artificial intelligence network visual' },
+      { url: '/logo/one-fin-logo.png', width: 1254, height: 1254, alt: 'One Fin Solution logo' },
+    ],
+  },
+};
 
 const principles = [
   { icon: Layers, title: 'A connected workspace', body: 'Conversations and reusable context in one account.' },

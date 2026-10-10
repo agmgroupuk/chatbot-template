@@ -4,7 +4,7 @@ import { PageHeading } from '@/components/page-heading';
 import { SubscriptionForm } from '@/components/subscription-form';
 import { findPlan,priceLabel } from '@/lib/plans';
 import { notFound } from 'next/navigation';
-export const metadata={title:'Subscribe | One Fin Solution',robots:{index:false,follow:false}};
+export const metadata={title:'Subscribe',robots:{index:false,follow:false}};
 export default async function Subscribe({searchParams}:{searchParams:Promise<{plan?:string;mode?:string;setup_intent?:string}>}) {
   const params=await searchParams;let plan;try{plan=findPlan(params.plan||'monthly');}catch{notFound();}
   const mode=params.mode==='paid'?'paid':'trial';const user=await currentUser();

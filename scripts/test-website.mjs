@@ -48,6 +48,29 @@ try {
   page.on('requestfailed',request=>{pending.delete(request);actionLog.push(['failed',new URL(request.url()).pathname,request.failure()?.errorText]);});
   async function check(path,title){console.log(`Checking ${path}`);const response=await page.goto(`${origin}${path}`);assert.equal(response.status(),200,path);await page.getByRole('heading',{level:1,name:title}).waitFor();assert.equal(await page.locator('h1').count(),1,`${path}: one page heading`);if(path!=='/')assert.ok(await page.locator('footer').isVisible());checks++;}
   await check('/',/Build custom chatbots/);
+  assert.equal(await page.locator('link[rel="canonical"]').getAttribute('href'),'https://onefinsolution.online','Homepage canonical URL');
+  assert.equal(await page.locator('meta[property="og:title"]').getAttribute('content'),'One Fin Solution | AI Chat and Software Workspace');
+  assert.ok((await page.locator('meta[property="og:image"]').first().getAttribute('content'))?.includes('/images/iages4.jpg'),'Homepage Open Graph preview image');
+  assert.ok((await page.locator('link[rel="icon"][type="image/png"]').getAttribute('href'))?.includes('/logo/one-fin-logo.png'),'Brand logo is configured as the site icon');
+  const faviconResponse=await context.request.get(`${origin}/favicon.ico`);
+  assert.equal(faviconResponse.status(),200,'Google-compatible favicon is available');
+  const favicon=Buffer.from(await faviconResponse.body());
+  assert.equal(favicon.readUInt16LE(4),4,'Favicon includes multiple icon sizes');
+  assert.equal(favicon[6+2*16],48,'Favicon includes a 48px Google Search icon');
+  const organizationData=JSON.parse(await page.locator('script[type="application/ld+json"]').first().textContent());
+  assert.equal(organizationData[0]['@type'],'Organization');
+  assert.equal(organizationData[0].logo,'https://onefinsolution.online/logo/one-fin-logo.png');
+  const sitemapResponse=await context.request.get(`${origin}/sitemap.xml`);
+  assert.equal(sitemapResponse.status(),200,'Sitemap is available');
+  const sitemapText=await sitemapResponse.text();
+  for(const publicPath of ['/','/about','/pricing','/contact','/support','/privacy','/terms','/payment-policy'])assert.ok(sitemapText.includes(`https://onefinsolution.online${publicPath}`),`Sitemap includes ${publicPath}`);
+  assert.equal(sitemapText.includes('/workspace'),false,'Private Workspace is excluded from the sitemap');
+  const robotsResponse=await context.request.get(`${origin}/robots.txt`);
+  assert.equal(robotsResponse.status(),200,'Robots rules are available');
+  const robotsText=await robotsResponse.text();
+  assert.ok(robotsText.includes('Sitemap: https://onefinsolution.online/sitemap.xml'));
+  assert.ok(robotsText.includes('Disallow: /dashboard'));
+  checks+=6;
   assert.ok(await page.getByRole('textbox',{name:'Message'}).isVisible(),'Homepage shows the subscription chat composer');
   assert.ok(await page.locator('.home-chat-sidebar').isVisible(),'Homepage shows its dedicated chat sidebar');
   assert.ok(await page.getByRole('button',{name:'New chat'}).isVisible(),'Homepage can start a new chat');
@@ -133,7 +156,7 @@ try {
   await page.goto(`${origin}/dashboard/activity`);await page.getByRole('button',{name:'Delete',exact:true}).click();await page.getByRole('button',{name:'Keep it',exact:true}).click();assert.ok(await page.getByRole('link',{name:'My saved conversation',exact:true}).isVisible());await page.getByRole('button',{name:'Delete',exact:true}).click();await page.getByRole('button',{name:'Delete permanently',exact:true}).click();await page.getByText('No conversations yet.',{exact:false}).waitFor();checks++;
   await context.clearCookies();await context.addCookies([{name:'onefin-reset',value:resetToken,url:origin,httpOnly:true,sameSite:'Lax'}]);await page.goto(`${origin}/reset-password`);await page.getByLabel('New password',{exact:true}).fill('browser-replacement-password');await page.getByLabel('Confirm new password',{exact:true}).fill('browser-replacement-password');await page.getByRole('button',{name:'Update password',exact:true}).click();await page.waitForURL('**/sign-in?success=*');checks++;
   await page.goto(`${origin}/forgot-password`);await page.getByLabel('Email address').fill('browser@example.test');await page.getByRole('button',{name:'Send reset link',exact:true}).click();await page.getByRole('alert').filter({hasText:'Email delivery is not configured'}).waitFor();checks++;
-  await page.goto(`${origin}/workspace`);await page.getByRole('heading',{level:1,name:'Build something useful.'}).waitFor();assert.equal(await page.locator('.home-chat-sidebar').count(),0,'Unauthenticated Workspace requests do not reveal homepage chat');checks++;
+  await page.goto(`${origin}/workspace`);await page.getByRole('heading',{level:1,name:'Build something useful.'}).waitFor();assert.equal(await page.locator('.home-chat-sidebar').count(),0,'Unauthenticated Workspace requests do not reveal homepage chat');assert.match(await page.locator('meta[name="robots"]').getAttribute('content')||'',/noindex/,'Workspace is excluded from indexing');checks++;
   await page.setViewportSize({width:390,height:844});
   for(const path of ['/','/pricing','/support','/contact','/privacy','/forgot-password','/workspace']){await page.goto(`${origin}${path}`);await page.locator('h1').waitFor();assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth+1),`${path} mobile overflow`);checks++;}
   await page.goto(`${origin}/`);await page.getByRole('button',{name:'Open chat menu'}).click();await page.locator('.home-chat-sidebar .profile-button').click();await page.getByRole('region',{name:'Profile and application menu'}).getByRole('link',{name:'Company information'}).click();await page.waitForURL('**/about');await page.getByRole('heading',{level:1}).waitFor();checks++;

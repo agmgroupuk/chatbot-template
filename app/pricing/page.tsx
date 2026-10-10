@@ -1,5 +1,17 @@
 import Link from 'next/link';
 import { PageHeading } from '@/components/page-heading';
 import { plans,priceLabel } from '@/lib/plans';
-export const metadata={title:'Daily, Weekly, Monthly, Yearly & Business Plans | One Fin Solution'};
+export const metadata={
+  title:'AI Chat Plans and Workspace Credits',
+  description:'Compare One Fin Solution chat subscriptions and learn about separate one-time Workspace credit packs.',
+  alternates:{canonical:'/pricing'},
+  openGraph:{
+    type:'website',siteName:'One Fin Solution',
+    title:'AI Chat Plans and Workspace Credits',description:'Compare chat subscriptions and separate Workspace credit packs.',url:'/pricing',
+    images:[
+      {url:'/images/iages4.jpg',width:2000,height:1094,alt:'Artificial intelligence network visual'},
+      {url:'/logo/one-fin-logo.png',width:1254,height:1254,alt:'One Fin Solution logo'},
+    ],
+  },
+};
 export default function Pricing(){return <div className="page-wrap"><PageHeading eyebrow="PLANS & PRICING" title="Choose the time that fits your work." description="Homepage chat subscriptions include unlimited responses during an active trial or paid period. Choose your billing interval and start with a card-backed free trial." /><div className="notice">Sandbox billing: these are the configured plan prices. Payments are in test mode; no real charges are taken.</div><section className="pricing-grid" aria-label="All four personal plans">{plans.map(plan=><article className={`panel price-card ${plan.key==='monthly'?'featured':''}`} key={plan.key}><span className="eyebrow">{plan.trialDays}-DAY FREE TRIAL</span><h2>{plan.name}</h2><div className="price">${plan.amount/100}<small> USD / {plan.interval}</small></div><p>Unlimited homepage chat during your trial and active paid membership.</p><ul><li>Valid payment card required before trial starts</li><li>Then {priceLabel(plan)}, billed automatically</li><li>Cancel before the trial ends to avoid the first charge</li><li>Switch plans at the next renewal</li></ul><Link className="button" href={`/subscribe?plan=${plan.key}`}>Start {plan.name.toLowerCase()} trial</Link><Link className="text-link" href={`/subscribe?plan=${plan.key}&mode=paid`}>Subscribe without trial</Link></article>)}</section><section className="panel section-space"><span className="eyebrow">FOR YOUR BUSINESS</span><h2>Business Plan</h2><p>Discuss your software licensing, billing, and support needs with our team. Pricing and terms are agreed before purchase.</p><p>Shared or team Workspace features are planned for a later release and are not included yet.</p><Link className="button secondary" href="/contact?category=pricing&subject=Business%20plan%20inquiry">Contact sales</Link></section><section className="two-grid section-space"><div className="panel"><h2>Workspace credit packs</h2><p>Workspace is a separate, sign-in-required application. Purchase credits for Workspace tasks with one-time payments; credits do not include a homepage chat subscription.</p><Link className="text-link" href="/workspace">Open Workspace</Link></div><div className="panel"><h2>Already subscribed?</h2><p>Upgrade, downgrade, or switch homepage chat billing intervals at your next renewal. No proration and no new trial.</p><Link className="text-link" href="/dashboard/billing">Manage chat plans & billing</Link></div></section><p className="small-copy">One free trial per account and payment card across all plans. First payment is due at trial expiry. Taxes, where required, must be disclosed before live purchases are enabled. <Link className="text-link" href="/payment-policy">Payment & cancellation terms</Link>.</p></div>;}

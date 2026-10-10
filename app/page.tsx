@@ -1,8 +1,9 @@
 import { IdeInterfaceComponent } from '@/components/ide-interface';
 
 export const metadata = {
-  title: 'Homepage Chat | One Fin Solution',
-  description: 'Subscription-based AI chat from One Fin Solution.',
+  title: 'AI Chat and Software Workspace',
+  description: 'Start an AI-powered conversation, explore practical software tools, and discover the One Fin Solution Workspace.',
+  alternates: { canonical: '/' },
 };
 
 export default function Home() {
