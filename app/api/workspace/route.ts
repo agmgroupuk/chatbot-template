@@ -7,6 +7,47 @@ import { query, transaction } from '@/lib/db';
 import { randomUUID } from 'node:crypto';
 
 export const runtime = 'nodejs';
+const maximumImageBytes = 2 * 1024 * 1024;
+const maximumImagesPerTask = 3;
+const maximumTotalImageBytes = 3.5 * 1024 * 1024;
+
+type WorkspaceImage = {
+  mimeType: 'image/jpeg' | 'image/png' | 'image/webp' | 'image/gif';
+  data: string;
+};
+
+function imageMatchesMime(image: WorkspaceImage): boolean {
+  const bytes = Buffer.from(image.data, 'base64');
+  if (image.mimeType === 'image/png') {
+    return bytes.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]));
+  }
+  if (image.mimeType === 'image/jpeg') {
+    return bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff;
+  }
+  if (image.mimeType === 'image/gif') {
+    return bytes.subarray(0, 6).toString('ascii').startsWith('GIF8');
+  }
+  return bytes.subarray(0, 4).toString('ascii') === 'RIFF' &&
+    bytes.subarray(8, 12).toString('ascii') === 'WEBP';
+}
+
+function validImages(value: unknown): value is WorkspaceImage[] {
+  if (value === undefined) return true;
+  if (!Array.isArray(value) || value.length > maximumImagesPerTask) return false;
+  let totalBytes = 0;
+  for (const candidate of value) {
+    if (!candidate || typeof candidate !== 'object') return false;
+    const image = candidate as Partial<WorkspaceImage>;
+    if (!['image/jpeg', 'image/png', 'image/webp', 'image/gif'].includes(String(image.mimeType)) ||
+        typeof image.data !== 'string' ||
+        !/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(image.data)) return false;
+    const bytes = Buffer.byteLength(image.data, 'base64');
+    if (!bytes || bytes > maximumImageBytes) return false;
+    totalBytes += bytes;
+    if (totalBytes > maximumTotalImageBytes || !imageMatchesMime(image as WorkspaceImage)) return false;
+  }
+  return true;
+}
 
 function reply(body: unknown, status = 200) {
   return NextResponse.json(body, { status, headers: { 'Cache-Control': 'private, no-store' } });
@@ -35,10 +76,10 @@ export async function POST(request: NextRequest) {
 
   let reservation: string | undefined;
   try {
-    if (Number(request.headers.get('content-length') || 0) > 160000) return reply({ error: 'Message is too long.' }, 413);
+    if (Number(request.headers.get('content-length') || 0) > 5_500_000) return reply({ error: 'Message and attachments are too large.' }, 413);
     const body = await request.text();
-    if (body.length > 160000) return reply({ error: 'Message is too long.' }, 413);
-    let input: { messages?: unknown; conversationId?: unknown };
+    if (body.length > 5_500_000) return reply({ error: 'Message and attachments are too large.' }, 413);
+    let input: { messages?: unknown; conversationId?: unknown; images?: unknown };
     try {
       input = JSON.parse(body);
     } catch {
@@ -52,6 +93,7 @@ export async function POST(request: NextRequest) {
         messages.at(-1)?.sender !== 'user') {
       return reply({ error: 'Enter a valid message.' }, 400);
     }
+    if (!validImages(input.images)) return reply({ error: 'Use up to three supported images, 2 MB each and 3.5 MB total.' }, 400);
 
     const conversationId = input.conversationId;
     if (typeof conversationId !== 'string' || !/^[0-9a-f-]{36}$/i.test(conversationId)) return reply({error:'Invalid task conversation.'},400);
@@ -60,7 +102,11 @@ export async function POST(request: NextRequest) {
     const previous = await query<{id:string}>('select id from messages where chat_id=$1 and user_id=$2 order by created_at,id',[conversationId,user.id]);
     await throttle(`workspace:${user.id}`, 60);
     reservation = await reserveWorkspaceCredits(user.id);
-    const answer = await generateResponse(messages as { id?: string; sender: 'user' | 'ai'; content: string }[]);
+    const answer = await generateResponse(
+      messages as { id?: string; sender: 'user' | 'ai'; content: string }[],
+      null,
+      input.images || [],
+    );
     const userMessageId=randomUUID(),answerId=randomUUID();
     const nextBalance=await transaction(async client=>{
       await client.query('select pg_advisory_xact_lock(hashtext($1))',[conversationId]);

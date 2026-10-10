@@ -482,6 +482,13 @@
 .workspace-task-form textarea:disabled { background:#f8faf8; }
 .workspace-task-form-footer { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:10px 12px 10px 16px; border-top:1px solid #edf1ee; }
 .workspace-task-form-footer > span { color:#8a9991; font-size:10px; }
+.workspace-image-attachments { display:flex; flex-wrap:wrap; gap:10px; padding:0 14px 12px; }
+.workspace-image-attachment { position:relative; display:grid; grid-template-columns:64px minmax(0,1fr) 26px; align-items:center; gap:8px; max-width:280px; padding:6px; border:1px solid var(--wa-line); border-radius:9px; background:#fff; }
+.workspace-image-attachment img { width:64px; height:48px; border-radius:5px; object-fit:cover; }
+.workspace-image-attachment > span { overflow:hidden; color:var(--wa-muted); font-size:11px; text-overflow:ellipsis; white-space:nowrap; }
+.workspace-image-attachment button { display:grid; width:26px; height:26px; place-items:center; border:0; border-radius:6px; background:transparent; color:var(--wa-muted); cursor:pointer; }
+.workspace-image-attachment button:hover { background:#f1f4f2; color:var(--wa-ink); }
+.workspace-image-attachment button:disabled { opacity:.5; cursor:not-allowed; }
 .workspace-task-messages { display:grid; gap:12px; max-height:360px; overflow:auto; padding:2px 4px 8px; }
 .workspace-task-message { max-width:85%; padding:12px 14px; border:1px solid var(--wa-line); border-radius:12px; background:#fff; }
 .workspace-task-message.is-user { justify-self:end; background:#f0f6f2; }

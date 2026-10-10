@@ -3,7 +3,7 @@
   "products": [
     {
       "code": "credits_50",
-      "name": "Workspace Credit Pack",
+      "name": "50 Credit Pack",
       "description": "50 credits for Workspace only. One-time payment; does not start or extend a homepage chat subscription.",
       "prices": [
         { "code": "credits_50", "amount": 500, "credits": 50 }

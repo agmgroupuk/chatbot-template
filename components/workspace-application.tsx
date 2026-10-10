@@ -6,7 +6,7 @@ import Image from 'next/image';
 import { useRouter } from 'next/navigation';
 import { Elements, PaymentElement, useElements, useStripe } from '@stripe/react-stripe-js';
 import { loadStripe } from '@stripe/stripe-js';
-import { ArrowUp, ChevronLeft, ChevronRight, CreditCard, FileText, History, LayoutGrid, Plus, Settings, Wallet, UserRound } from 'lucide-react';
+import { ArrowUp, ChevronLeft, ChevronRight, CreditCard, FileText, History, LayoutGrid, Plus, Settings, Wallet, UserRound, X } from 'lucide-react';
 import { createWorkspaceCreditPaymentIntent, getWorkspaceBillingData, prepareWorkspaceCardUpdate, saveWorkspaceCard, workspaceCreditPurchaseStatus } from '@/app/workspace-actions';
 import { ConversationTools, exportConversation } from './conversation-tools';
 import { MessageContent } from './message-content';
@@ -23,6 +23,17 @@ type WorkspaceData =
     }
   | { error: string };
 type WorkspaceMessage = { id?: string; sender: 'user' | 'ai'; content: string };
+type WorkspaceImage = { name: string; mimeType: 'image/jpeg' | 'image/png' | 'image/webp' | 'image/gif'; dataUrl: string };
+const supportedImageTypes = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'] as const;
+
+function readImageDataUrl(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => typeof reader.result === 'string' ? resolve(reader.result) : reject(new Error('Unable to read the selected image.'));
+    reader.onerror = () => reject(new Error('Unable to read the selected image.'));
+    reader.readAsDataURL(file);
+  });
+}
 
 function WorkspacePaymentForm({ purchaseId, onComplete, initialData }: { purchaseId: string; onComplete: () => void; initialData: WorkspaceData }) {
   const stripe = useStripe();
@@ -138,10 +149,11 @@ export function WorkspaceApplication({
   async function openTask(id: string) {
     if(busy) return;
     setHistoryLoading(true);setError('');
-    try {const saved=await getMessagesForChat(id);setMessages(saved);setConversationId(id);setPrompt('');setTaskAttachments([]);window.history.replaceState(null,'',`/workspace?task=${id}`);}catch{setError('Unable to reopen task.');}finally{setHistoryLoading(false);}
+    try {const saved=await getMessagesForChat(id);setMessages(saved);setConversationId(id);setPrompt('');setTaskAttachments([]);setTaskImages([]);window.history.replaceState(null,'',`/workspace?task=${id}`);}catch{setError('Unable to reopen task.');}finally{setHistoryLoading(false);}
   }
   const [prompt, setPrompt] = useState('');
   const [taskAttachments,setTaskAttachments]=useState<{name:string;content:string}[]>([]);
+  const [taskImages,setTaskImages]=useState<WorkspaceImage[]>([]);
   const [readingFiles,setReadingFiles]=useState(false);
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState('');
@@ -153,7 +165,7 @@ export function WorkspaceApplication({
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
   useEffect(()=>{
-    const deleted=(event:Event)=>{if((event as CustomEvent<string>).detail===conversationId){setMessages([]);setPrompt('');setTaskAttachments([]);setConversationId(crypto.randomUUID());window.history.replaceState(null,'','/workspace');}};
+    const deleted=(event:Event)=>{if((event as CustomEvent<string>).detail===conversationId){setMessages([]);setPrompt('');setTaskAttachments([]);setTaskImages([]);setConversationId(crypto.randomUUID());window.history.replaceState(null,'','/workspace');}};
     window.addEventListener('conversation-deleted',deleted);return()=>window.removeEventListener('conversation-deleted',deleted);
   },[conversationId]);
   const stripePromise = useMemo(() => publishableKey ? loadStripe(publishableKey) : null, [publishableKey]);
@@ -211,7 +223,7 @@ export function WorkspaceApplication({
 
   async function sendTask(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    const text = [prompt.trim(),...taskAttachments.map(file=>`Attached file: ${file.name}\n${file.content}`)].filter(Boolean).join('\n\n');
+    const text = [prompt.trim(),...taskAttachments.map(file=>`Attached file: ${file.name}\n${file.content}`),...taskImages.map(image=>`Attached image: ${image.name}`)].filter(Boolean).join('\n\n');
     if(text.length>24000){setError('Keep your prompt and attached text below 24,000 characters.');return;}
     if (!text || busy || historyLoading || !conversationId || readingFiles) return;
     if (!isAuthenticated) {
@@ -235,7 +247,14 @@ export function WorkspaceApplication({
       const response = await fetch('/api/workspace', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ messages: requestMessages, conversationId }),
+        body: JSON.stringify({
+          messages: requestMessages,
+          conversationId,
+          images: taskImages.map(({ mimeType, dataUrl }) => ({
+            mimeType,
+            data: dataUrl.slice(dataUrl.indexOf(',') + 1),
+          })),
+        }),
       });
       const result = await response.json() as { answer?: string; answerId?: string; userMessageId?: string; balance?: number; error?: string };
       if (!response.ok) throw new Error(result.error || 'Unable to complete this Workspace task.');
@@ -245,7 +264,7 @@ export function WorkspaceApplication({
       setMessages([...optimistic.slice(0,-1),{...optimistic.at(-1)!,id:result.userMessageId}, { id:result.answerId, sender: 'ai', content: answer }]);
       setHistoryVersion(v=>v+1);
       window.history.replaceState(null,'',`/workspace?task=${conversationId}`);
-      setPrompt('');setTaskAttachments([]);
+      setPrompt('');setTaskAttachments([]);setTaskImages([]);
       setData((previous) => 'balance' in previous ? { ...previous, balance: nextBalance } : previous);
       void refreshData();
     } catch (failure) {
@@ -346,7 +365,7 @@ export function WorkspaceApplication({
               <h1>Build something useful.</h1>
               <p>Work through a task with One Fin AI. Completed tasks use credits from your Workspace balance.</p>
             </div>
-            <button className="workspace-secondary-button" type="button" disabled={busy || historyLoading} onClick={() => { setConversationId(crypto.randomUUID());setMessages([]);setPrompt('');setTaskAttachments([]);setError('');setNotice('');window.history.replaceState(null,'','/workspace'); }}>
+            <button className="workspace-secondary-button" type="button" disabled={busy || historyLoading} onClick={() => { setConversationId(crypto.randomUUID());setMessages([]);setPrompt('');setTaskAttachments([]);setTaskImages([]);setError('');setNotice('');window.history.replaceState(null,'','/workspace'); }}>
               <Plus size={16} /> New task
             </button>
           </section>
@@ -412,14 +431,23 @@ export function WorkspaceApplication({
                 {busy && <p className="workspace-task-pending" role="status">Working on your task…</p>}
               </div>
             )}
-            <div className="conversation-toolbar"><label>Attach text, Markdown, CSV or code<input type="file" multiple disabled={busy || readingFiles || historyLoading} accept=".txt,.md,.csv,.json,.js,.ts,.tsx,.py,.sql,.css,.html,.yaml,.yml" onChange={async event=>{
+            <div className="conversation-toolbar"><label>Attach images, text, Markdown, CSV or code<input type="file" multiple disabled={busy || readingFiles || historyLoading} accept="image/jpeg,image/png,image/webp,image/gif,.txt,.md,.csv,.json,.js,.ts,.tsx,.py,.sql,.css,.html,.yaml,.yml" onChange={async event=>{
               const files=Array.from(event.target.files||[]);event.target.value='';setReadingFiles(true);setError('');
-              try{const additions:{name:string;content:string}[]=[];let total=taskAttachments.reduce((n,file)=>n+file.content.length,0);
-                if(files.length+taskAttachments.length>5)throw new Error('Attach up to five text files.');
-                for(const file of files){if(!/\.(txt|md|csv|json|js|ts|tsx|py|sql|css|html|yaml|yml)$/i.test(file.name)||file.size>100000)throw new Error('Use supported text files of 100 KB or smaller.');const content=await file.text();if(content.includes('\u0000'))throw new Error('Binary files are not supported.');total+=content.length;if(total>20000)throw new Error('Attached text must be under 20,000 characters.');additions.push({name:file.name,content});}
-                setTaskAttachments(previous=>[...previous,...additions]);
+              try{const additions:{name:string;content:string}[]=[];const imageAdditions:WorkspaceImage[]=[];let total=taskAttachments.reduce((n,file)=>n+file.content.length,0);
+                if(files.length+taskAttachments.length+taskImages.length>5)throw new Error('Attach up to five files or images per task.');
+                let imageCount=taskImages.length;let imageBytes=taskImages.reduce((sum,image)=>sum+Math.floor((image.dataUrl.length-image.dataUrl.indexOf(',')-1)*3/4),0);
+                for(const file of files){
+                  if(file.type.startsWith('image/')){
+                    if(!supportedImageTypes.includes(file.type as typeof supportedImageTypes[number])||file.size>2*1024*1024||imageCount>=3||imageBytes+file.size>3.5*1024*1024)throw new Error('Use up to three PNG, JPEG, WebP, or GIF images, 2 MB each and 3.5 MB total.');
+                    imageAdditions.push({name:file.name,mimeType:file.type as WorkspaceImage['mimeType'],dataUrl:await readImageDataUrl(file)});imageCount++;imageBytes+=file.size;continue;
+                  }
+                  if(!/\.(txt|md|csv|json|js|ts|tsx|py|sql|css|html|yaml|yml)$/i.test(file.name)||file.size>100000)throw new Error('Use supported text files of 100 KB or smaller. PDFs and other binary documents are not supported yet.');
+                  const content=await file.text();if(content.includes('\u0000'))throw new Error('Binary files are not supported.');total+=content.length;if(total>20000)throw new Error('Attached text must be under 20,000 characters.');additions.push({name:file.name,content});
+                }
+                setTaskAttachments(previous=>[...previous,...additions]);setTaskImages(previous=>[...previous,...imageAdditions]);
               }catch(failure){setError(failure instanceof Error?failure.message:'Unable to read files.');}finally{setReadingFiles(false);}
-            }}/></label>{readingFiles&&<span role="status">Reading files?</span>}{taskAttachments.map((file,index)=><button type="button" key={index} disabled={busy} onClick={()=>setTaskAttachments(items=>items.filter((_,i)=>i!==index))} aria-label={`Remove ${file.name}`}>{file.name} ?</button>)}</div>
+            }}/></label>{readingFiles&&<span role="status">Reading files…</span>}{taskAttachments.map((file,index)=><button type="button" key={index} disabled={busy} onClick={()=>setTaskAttachments(items=>items.filter((_,i)=>i!==index))} aria-label={`Remove ${file.name}`}>{file.name}</button>)}</div>
+            {taskImages.length>0&&<div className="workspace-image-attachments" aria-label="Attached images">{taskImages.map((image,index)=><span className="workspace-image-attachment" key={`${image.name}-${index}`}><Image src={image.dataUrl} alt={`Preview of ${image.name}`} width={96} height={72} unoptimized/><span>{image.name}</span><button type="button" disabled={busy} onClick={()=>setTaskImages(items=>items.filter((_,i)=>i!==index))} aria-label={`Remove ${image.name}`}><X size={14}/></button></span>)}</div>}
             <form className="workspace-task-form" onSubmit={sendTask}>
               <label className="sr-only" htmlFor="workspace-task-prompt">Describe a Workspace task</label>
               <textarea
@@ -434,7 +462,7 @@ export function WorkspaceApplication({
               />
               <div className="workspace-task-form-footer">
                 <span>{prompt.length}/4000 characters · Shift + Enter for a new line</span>
-                <button className="workspace-primary-button" type="submit" disabled={busy || readingFiles || historyLoading || (!prompt.trim() && !taskAttachments.length)}>
+                <button className="workspace-primary-button" type="submit" disabled={busy || readingFiles || historyLoading || (!prompt.trim() && !taskAttachments.length && !taskImages.length)}>
                   {busy ? 'Working…' : isAuthenticated ? 'Run task' : 'Sign in to run'} <ArrowUp size={16} />
                 </button>
               </div>
