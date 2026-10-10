@@ -318,5 +318,4 @@ export function VisitorWorkspace({ landing = false }: { landing?: boolean }) {
         </main>
       </div>
     );
-  }
 }
