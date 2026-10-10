@@ -2,7 +2,7 @@ begin;
 create table billing_enrollments (
  user_id uuid primary key references app_users(id) on delete cascade,
  request_id uuid not null unique default gen_random_uuid(),
- plan_key text not null check(plan_key in ('daily','weekly','monthly','yearly','custom')),
+ plan_key text not null check(plan_key in ('daily','weekly','monthly','yearly')),
  mode text not null check(mode in ('trial','paid')),
  setup_id text, subscription_id text, price_id text,
  trial_end bigint, consent_at timestamptz, created_at timestamptz not null default now()
