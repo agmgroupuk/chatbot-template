@@ -3,7 +3,6 @@ import { redirect } from 'next/navigation';
 import { WorkspaceCreditCheckout } from '@/components/workspace-credit-checkout';
 import { currentUser } from '@/lib/session';
 import { workspaceCreditPack } from '@/lib/workspace-credit-pack';
-import { sitePath } from '@/lib/site-url';
 
 export const metadata = {
   title: 'Add Workspace credits | One Fin Solution',
@@ -12,7 +11,7 @@ export const metadata = {
 
 export default async function CheckoutCreditsPage() {
   const user = await currentUser();
-  if (!user) redirect(sitePath('/sign-in'));
+  if (!user) redirect('/sign-in');
 
   const pack = workspaceCreditPack;
   const publishableKey = process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY || '';
@@ -29,7 +28,7 @@ export default async function CheckoutCreditsPage() {
       <p className="muted">Signed in as {user.email}</p>
       <WorkspaceCreditCheckout mode="credits" publishableKey={publishableKey} />
       <p>
-        <Link className="text-link" href={sitePath('/workspace?billing=cancelled')}>
+        <Link className="text-link" href="/workspace?billing=cancelled">
           Cancel and return to Workspace
         </Link>
       </p>

@@ -28,8 +28,7 @@ See `.env.example`. Configure actual values in Railway or ignored `.env.local`, 
 - Mail: `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASSWORD`, `EMAIL_FROM` with a verified sender.
 - AI: `AI_PROVIDER=openai`, `OPENAI_MODEL=gpt-4.1-mini`, `OPENAI_API_KEY`; alternatively `AI_PROVIDER=xai`, `XAI_MODEL=grok-4.3`, `XAI_API_KEY`.
 - Billing: `BILLING_PROVIDER=stripe`, `STRIPE_MODE=test`, `STRIPE_SECRET_KEY`, `STRIPE_EXPECTED_ACCOUNT_ID`, `STRIPE_WEBHOOK_SECRET`, `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY`, `STRIPE_CREDIT_PLANS`.
-- Checkout domain and shared auth: `NEXT_PUBLIC_CHECKOUT_URL=https://pay.onefinsolution.online`, `SESSION_COOKIE_DOMAIN=.onefinsolution.online`.
-- Workspace credits: `SIGNUP_CREDITS=10`, `WORKSPACE_CREDIT_COST=1`.
+- Checkout domain and shared auth: `- Workspace credits: `SIGNUP_CREDITS=10`, `WORKSPACE_CREDIT_COST=1`.
 
 Opaque sessions require no JWT/signing secret. No Supabase, Update.dev, or Anthropic configuration is required. Never supply the Sanbay account's credentials.
 

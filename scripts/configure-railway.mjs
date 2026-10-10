@@ -29,8 +29,8 @@ if (check.status !== 0 || JSON.parse(check.stdout).id !== project) throw new Err
 const optional=['OPENAI_API_KEY','XAI_API_KEY','SMTP_HOST','SMTP_PORT','SMTP_USER','SMTP_PASSWORD','EMAIL_FROM'];
 const values = { ...Object.fromEntries([...required,...optional].filter(name=>process.env[name]).map(name => [name,process.env[name]])),
   AI_PROVIDER:process.env.AI_PROVIDER||'openai',OPENAI_MODEL:process.env.OPENAI_MODEL||'gpt-4.1-mini',XAI_MODEL:process.env.XAI_MODEL||'grok-4.3',
-  NEXT_PUBLIC_SITE_URL:'https://onefinsolution.online', NEXT_PUBLIC_CHECKOUT_URL:'https://pay.onefinsolution.online',
-  SESSION_COOKIE_DOMAIN:'.onefinsolution.online', STRIPE_MODE:'test', BILLING_PROVIDER:'stripe', PORT:'8080',
+  NEXT_PUBLIC_SITE_URL:'https://onefinsolution.online',
+  STRIPE_MODE:'test', BILLING_PROVIDER:'stripe', PORT:'8080',
   SIGNUP_CREDITS: process.env.SIGNUP_CREDITS || '10',
   WORKSPACE_CREDIT_COST: process.env.WORKSPACE_CREDIT_COST || '1',
 };

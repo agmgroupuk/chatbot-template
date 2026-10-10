@@ -12,7 +12,6 @@ import { BillingCard } from '@/components/billing-card';
 import { PlanSwitcher } from '@/components/plan-switcher';
 import { PlanManagement } from '@/components/plan-management';
 import { BillingStatusBanner } from '@/components/billing-status-banner';
-import { sitePath } from '@/lib/site-url';
 
 function planTitle(priceId: string) {
   const key = Object.entries(planIds.prices).find(([, id]) => id === priceId)?.[0];
@@ -26,7 +25,7 @@ export default async function Billing({
 }) {
   const params = await searchParams;
   const user = await currentUser();
-  if (!user) redirect(sitePath('/sign-in'));
+  if (!user) redirect('/sign-in');
 
   const [subscriptions, settings] = await Promise.all([
     ownedQuery(

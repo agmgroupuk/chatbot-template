@@ -31,13 +31,7 @@ test('production redirects cannot silently fall back to localhost or HTTP', () =
     assert.throws(() => load('lib/site-url.ts', { NODE_ENV: 'production', NEXT_PUBLIC_SITE_URL: value }).siteUrl());
   }
   assert.equal(load('lib/site-url.ts', { NODE_ENV: 'production', NEXT_PUBLIC_SITE_URL: 'https://onefinsolution.online/path' }).siteUrl(), 'https://onefinsolution.online');
-});
-test('production checkout URLs stay on the configured payment subdomain', () => {
-  const env = { NODE_ENV: 'production', NEXT_PUBLIC_SITE_URL: 'https://onefinsolution.online' };
-  assert.equal(load('lib/site-url.ts', { ...env, NEXT_PUBLIC_CHECKOUT_URL: 'https://pay.onefinsolution.online' }).checkoutUrl(), 'https://pay.onefinsolution.online');
-  for (const value of ['http://pay.onefinsolution.online', 'https://onefinsolution.online', 'https://evil.example']) {
-    assert.throws(() => load('lib/site-url.ts', { ...env, NEXT_PUBLIC_CHECKOUT_URL: value }).checkoutUrl(), /NEXT_PUBLIC_CHECKOUT_URL/);
-  }
+  assert.equal(load('lib/site-url.ts', { NODE_ENV: 'production', NEXT_PUBLIC_SITE_URL: 'https://onefinsolution.online' }).sitePath('/subscribe'), 'https://onefinsolution.online/subscribe');
 });
 test('Workspace credit prices reject subscription plans and use the Workspace-only task cost', () => {
   const credits = load('lib/credit-config.ts', {

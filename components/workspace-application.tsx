@@ -10,7 +10,6 @@ import { ConversationTools, exportConversation } from './conversation-tools';
 import { MessageContent } from './message-content';
 import { getMessagesForChat } from '@/app/actions';
 import { workspaceCreditPack } from '@/lib/workspace-credit-pack';
-import { publicCheckoutPath } from '@/lib/site-url';
 
 type WorkspaceData =
   | {
@@ -246,7 +245,7 @@ export function WorkspaceApplication({
     }
     setError('');
     setNotice('');
-    location.assign(publicCheckoutPath('/checkout/credits'));
+    location.assign('/checkout/credits');
   }
 
   function beginCardSetup() {
@@ -256,7 +255,7 @@ export function WorkspaceApplication({
     }
     setError('');
     setNotice('');
-    location.assign(publicCheckoutPath('/checkout/card'));
+    location.assign('/checkout/card');
   }
 
   const dateTime = (value: string) => new Date(value).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });

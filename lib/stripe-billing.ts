@@ -7,7 +7,7 @@ import { query, transaction } from './db';
 import { approvedPrice, managedPlan } from './subscription-catalog';
 import { findPlan } from './plans';
 import { fulfillStripeEvent } from './stripe-fulfillment';
-import { checkoutUrl } from './site-url';
+import { siteUrl } from './site-url';
 import { expectedStripeLivemode, stripeObjectMatchesMode } from './billing-environment';
 import type { Price, Product, ProductWithPrices, Subscription } from '@/types/billing';
 
@@ -67,7 +67,7 @@ async function checkout(priceId: string) {
   const price=await stripe.prices.retrieve(priceId);
   const plan=managedPlan(price);
   if(!plan) throw new Error('This legacy price is no longer sold. Choose a current plan.');
-  return `${checkoutUrl()}/subscribe?plan=${plan.key}&mode=paid`;
+  return `${siteUrl()}/subscribe?plan=${plan.key}&mode=paid`;
 }
 
 // The same response contract keeps existing pricing and subscription components intact.

@@ -8,15 +8,10 @@ export const partial = "chatbot-template";
 export default defineRailway(() => {
   const chatbot_template = service("chatbot-template", {
     source: { type: "github", repo: "agmgroupuk/chatbot-template", branch: "main" },
-    domains: [
-      { domain: "onefinsolution.online", port: 8080 },
-      { domain: "pay.onefinsolution.online", port: 8080 },
-    ],
+    domains: [{ domain: "onefinsolution.online", port: 8080 }],
     env: {
       DATABASE_URL: preserve(),
       NEXT_PUBLIC_SITE_URL: preserve(),
-      NEXT_PUBLIC_CHECKOUT_URL: preserve(),
-      SESSION_COOKIE_DOMAIN: preserve(),
       PORT: preserve(),
       BILLING_PROVIDER: "stripe",
       STRIPE_MODE: "test",

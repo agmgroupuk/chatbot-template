@@ -3,7 +3,6 @@
 import { useEffect } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { checkoutStatusAction } from '@/app/billing-actions';
-import { publicSitePath } from '@/lib/site-url';
 
 export function CheckoutSuccessHandler() {
   const params = useSearchParams();
@@ -19,16 +18,16 @@ export function CheckoutSuccessHandler() {
         const result = await checkoutStatusAction(sessionId);
         if (cancelled) return;
         if (result === 'paid') {
-          router.replace(publicSitePath('/dashboard/billing?billing=success'));
+          router.replace('/dashboard/billing?billing=success');
           return;
         }
         if (result === 'pending') {
-          router.replace(publicSitePath('/dashboard/billing?billing=action_required'));
+          router.replace('/dashboard/billing?billing=action_required');
           return;
         }
-        router.replace(publicSitePath('/pricing?billing=failed'));
+        router.replace('/pricing?billing=failed');
       } catch {
-        if (!cancelled) router.replace(publicSitePath('/pricing?billing=failed'));
+        if (!cancelled) router.replace('/pricing?billing=failed');
       }
     })();
 

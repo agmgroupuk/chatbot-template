@@ -4,7 +4,6 @@ import { PageHeading } from '@/components/page-heading';
 import { BillingStatusBanner } from '@/components/billing-status-banner';
 import { plans, priceLabel } from '@/lib/plans';
 import { billingEnvironment } from '@/lib/billing-environment';
-import { checkoutUrl } from '@/lib/site-url';
 
 export const metadata = {
   title: 'AI Chat Plans and Workspace Credits',
@@ -24,7 +23,6 @@ export const metadata = {
 };
 
 export default function Pricing() {
-  const checkout = checkoutUrl();
   const mode = billingEnvironment();
 
   return (
@@ -60,19 +58,20 @@ export default function Pricing() {
                 <li>Cancel before the trial ends to avoid the first charge</li>
                 <li>Switch plans later; the change applies at next renewal</li>
               </ul>
-              <a className="button" href={`${checkout}/subscribe?plan=${plan.key}&mode=trial`}>
+              <Link className="button" href={`/subscribe?plan=${plan.key}&mode=trial`}>
                 Start free trial
-              </a>
-              <a className="text-link" href={`${checkout}/subscribe?plan=${plan.key}&mode=paid`}>
+              </Link>
+              <Link className="text-link" href={`/subscribe?plan=${plan.key}&mode=paid`}>
                 Or subscribe now
-              </a>
+              </Link>
             </article>
           ))}
       </section>
       <section className="panel">
         <h2>Workspace credits (separate)</h2>
         <p>
-          Workspace AI uses a separate one-time credit pack. Buy credits when you need them from Workspace settings — checkout opens on the secure payment subdomain.
+          Workspace AI uses a separate one-time credit pack. Buy credits when you need them from Workspace settings on
+          this same site.
         </p>
         <Link className="button secondary" href="/workspace">
           Open Workspace

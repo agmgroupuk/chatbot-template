@@ -22,8 +22,8 @@ function CreditPaymentForm({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const successUrl = publicSitePath(`/workspace?purchase=${encodeURIComponent(purchaseId)}&billing=success`);
-  const failedUrl = publicSitePath('/workspace?billing=failed');
-  const cancelledUrl = publicSitePath('/workspace?billing=cancelled');
+  const failedUrl = '/workspace?billing=failed';
+  const cancelledUrl = '/workspace?billing=cancelled';
 
   async function onSubmit(event: React.FormEvent) {
     event.preventDefault();
@@ -85,7 +85,7 @@ function CardSetupForm({ clientSecret }: { clientSecret: string }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const successUrl = publicSitePath('/workspace?billing=card_saved');
-  const cancelledUrl = publicSitePath('/workspace?billing=cancelled');
+  const cancelledUrl = '/workspace?billing=cancelled';
 
   async function onSubmit(event: React.FormEvent) {
     event.preventDefault();
@@ -142,7 +142,7 @@ export function WorkspaceCreditCheckout({
   const [error, setError] = useState('');
   const [payment, setPayment] = useState<{ purchaseId: string; clientSecret: string } | null>(null);
   const [setupSecret, setSetupSecret] = useState<string | null>(null);
-  const cancelledUrl = publicSitePath('/workspace?billing=cancelled');
+  const cancelledUrl = '/workspace?billing=cancelled';
 
   async function startCredits() {
     setBusy(true);

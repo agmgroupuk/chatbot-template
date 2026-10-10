@@ -13,7 +13,7 @@ Personal memberships and trials grant access exclusively to the homepage chat du
 
 ## Payment flow
 
-`/subscribe` uses Stripe Payment Element at `https://pay.onefinsolution.online`. The shared production session cookie allows an authenticated account session across the checkout subdomain and the main site. A SetupIntent saves a card for off-session billing. The server checks authenticated customer ownership, successful setup, card type, and the selected server-approved price before creating a subscription. Consent and trial eligibility are persisted. There is one trial per account and card fingerprint across all plans. Only a keyed fingerprint hash is stored, never card numbers or CVC.
+`/subscribe` uses Stripe Payment Element at `https://onefinsolution.online`. The shared production session cookie allows an authenticated account session across the main-domain checkout paths and the main site. A SetupIntent saves a card for off-session billing. The server checks authenticated customer ownership, successful setup, card type, and the selected server-approved price before creating a subscription. Consent and trial eligibility are persisted. There is one trial per account and card fingerprint across all plans. Only a keyed fingerprint hash is stored, never card numbers or CVC.
 
 Enrollment request IDs and Stripe idempotency keys protect retries. Trial claims are committed before subscription creation so an ambiguous timeout cannot free the trial for another account. Retrying recovers the subscription through enrollment metadata. Requests unresolved after 23 hours require support review instead of risking a new charge after Stripe's idempotency window.
 
@@ -39,8 +39,7 @@ Runtime prerequisites:
 - `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY`: matching Sandbox publishable key, required by the custom Stripe Elements checkout.
 - `STRIPE_EXPECTED_ACCOUNT_ID=acct_1UOhth9TlJVLQeem`, `STRIPE_MODE=test`.
 - `STRIPE_WEBHOOK_SECRET`: signing secret for the One Fin webhook.
-- `NEXT_PUBLIC_CHECKOUT_URL=https://pay.onefinsolution.online` and `SESSION_COOKIE_DOMAIN=.onefinsolution.online`.
-- `WORKSPACE_SIGNING_KEY`: stable random 32+ character value.
+- `- `WORKSPACE_SIGNING_KEY`: stable random 32+ character value.
 - `OPENAI_API_KEY` or configured `XAI_API_KEY` for real responses.
 - `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASSWORD`, `EMAIL_FROM` for account and billing email.
 

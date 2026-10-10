@@ -2,7 +2,6 @@ import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { WorkspaceCreditCheckout } from '@/components/workspace-credit-checkout';
 import { currentUser } from '@/lib/session';
-import { sitePath } from '@/lib/site-url';
 
 export const metadata = {
   title: 'Workspace payment method | One Fin Solution',
@@ -11,7 +10,7 @@ export const metadata = {
 
 export default async function CheckoutCardPage() {
   const user = await currentUser();
-  if (!user) redirect(sitePath('/sign-in'));
+  if (!user) redirect('/sign-in');
 
   const publishableKey = process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY || '';
   if (!publishableKey) throw new Error('NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY is required.');
@@ -27,7 +26,7 @@ export default async function CheckoutCardPage() {
       <p className="muted">Signed in as {user.email}</p>
       <WorkspaceCreditCheckout mode="card" publishableKey={publishableKey} />
       <p>
-        <Link className="text-link" href={sitePath('/workspace?billing=cancelled')}>
+        <Link className="text-link" href="/workspace?billing=cancelled">
           Cancel and return to Workspace
         </Link>
       </p>

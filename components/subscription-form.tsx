@@ -5,7 +5,7 @@ import { Elements, PaymentElement, useStripe, useElements } from '@stripe/react-
 import Link from 'next/link';
 import { prepareSubscription, finishSubscription } from '@/app/subscription-actions';
 import { findPlan, priceLabel } from '@/lib/plans';
-import { publicCheckoutPath, publicSitePath } from '@/lib/site-url';
+import { publicSitePath } from '@/lib/site-url';
 
 function CardForm({
   planKey,
@@ -26,7 +26,7 @@ function CardForm({
   const [error, setError] = useState('');
   const [consent, setConsent] = useState(false);
   const plan = findPlan(planKey);
-  const setupReturnUrl = publicCheckoutPath(`/subscribe?plan=${encodeURIComponent(planKey)}&mode=${mode}`);
+  const setupReturnUrl = publicSitePath(`/subscribe?plan=${encodeURIComponent(planKey)}&mode=${mode}`);
 
   async function submit(event: React.FormEvent) {
     event.preventDefault();
@@ -133,9 +133,9 @@ export function SubscriptionForm({
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState('');
-  const billingUrl = publicSitePath('/dashboard/billing?billing=success');
-  const cancelledUrl = publicSitePath('/pricing?billing=cancelled');
-  const workspaceUrl = publicSitePath('/workspace');
+  const billingUrl = '/dashboard/billing?billing=success';
+  const cancelledUrl = '/pricing?billing=cancelled';
+  const workspaceUrl = '/workspace';
 
   async function complete(id: string) {
     const result = await finishSubscription(id, true);
