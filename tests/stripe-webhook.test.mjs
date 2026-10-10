@@ -16,11 +16,13 @@ function load(file, dependencies, env = {}) {
 const secret = 'whsec_unit_test_only';
 const stripe = new Stripe('sk_test_unit_test_only');
 test('webhook rejects missing, modified, stale signatures and every Live Mode event', async () => {
-  let fulfilled = 0;
+  const forwarded = [];
+  const env = { STRIPE_MODE: 'test', STRIPE_SECRET_KEY: 'sk_test_unit_test_only', STRIPE_WEBHOOK_SECRET: secret };
   const { POST } = load('app/api/stripe/webhook/route.ts', {
     '@/lib/stripe': { stripeClient: () => stripe, verifiedStripe: async () => stripe },
-    '@/lib/stripe-fulfillment': { fulfillStripeEvent: async () => { fulfilled++; } },
-  }, { STRIPE_SECRET_KEY: 'sk_test_unit_test_only', STRIPE_WEBHOOK_SECRET: secret });
+    '@/lib/stripe-fulfillment': { fulfillStripeEvent: async (_stripe, event) => { forwarded.push(event.type); } },
+    '@/lib/billing-environment': { stripeObjectMatchesMode: livemode => livemode === (env.STRIPE_MODE === 'live') },
+  }, env);
   const payload = JSON.stringify({ id: 'evt_test', type: 'invoice.paid', livemode: false, data: { object: { id: 'in_test' } } });
   const sign = (value, timestamp) => stripe.webhooks.generateTestHeaderString({ payload: value, secret, timestamp });
   for (const [body, signature] of [[payload, ''], [payload + ' ', sign(payload)], [payload, sign(payload, 1)]]) {
@@ -29,14 +31,20 @@ test('webhook rejects missing, modified, stale signatures and every Live Mode ev
   }
   const live = payload.replace('"livemode":false','"livemode":true');
   assert.equal((await POST(new Request('https://example.test/api/stripe/webhook', { method: 'POST', body: live, headers: { 'stripe-signature': sign(live) } }))).status,400);
-  assert.equal(fulfilled,0);
-  assert.equal((await POST(new Request('https://example.test/api/stripe/webhook', { method: 'POST', body: payload, headers: { 'stripe-signature': sign(payload) } }))).status,200);
-  assert.equal(fulfilled,1);
+  for (const type of ['invoice.paid','invoice.payment_failed','invoice.payment_action_required']) {
+    const event = JSON.stringify({ id: `evt_${type}`, type, livemode: false, data: { object: { id: 'in_test' } } });
+    assert.equal((await POST(new Request('https://example.test/api/stripe/webhook', { method: 'POST', body: event, headers: { 'stripe-signature': sign(event) } }))).status,200);
+  }
+  assert.deepEqual(forwarded, ['invoice.paid','invoice.payment_failed','invoice.payment_action_required']);
+  env.STRIPE_MODE = 'live';
+  assert.equal((await POST(new Request('https://example.test/api/stripe/webhook', { method: 'POST', body: live, headers: { 'stripe-signature': sign(live) } }))).status,200);
+  assert.deepEqual(forwarded.at(-1), 'invoice.paid');
 });
 test('only paid standalone packs allocate Workspace credits; subscription invoices grant chat access only', async () => {
   const grants = new Map();
   const { fulfillStripeEvent } = load('lib/stripe-fulfillment.ts', {
     './subscription-catalog':{managedPlan:()=>undefined},
+    './billing-environment':{stripeObjectMatchesMode:livemode=>!livemode},
     './billing-notices':{queueBillingNotice:async()=>{}},
     './db': {query:async (sql,values)=>{
       if(sql.startsWith('select user_id')) return [{user_id:'user-1'}];
@@ -65,5 +73,5 @@ test('only paid standalone packs allocate Workspace credits; subscription invoic
   assert.equal(grants.has('subscription:sub_test:invoice:in_test:li_invoice'),false);
   await fulfillStripeEvent(api,event('invoice.payment_failed'));
   assert.equal(grants.size,1);
-  await assert.rejects(fulfillStripeEvent(api,{ ...event('invoice.paid'),livemode:true }),/Live events/);
+  await assert.rejects(fulfillStripeEvent(api,{ ...event('invoice.paid'),livemode:true }),/Stripe event mode does not match/);
 });

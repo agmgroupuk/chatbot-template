@@ -11,6 +11,9 @@ const stripe = new Stripe(key);
 const [account, balance] = await Promise.all([stripe.accounts.retrieve(null), stripe.balance.retrieve()]);
 if (account.id !== process.env.STRIPE_EXPECTED_ACCOUNT_ID || balance.livemode) throw new Error('Wrong Stripe account or mode.');
 const catalog = JSON.parse(readFileSync(new URL('../billing/test-catalog.json', import.meta.url), 'utf8'));
+if (catalog.products.some(product => product.prices.some(price => price.interval))) {
+  throw new Error('This provisioner accepts Workspace one-time credit packs only. Provision chat subscription prices separately.');
+}
 console.log(JSON.stringify({ account: account.id, mode: 'test', apply, products: catalog.products }, null, 2));
 if (!apply) process.exit(0);
 
@@ -30,18 +33,18 @@ for (const definition of catalog.products) {
     if (existing.data.length > 1) throw new Error(`Duplicate managed price: ${lookup}`);
     const value = existing.data[0] || await stripe.prices.create({ product: product.id, unit_amount: price.amount, currency: 'usd', lookup_key: lookup,
       ...(price.interval ? { recurring: { interval: price.interval } } : {}),
-      metadata: { app: 'chatbot-template', item_code: price.code, credits: String(price.credits), catalog_version: '1' },
+      metadata: { app: 'chatbot-template', business_system: 'workspace_credits', item_code: price.code, credits: String(price.credits), catalog_version: '1' },
     }, { idempotencyKey: `chatbot-test-price-v1:${price.code}` });
     if (value.livemode || value.product !== product.id || value.unit_amount !== price.amount || value.currency !== 'usd' ||
       (value.recurring?.interval || null) !== (price.interval || null) || value.metadata.credits !== String(price.credits)) throw new Error(`Managed price differs: ${lookup}`);
-    plans[value.id] = { credits: price.credits, kind: price.interval ? 'subscription' : 'pack' };
+    plans[value.id] = { credits: price.credits, kind: 'pack' };
     ids[price.code] = { productId: product.id, priceId: value.id, amount: price.amount, currency: 'usd', interval: price.interval || null, credits: price.credits };
   }
 }
 const site = new URL(process.env.NEXT_PUBLIC_SITE_URL || 'https://onefinsolution.online');
 if (site.protocol !== 'https:') throw new Error('Webhook requires an HTTPS site URL.');
 const url = `${site.origin}/api/stripe/webhook`;
-const events = ['payment_intent.succeeded', 'payment_intent.payment_failed', 'payment_intent.canceled', 'invoice.paid', 'checkout.session.completed', 'checkout.session.async_payment_succeeded', 'checkout.session.async_payment_failed', 'customer.subscription.created', 'customer.subscription.updated', 'customer.subscription.deleted', 'customer.subscription.trial_will_end'];
+const events = ['payment_intent.succeeded', 'payment_intent.payment_failed', 'payment_intent.canceled', 'invoice.paid', 'invoice.payment_failed', 'invoice.payment_action_required', 'checkout.session.completed', 'checkout.session.async_payment_succeeded', 'checkout.session.async_payment_failed', 'customer.subscription.created', 'customer.subscription.updated', 'customer.subscription.deleted', 'customer.subscription.trial_will_end'];
 const endpoints = await stripe.webhookEndpoints.list({ limit: 100 });
 let endpoint = endpoints.data.find(endpoint => endpoint.url === url);
 if (endpoint) {

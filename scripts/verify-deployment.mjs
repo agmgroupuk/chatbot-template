@@ -38,13 +38,13 @@ try {
  await page.goto(origin);await page.locator('textarea').fill('Temporary deployment verification chat.');await page.getByRole('button',{name:'Submit prompt'}).click();await expect(page).toHaveURL(/\/c\/[0-9a-f-]+/,{timeout:30000});
  await expect(page.getByText('Temporary deployment verification chat.',{exact:true})).toBeVisible();
  await page.reload();await expect(page.getByText('Temporary deployment verification chat.',{exact:true})).toBeVisible();
- const authCookies=await context.cookies();const oldSession=authCookies.find(cookie=>cookie.name==='__Host-onefin-session');expect(oldSession.httpOnly).toBe(true);expect(oldSession.secure).toBe(true);expect(oldSession.sameSite).toBe('Lax');
+ const authCookies=await context.cookies();const oldSession=authCookies.find(cookie=>cookie.name==='__Secure-onefin-session');expect(oldSession.httpOnly).toBe(true);expect(oldSession.secure).toBe(true);expect(oldSession.sameSite).toBe('Lax');expect(oldSession.domain).toContain('onefinsolution.online');
  const reset=randomBytes(32).toString('base64url'),resetHash=createHash('sha256').update(reset).digest('hex');
  sql(`insert into auth_tokens(token_hash,user_id,purpose,expires_at) values('${resetHash}','${id}','reset',now()+interval '30 minutes');`);
  await page.goto(`${origin}/auth/callback?purpose=reset&token=${reset}`);await expect(page).toHaveURL(`${origin}/reset-password`);
  await page.locator('[name=password]').fill(nextPassword);await page.locator('[name=confirmPassword]').fill(nextPassword);await page.getByRole('button',{name:'Update password'}).click();await expect(page).toHaveURL(/sign-in/,{timeout:30000});
  const stale=await browser.newContext();await stale.addCookies([oldSession]);const stalePage=await stale.newPage();await stalePage.goto(`${origin}/account`);await expect(stalePage).toHaveURL(/sign-in/);await stale.close();
- await login(nextPassword);await expect(page).toHaveURL(`${origin}/`,{timeout:30000});await page.goto(`${origin}/account`);await page.getByRole('button',{name:'Log out',exact:true}).click();await expect(page).toHaveURL(/sign-in/,{timeout:30000});expect((await context.cookies()).some(cookie=>cookie.name==='__Host-onefin-session')).toBe(false);await page.goto(`${origin}/account`);await expect(page).toHaveURL(/sign-in/);
+ await login(nextPassword);await expect(page).toHaveURL(`${origin}/`,{timeout:30000});await page.goto(`${origin}/account`);await page.getByRole('button',{name:'Log out',exact:true}).click();await expect(page).toHaveURL(/sign-in/,{timeout:30000});expect((await context.cookies()).some(cookie=>cookie.name==='__Secure-onefin-session')).toBe(false);await page.goto(`${origin}/account`);await expect(page).toHaveURL(/sign-in/);
  await page.setViewportSize({width:375,height:812});await page.goto(origin);expect(await page.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth)).toBe(true);
  await page.goto(`${origin}/about`);await expect(page.getByText('0115569007686',{exact:true})).toBeVisible();
  expect(errors).toEqual([]);

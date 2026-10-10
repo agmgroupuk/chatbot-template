@@ -39,7 +39,7 @@ test('native authentication signs users in without email verification, hashes pa
   await assert.rejects(auth.consumeVerification(verification),/expired/);
   assert.equal(await auth.authenticate(user.email,'first-secure-password'),user.id);
   const jar=new Map();
-  const sessionModule=load('lib/session.ts',{'./password':password,'./db':{query:async(sql,args)=>(await db.query(sql,args)).rows},'next/headers':{cookies:async()=>({get:name=>jar.has(name)?{value:jar.get(name).value}:undefined,set:(name,value,options)=>options.maxAge===0?jar.delete(name):jar.set(name,{value,options}),delete:name=>jar.delete(name)})},react:{cache:fn=>fn}});
+  const sessionModule=load('lib/session.ts',{'./password':password,'./session-cookie':{sessionCookie:'onefin-session',legacySessionCookie:null,sessionCookieOptions:maxAge=>({httpOnly:true,secure:false,sameSite:'lax',path:'/',maxAge})},'./db':{query:async(sql,args)=>(await db.query(sql,args)).rows},'next/headers':{cookies:async()=>({get:name=>jar.has(name)?{value:jar.get(name).value}:undefined,set:(name,value,options)=>options.maxAge===0?jar.delete(name):jar.set(name,{value,options}),delete:name=>jar.delete(name)})},react:{cache:fn=>fn}});
   await sessionModule.createSession(user.id);
   const savedCookie=jar.get(sessionModule.sessionCookie);
   assert.equal(savedCookie.options.httpOnly,true); assert.equal(savedCookie.options.sameSite,'lax');

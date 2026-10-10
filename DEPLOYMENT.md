@@ -27,9 +27,9 @@ See `.env.example`. Configure actual values in Railway or ignored `.env.local`, 
 - Existing infrastructure: `DATABASE_URL`, `NEXT_PUBLIC_SITE_URL`, `PORT` (Railway supplies it).
 - Mail: `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASSWORD`, `EMAIL_FROM` with a verified sender.
 - AI: `AI_PROVIDER=openai`, `OPENAI_MODEL=gpt-4.1-mini`, `OPENAI_API_KEY`; alternatively `AI_PROVIDER=xai`, `XAI_MODEL=grok-4.3`, `XAI_API_KEY`.
-- Billing: `BILLING_PROVIDER=stripe`, `STRIPE_MODE=test`, `STRIPE_SECRET_KEY`, `STRIPE_EXPECTED_ACCOUNT_ID`, `STRIPE_WEBHOOK_SECRET`, `STRIPE_CREDIT_PLANS`.
-- Workspace credits: `SIGNUP_CREDITS=10`, `WORKSPACE_CREDIT_COST=1`. `CHAT_CREDIT_COST` is accepted only as a legacy fallback for existing deployments; it does not affect homepage chat subscriptions.
-- Optional `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY` for future embedded Elements. Current hosted Checkout does not use a browser key.
+- Billing: `BILLING_PROVIDER=stripe`, `STRIPE_MODE=test`, `STRIPE_SECRET_KEY`, `STRIPE_EXPECTED_ACCOUNT_ID`, `STRIPE_WEBHOOK_SECRET`, `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY`, `STRIPE_CREDIT_PLANS`.
+- Checkout domain and shared auth: `NEXT_PUBLIC_CHECKOUT_URL=https://pay.onefinsolution.online`, `SESSION_COOKIE_DOMAIN=.onefinsolution.online`.
+- Workspace credits: `SIGNUP_CREDITS=10`, `WORKSPACE_CREDIT_COST=1`.
 
 Opaque sessions require no JWT/signing secret. No Supabase, Update.dev, or Anthropic configuration is required. Never supply the Sanbay account's credentials.
 
@@ -46,7 +46,7 @@ These initial USD test amounts are implementation defaults, not approved Live bu
 | Homepage chat plans | Daily $5, Weekly $13, Monthly $30, Yearly $249 | Subscription access to homepage chat only; no Workspace credits |
 | Workspace credit pack | $5 once | 50 Workspace credits; no chat subscription |
 
-`node scripts/provision-stripe.mjs` verifies the intended account and Test Mode before any write. Its default is dry-run; `--apply` creates only app-marked/idempotent Test products, prices and webhook. IDs go to `billing/stripe-test-ids.json`; a new signing secret goes only to ignored `.env.stripe-generated`. Existing unmanaged/mismatched objects fail closed. `node scripts/configure-railway.mjs --apply` transfers available configuration through stdin, suppressing values. No actual Stripe products or Price IDs have been created without the correct account credentials.
+`node scripts/provision-stripe.mjs` verifies the intended account and Test Mode before any write. Its default is dry-run; `--apply` creates only app-marked/idempotent Workspace one-time Test products, prices and webhook. Homepage chat recurring prices are managed separately. IDs go to `billing/stripe-test-ids.json`; a new signing secret goes only to ignored `.env.stripe-generated`. Existing unmanaged/mismatched objects fail closed. `node scripts/configure-railway.mjs --apply` requires a Test secret, matching Test publishable key, and the account/webhook/credit mapping before it can change Railway variables. It transfers values through stdin and suppresses secrets.
 
 The raw-body webhook `/api/stripe/webhook` verifies signatures, rejects Live events and grants only verified one-time Workspace credit-pack payments. Homepage chat subscriptions are processed separately and grant access only; they never create Workspace credit. Checkout reconciliation verifies the authenticated owner's Stripe customer and actual payment state. Stable references prevent duplicate credits. Subscription state is fetched from Stripe, not trusted from stale events. Plan changes take effect at renewal without proration. Cancellation preserves chat access through the paid period. Workspace packs and signup credits do not expire.
 
@@ -58,7 +58,7 @@ Commands: `npm ci`, `npm test`, `npm run typecheck`, `npm run lint`, `npm run bu
 
 Tests use actual PostgreSQL SQL through PGlite for native schema/RLS, atomic credits, auth confirmation/reset, expiry, hashing, session revocation, rate limits and concurrency. Stripe signature tests use real signature verification with mocked network fulfillment. Provider mocks do not establish real provider availability.
 
-After credentials arrive, test actual email receipt; signup/confirmation/signin/profile/logout/recovery; session persistence and guest protection; context CRUD and chat persistence; OpenAI/xAI successful and failed Workspace requests; paid/declined/cancelled Stripe Test credit-pack payments; duplicate/out-of-order webhooks; chat-subscription renewal/plan changes/cancellation; and separate Workspace credit fulfillment. Inspect Railway runtime logs afterwards. The custom domain serving HTTP 200 alone does not prove these integrations work.
+After credentials arrive, test actual email receipt; signup/signin/profile/logout/recovery; session persistence and guest protection; context CRUD and chat persistence; OpenAI/xAI successful and failed Workspace requests; paid/declined/cancelled Stripe Test credit-pack payments; duplicate/out-of-order webhooks; chat-subscription renewal/plan changes/cancellation; and separate Workspace credit fulfillment. Verify the checkout alias and cross-subdomain session on Railway. Inspect Railway runtime logs afterwards. A custom domain serving HTTP 200 alone does not prove these integrations work.
 
 No repository-owned YAML files exist; deployment uses TypeScript IaC. No extra YAML tooling is needed.
 
@@ -67,7 +67,7 @@ No repository-owned YAML files exist; deployment uses TypeScript IaC. No extra Y
 1. Approve exact business prices/credits and complete real Test end-to-end verification first.
 2. Use a separate Live environment/account data boundary; create corresponding Live products, prices and webhook. Never reuse Test IDs or customer/subscription records.
 3. Configure that Live account identity/key, webhook signing secret and exact Live Price-to-credit mapping.
-4. Explicitly change and review Test-only guards in `lib/stripe.ts`, `lib/billing-environment.ts`, webhook handling, checkout return validation, fulfillment and provisioning/configuration tools. Production NODE_ENV must never imply Live Mode.
+4. Set `STRIPE_MODE=live` only with explicit approval and matching Live keys, account ID, webhook secret, and Live Price mappings. Production NODE_ENV alone never implies Live Mode.
 5. Rebuild/deploy; verify a controlled real charge, signature enforcement, allowance assignment, renewal, cancellation, failure handling and reconciliation before public launch.
 
 Runtime dependencies audit clean. Seven high development-tool glob/lint findings remain; a forced incompatible downgrade is not used.

@@ -1,10 +1,9 @@
 'use server';
-import { currentUser, sessionCookie, destroySession } from '@/lib/session';
+import { currentUser, currentSessionToken, destroySession } from '@/lib/session';
 import { readPreferences, savePreferences, changePassword, revokeOtherSessions } from '@/lib/account-service';
 import { parsePreferences, defaultPreferences } from '@/lib/account-preferences';
 import { throttle } from '@/lib/auth-service';
 import { tokenHash } from '@/lib/password';
-import { cookies } from 'next/headers';
 import { redirect } from 'next/navigation';
 import { revalidatePath } from 'next/cache';
 import { encodedRedirect } from '@/utils/redirect';
@@ -33,7 +32,7 @@ export async function changePasswordAction(form:FormData) {
 export async function revokeSessionsAction(form:FormData) {
   const user=await currentUser(); if(!user) redirect('/sign-in');
   try {
-    const token=(await cookies()).get(sessionCookie)?.value;
+    const token=await currentSessionToken();
     if(!token) redirect('/sign-in');
     await revokeOtherSessions(user.id,tokenHash(token),String(form.get('created_at')||'')||undefined);
   } catch { return encodedRedirect('error','/account/security','Unable to sign out the selected sessions.'); }

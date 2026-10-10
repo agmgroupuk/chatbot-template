@@ -20,9 +20,10 @@ test('a production build must still select Test Mode billing', () => {
   assert.equal(load('lib/billing-environment.ts', { NODE_ENV: 'production' }).billingEnvironment(), 'test');
   assert.equal(load('lib/billing-environment.ts', { NODE_ENV: 'production', STRIPE_MODE: 'test' }).billingEnvironment(), 'test');
 });
-test('Live Mode and misspelled billing environments fail closed', () => {
-  for (const environment of ['live', 'production', 'TEST']) {
-    assert.throws(() => load('lib/billing-environment.ts', { STRIPE_MODE: environment }).billingEnvironment(), /Only Test Mode/);
+test('Live Mode requires an explicit mode and misspelled billing environments fail closed', () => {
+  assert.equal(load('lib/billing-environment.ts', { NODE_ENV: 'production', STRIPE_MODE: 'live' }).billingEnvironment(), 'live');
+  for (const environment of ['production', 'TEST']) {
+    assert.throws(() => load('lib/billing-environment.ts', { STRIPE_MODE: environment }).billingEnvironment(), /STRIPE_MODE must be test or live/);
   }
 });
 test('production redirects cannot silently fall back to localhost or HTTP', () => {
@@ -30,6 +31,13 @@ test('production redirects cannot silently fall back to localhost or HTTP', () =
     assert.throws(() => load('lib/site-url.ts', { NODE_ENV: 'production', NEXT_PUBLIC_SITE_URL: value }).siteUrl());
   }
   assert.equal(load('lib/site-url.ts', { NODE_ENV: 'production', NEXT_PUBLIC_SITE_URL: 'https://onefinsolution.online/path' }).siteUrl(), 'https://onefinsolution.online');
+});
+test('production checkout URLs stay on the configured payment subdomain', () => {
+  const env = { NODE_ENV: 'production', NEXT_PUBLIC_SITE_URL: 'https://onefinsolution.online' };
+  assert.equal(load('lib/site-url.ts', { ...env, NEXT_PUBLIC_CHECKOUT_URL: 'https://pay.onefinsolution.online' }).checkoutUrl(), 'https://pay.onefinsolution.online');
+  for (const value of ['http://pay.onefinsolution.online', 'https://onefinsolution.online', 'https://evil.example']) {
+    assert.throws(() => load('lib/site-url.ts', { ...env, NEXT_PUBLIC_CHECKOUT_URL: value }).checkoutUrl(), /NEXT_PUBLIC_CHECKOUT_URL/);
+  }
 });
 test('Workspace credit prices reject subscription plans and use the Workspace-only task cost', () => {
   const credits = load('lib/credit-config.ts', {

@@ -7,7 +7,8 @@ import { query, transaction } from './db';
 import { approvedPrice, managedPlan } from './subscription-catalog';
 import { findPlan } from './plans';
 import { fulfillStripeEvent } from './stripe-fulfillment';
-import { siteUrl } from './site-url';
+import { checkoutUrl } from './site-url';
+import { expectedStripeLivemode, stripeObjectMatchesMode } from './billing-environment';
 import type { Price, Product, ProductWithPrices, Subscription } from '@/types/billing';
 
 function priceView(price: Stripe.Price): Price {
@@ -39,7 +40,7 @@ async function catalog() {
   for (const id of ids) {
     const price = await stripe.prices.retrieve(id, { expand: ['product'] });
     const product = price.product as Stripe.Product;
-    if (price.livemode || !price.active || price.currency !== 'usd' || price.unit_amount === null || product.deleted || !product.active) throw new Error('Configured catalog contains an unavailable price.');
+    if (!stripeObjectMatchesMode(price.livemode) || !price.active || price.currency !== 'usd' || price.unit_amount === null || product.deleted || !product.active) throw new Error('Configured catalog contains an unavailable price.');
     const plan = creditPlans()[id];
     if (price.recurring || plan.kind !== 'pack') throw new Error('Workspace credit packs must use one-time Stripe prices.');
     const existing = products.get(product.id) || { ...productView(product), prices: [] };
@@ -66,7 +67,7 @@ async function checkout(priceId: string) {
   const price=await stripe.prices.retrieve(priceId);
   const plan=managedPlan(price);
   if(!plan) throw new Error('This legacy price is no longer sold. Choose a current plan.');
-  return `${siteUrl()}/subscribe?plan=${plan.key}&mode=paid`;
+  return `${checkoutUrl()}/subscribe?plan=${plan.key}&mode=paid`;
 }
 
 // The same response contract keeps existing pricing and subscription components intact.
@@ -89,7 +90,7 @@ export function createStripeBilling() {
         const customer = await currentCustomer();
         const stripe = await verifiedStripe();
         const sub = await stripe.subscriptions.retrieve(id);
-        if (!customer || sub.customer !== customer || sub.livemode) throw new Error('Subscription not found.');
+        if (!customer || sub.customer !== customer || !stripeObjectMatchesMode(sub.livemode)) throw new Error('Subscription not found.');
         if (settings.cancel_at_period_end && sub.schedule) {
           const schedule = await stripe.subscriptionSchedules.retrieve(typeof sub.schedule === 'string' ? sub.schedule : sub.schedule.id);
           if (schedule.metadata?.app !== 'chatbot-template') throw new Error('Subscription schedule is managed outside this app.');
@@ -97,7 +98,7 @@ export function createStripeBilling() {
         }
         await stripe.subscriptions.update(id, settings);
         if(settings.cancel_at_period_end) await query('update billing_subscriptions set next_plan_key=null,next_plan_at=null where id=$1',[id]);
-        await fulfillStripeEvent(stripe,{type:'customer.subscription.updated',livemode:false,data:{object:{id}}} as Stripe.Event);
+        await fulfillStripeEvent(stripe,{type:'customer.subscription.updated',livemode:expectedStripeLivemode(),data:{object:{id}}} as Stripe.Event);
         return { data: { subscription: null }, error: null };
       } catch { return { data: { subscription: null }, error: { message: 'Unable to update subscription.' } }; }
     },
@@ -115,7 +116,7 @@ export async function schedulePlanChange(planKey: string) {
     const active=list.data.filter(sub=>!['canceled','incomplete_expired'].includes(sub.status));
     if(list.has_more||active.length!==1||!['active','trialing'].includes(active[0].status)) throw new Error('Resolve your existing subscription before changing plans.');
     const sub=active[0],item=sub.items.data[0];
-    if(sub.livemode||sub.metadata.app!=='chatbot-template'||sub.cancel_at_period_end||sub.items.data.length!==1||item.quantity!==1) throw new Error('Reactivate renewal or contact support before switching plans.');
+    if(!stripeObjectMatchesMode(sub.livemode)||sub.metadata.app!=='chatbot-template'||sub.cancel_at_period_end||sub.items.data.length!==1||item.quantity!==1) throw new Error('Reactivate renewal or contact support before switching plans.');
     const schedule=sub.schedule?await stripe.subscriptionSchedules.retrieve(typeof sub.schedule==='string'?sub.schedule:sub.schedule.id):null;
     if(schedule&&schedule.metadata?.app!=='chatbot-template') throw new Error('This schedule is managed outside One Fin.');
     if(item.price.id===price.id) {

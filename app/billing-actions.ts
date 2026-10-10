@@ -5,6 +5,7 @@ import { currentUser } from '@/lib/session';
 import { query } from '@/lib/db';
 import { verifiedStripe } from '@/lib/stripe';
 import { fulfillStripeEvent } from '@/lib/stripe-fulfillment';
+import { expectedStripeLivemode, stripeObjectMatchesMode } from '@/lib/billing-environment';
 import type Stripe from 'stripe';
 
 export async function changePlanAction(priceId: string): Promise<{ success: boolean; error?: string; date?: string }> {
@@ -21,21 +22,22 @@ export async function changePlanAction(priceId: string): Promise<{ success: bool
 }
 
 export async function checkoutStatusAction(sessionId: string): Promise<'paid' | 'pending'> {
-  if (process.env.BILLING_PROVIDER !== 'stripe' || !/^cs_test_[a-zA-Z0-9]+$/.test(sessionId)) throw new Error('Invalid checkout.');
+  const prefix = expectedStripeLivemode() ? 'cs_live_' : 'cs_test_';
+  if (process.env.BILLING_PROVIDER !== 'stripe' || !sessionId.startsWith(prefix) || !/^cs_(test|live)_[a-zA-Z0-9]+$/.test(sessionId)) throw new Error('Invalid checkout.');
   const user=await currentUser();
   if (!user) throw new Error('Please sign in.');
   const [mapping]=await query('select customer_id from billing_customers where user_id=$1',[user.id]);
   if (!mapping) throw new Error('Billing account unavailable.');
   const stripe = await verifiedStripe();
   const session = await stripe.checkout.sessions.retrieve(sessionId);
-  if (session.livemode || session.customer !== mapping.customer_id || session.metadata?.app !== 'chatbot-template') throw new Error('Checkout not found.');
+  if (!stripeObjectMatchesMode(session.livemode) || session.customer !== mapping.customer_id || session.metadata?.app !== 'chatbot-template') throw new Error('Checkout not found.');
   if (session.status !== 'complete' || !['paid','no_payment_required'].includes(session.payment_status)) return 'pending';
   if (session.mode === 'payment') {
-    await fulfillStripeEvent(stripe,{ type:'checkout.session.completed',livemode:false,data:{object:{id:session.id}} } as Stripe.Event);
+    await fulfillStripeEvent(stripe,{ type:'checkout.session.completed',livemode:session.livemode,data:{object:{id:session.id}} } as Stripe.Event);
   } else {
     const invoice = typeof session.invoice === 'string' ? session.invoice : session.invoice?.id;
     if (!invoice) return 'pending';
-    await fulfillStripeEvent(stripe,{ type:'invoice.paid',livemode:false,data:{object:{id:invoice}} } as Stripe.Event);
+    await fulfillStripeEvent(stripe,{ type:'invoice.paid',livemode:session.livemode,data:{object:{id:invoice}} } as Stripe.Event);
   }
   revalidatePath('/account');
   return 'paid';

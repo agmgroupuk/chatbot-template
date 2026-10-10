@@ -29,6 +29,7 @@ await db.query('insert into profiles(id,full_name) values($1,$2),($3,$4)',[user,
 await db.query('insert into chats(id,user_id,name) values($1,$2,$3)',[chat,user,'My saved conversation']);
 await db.query("insert into chats(user_id,name) values($1,'Other user private conversation')",[other]);
 await db.query("insert into messages(chat_id,user_id,sender,content) values($1,$2,'user','My fixture message')",[chat,user]);
+process.env.SESSION_COOKIE_DOMAIN='localhost';
 const resetToken='r'.repeat(43);
 await db.query("insert into auth_tokens(token_hash,user_id,purpose,expires_at) values($1,$2,'reset',now()+interval '30 minutes')",[createHash('sha256').update(resetToken).digest('hex'),user]);
 const app=spawn(process.execPath,['node_modules/next/dist/bin/next','start','--hostname','127.0.0.1','--port',String(port)],{cwd:new URL('../',import.meta.url),windowsHide:true,env:{...process.env,NODE_ENV:'production',DATABASE_POOL_MAX:'10',DATABASE_URL:`postgresql://postgres:postgres@127.0.0.1:${dbPort}/postgres`,NEXT_PUBLIC_SITE_URL:'https://onefinsolution.online',STRIPE_SECRET_KEY:'',STRIPE_WEBHOOK_SECRET:'',SMTP_HOST:'',OPENAI_API_KEY:'',XAI_API_KEY:'',SIGNUP_CREDITS:'10',WORKSPACE_SIGNING_KEY:'website-fixture-security-key-over-32-chars'},stdio:['ignore','pipe','pipe']});
@@ -132,7 +133,7 @@ try {
   } else {
     // A real database-backed session isolates conversation tests from unrelated form redirects.
     const token='s'.repeat(43);await db.query("insert into app_sessions(token_hash,user_id,expires_at) values($1,$2,now()+interval '1 day')",[createHash('sha256').update(token).digest('hex'),user]);
-    await context.addCookies([{name:'__Host-onefin-session',value:token,domain:'localhost',path:'/',secure:true,httpOnly:true,sameSite:'Lax'}]);
+    await context.addCookies([{name:'__Secure-onefin-session',value:token,domain:'localhost',path:'/',secure:true,httpOnly:true,sameSite:'Lax'}]);
   }
   // Conversation features use persisted fixtures, never external AI calls.
   const answerId=randomUUID();

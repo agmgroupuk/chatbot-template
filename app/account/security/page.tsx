@@ -1,6 +1,5 @@
-import { currentUser,sessionCookie } from '@/lib/session';
+import { currentUser,currentSessionToken } from '@/lib/session';
 import { query } from '@/lib/db';
-import { cookies } from 'next/headers';
 import { tokenHash } from '@/lib/password';
 import { redirect } from 'next/navigation';
 import { readPreferences } from '@/lib/account-service';
@@ -9,7 +8,7 @@ import { SubmitButton } from '@/components/submit-button';
 import { FormNotice } from '@/components/form-notice';
 export default async function Security({searchParams}:{searchParams:Promise<{error?:string;success?:string}>}) {
   const user=await currentUser(); if(!user) redirect('/sign-in');
-  const token=(await cookies()).get(sessionCookie)?.value||'';
+  const token=await currentSessionToken()||'';
   const [sessions,settings,params]=await Promise.all([query<{created_at:string;expires_at:string;current:boolean}>('select created_at::text,expires_at::text,token_hash=$2 as current from app_sessions where user_id=$1 and expires_at>now() order by created_at desc',[user.id,tokenHash(token)]),readPreferences(user.id),searchParams]);
   const date=(value:string)=>new Date(value).toLocaleString('en-US',{timeZone:settings.timezone,dateStyle:'medium',timeStyle:'short'});
   return <><FormNotice {...params} /><section className="panel"><h2>Password & security</h2><p>Use a unique password with 12–128 characters. Changing it signs out every session, including this one.</p><form action={changePasswordAction} className="stack mt-6"><label className="field">Current password<input name="currentPassword" type="password" required maxLength={128} autoComplete="current-password" /></label><div className="form-grid"><label className="field">New password<input name="password" type="password" required minLength={12} maxLength={128} autoComplete="new-password" /></label><label className="field">Confirm new password<input name="confirmPassword" type="password" required minLength={12} maxLength={128} autoComplete="new-password" /></label></div><div><SubmitButton pendingText="Updating password…">Change password</SubmitButton></div></form></section><section className="panel"><h2>Active sessions</h2><p>{sessions.length} active {sessions.length===1?'session':'sessions'}. Times shown in {settings.timezone}.</p><ul className="data-list">{sessions.map(session=><li key={session.created_at}><div><strong>{session.current?'This session':'Other session'}</strong><small>Signed in {date(session.created_at)}<br />Expires {date(session.expires_at)}</small></div>{session.current?<span className="badge">Current</span>:<form action={revokeSessionsAction}><input type="hidden" name="created_at" value={session.created_at} /><SubmitButton className="button secondary small" pendingText="Signing out…">Sign out session</SubmitButton></form>}</li>)}</ul>{sessions.some(session=>!session.current) && <form action={revokeSessionsAction} className="mt-5"><SubmitButton className="button secondary" pendingText="Signing out…">Sign out all other sessions</SubmitButton></form>}</section><section className="panel"><h2>Sign-in protection</h2><p>Email verification, password hashing, expiring sessions, and rate limiting protect your account. Two-factor authentication is not available yet; no second factor is currently configured.</p></section></>;

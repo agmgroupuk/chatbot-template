@@ -6,6 +6,7 @@ import { managedPlan } from './subscription-catalog';
 import { queueBillingNotice } from './billing-notices';
 import { priceLabel } from './plans';
 import { workspaceCreditPack } from './workspace-credit-pack';
+import { stripeObjectMatchesMode } from './billing-environment';
 
 async function owner(customer: string | Stripe.Customer | Stripe.DeletedCustomer | null) {
   const id = typeof customer === 'string' ? customer : customer?.id;
@@ -21,7 +22,7 @@ async function grant(user: string, reference: string, price: string, quantity: n
 }
 async function recordSubscription(user: string, sub: Stripe.Subscription) {
   const item = sub.items.data[0];
-  if (!item || sub.livemode) throw new Error('Invalid subscription snapshot.');
+  if (!item || !stripeObjectMatchesMode(sub.livemode)) throw new Error('Invalid subscription snapshot.');
   await query(`insert into billing_subscriptions(id,user_id,price_id,status,period_start,period_end,cancel_at_period_end,observed_at)
     values($1,$2,$3,$4,$5,$6,$7,now()) on conflict(id) do update set price_id=excluded.price_id,status=excluded.status,period_start=excluded.period_start,period_end=excluded.period_end,cancel_at_period_end=excluded.cancel_at_period_end,observed_at=excluded.observed_at`,
     [sub.id,user,item.price.id,sub.status,new Date(item.current_period_start*1000).toISOString(),new Date(item.current_period_end*1000).toISOString(),sub.cancel_at_period_end]);
@@ -39,7 +40,7 @@ async function recordSubscription(user: string, sub: Stripe.Subscription) {
   if(['canceled','unpaid','paused','incomplete_expired'].includes(sub.status)) await query('update membership_access set expires_at=least(expires_at,now()),updated_at=now() where subscription_id=$1',[sub.id]);
 }
 export async function fulfillStripeEvent(stripe: Stripe, event: Stripe.Event) {
-  if (event.livemode) throw new Error('Live events are disabled.');
+  if (!stripeObjectMatchesMode(event.livemode)) throw new Error('Stripe event mode does not match the application.');
   if (['payment_intent.succeeded', 'payment_intent.payment_failed', 'payment_intent.canceled'].includes(event.type)) {
     const intent = await stripe.paymentIntents.retrieve((event.data.object as Stripe.PaymentIntent).id, { expand: ['payment_method'] });
     if (intent.metadata?.app !== 'chatbot-template' || intent.metadata.flow !== 'workspace-credit-purchase') return;
@@ -56,7 +57,7 @@ export async function fulfillStripeEvent(stripe: Stripe, event: Stripe.Event) {
       );
       return;
     }
-    if (intent.status !== 'succeeded' || intent.livemode || intent.amount !== workspaceCreditPack.amount ||
+    if (intent.status !== 'succeeded' || !stripeObjectMatchesMode(intent.livemode) || intent.amount !== workspaceCreditPack.amount ||
         intent.amount_received !== workspaceCreditPack.amount || intent.currency !== workspaceCreditPack.currency ||
         intent.metadata.pack_id !== workspaceCreditPack.id) {
       throw new Error('Unexpected Workspace credit payment.');
@@ -100,7 +101,7 @@ export async function fulfillStripeEvent(stripe: Stripe, event: Stripe.Event) {
   } else if (['checkout.session.completed', 'checkout.session.async_payment_succeeded'].includes(event.type)) {
     const session = await stripe.checkout.sessions.retrieve((event.data.object as Stripe.Checkout.Session).id);
     if (session.metadata?.app !== 'chatbot-template' || session.mode !== 'payment' || session.payment_status !== 'paid') return;
-    if (session.livemode || session.currency !== 'usd') throw new Error('Unexpected checkout currency or mode.');
+    if (!stripeObjectMatchesMode(session.livemode) || session.currency !== 'usd') throw new Error('Unexpected checkout currency or mode.');
     const user = await owner(session.customer);
     for await (const item of stripe.checkout.sessions.listLineItems(session.id, { limit: 100 })) {
       if (!item.price) throw new Error('Missing price.');
@@ -109,7 +110,7 @@ export async function fulfillStripeEvent(stripe: Stripe, event: Stripe.Event) {
   } else if (event.type === 'invoice.paid') {
     const invoice = await stripe.invoices.retrieve(event.data.object.id);
     if (invoice.parent?.subscription_details?.metadata?.app !== 'chatbot-template') return;
-    if (invoice.livemode || invoice.status !== 'paid' || invoice.currency !== 'usd') throw new Error('Unexpected invoice.');
+    if (!stripeObjectMatchesMode(invoice.livemode) || invoice.status !== 'paid' || invoice.currency !== 'usd') throw new Error('Unexpected invoice.');
     const user = await owner(invoice.customer);
     const source = invoice.parent.subscription_details.subscription;
     const subscriptionId = typeof source === 'string' ? source : source?.id;

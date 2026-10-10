@@ -400,7 +400,7 @@ export function IdeInterfaceComponent() {
             <h1
               className="text-center font-serif font-medium mb-4 text-[clamp(42px,5vw,62px)] leading-[1.1] text-gray-900"
             >
-              Build custom chatbots
+              Build custom chatbots with AI Suchada Burandech
             </h1>
             <p className="text-stone-900 text-center mb-16 text-lg">
               Start with our template and customize to fit your needs

@@ -1,11 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { authRedirect } from '@/lib/auth-redirect';
+import { legacySessionCookie, sessionCookie, sessionCookieOptions } from '@/lib/session-cookie';
 // Cookie presence is only a routing hint. Every private page/action verifies the database session.
 export function middleware(request:NextRequest) {
-  const present=Boolean(request.cookies.get(process.env.NODE_ENV==='production'?'__Host-onefin-session':'onefin-session')?.value);
+  const token = request.cookies.get(sessionCookie)?.value;
+  const legacyToken = legacySessionCookie ? request.cookies.get(legacySessionCookie)?.value : undefined;
+  const present = Boolean(token || legacyToken);
   // Redirect authenticated visitors only after server-side session verification, not on cookie presence.
   const destination=present?null:authRedirect(request.nextUrl.pathname,false);
   const response=destination?NextResponse.redirect(new URL(destination,request.url)):NextResponse.next();
+  if (!token && legacyToken) response.cookies.set(sessionCookie, legacyToken, sessionCookieOptions(30 * 86400));
   response.headers.set('X-Content-Type-Options','nosniff');
   response.headers.set('Referrer-Policy','strict-origin-when-cross-origin');
   return response;

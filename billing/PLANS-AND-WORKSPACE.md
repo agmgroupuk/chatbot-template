@@ -5,15 +5,15 @@ Implemented October 10, 2026 for One Fin sandbox `acct_1UOhth9TlJVLQeem`.
 | Plan | USD recurring price | Card-backed trial |
 | --- | ---: | ---: |
 | Daily | 5 / day | 1 day |
-| Weekly | 13 / week | 2 days |
-| Monthly | 30 / month | 3 days |
-| Yearly | 249 / year | 5 days |
+| Weekly | 13 / week | 3 days |
+| Monthly | 30 / month | 5 days |
+| Yearly | 249 / year | 15 days |
 
 Personal memberships and trials grant access exclusively to the homepage chat during an active trial or verified paid period. They do not grant Workspace credits. Workspace is a separate authenticated application: completed Workspace tasks consume credits, which are purchased separately. Workspace credit purchases do not create or extend a chat subscription. Business is a separate contact-sales option; team workspaces are not included yet. New subscription prices use `onefin_v2_*` lookup keys; IDs are recorded in `personal-plan-ids.json`.
 
 ## Payment flow
 
-`/subscribe` uses Stripe Payment Element on One Fin's domain. A SetupIntent saves a card for off-session billing. The server checks authenticated customer ownership, successful setup, card type, and the selected server-approved price before creating a subscription. Consent and trial eligibility are persisted. There is one trial per account and card fingerprint across all plans. Only a keyed fingerprint hash is stored, never card numbers or CVC.
+`/subscribe` uses Stripe Payment Element at `https://pay.onefinsolution.online`. The shared production session cookie allows an authenticated account session across the checkout subdomain and the main site. A SetupIntent saves a card for off-session billing. The server checks authenticated customer ownership, successful setup, card type, and the selected server-approved price before creating a subscription. Consent and trial eligibility are persisted. There is one trial per account and card fingerprint across all plans. Only a keyed fingerprint hash is stored, never card numbers or CVC.
 
 Enrollment request IDs and Stripe idempotency keys protect retries. Trial claims are committed before subscription creation so an ambiguous timeout cannot free the trial for another account. Retrying recovers the subscription through enrollment metadata. Requests unresolved after 23 hours require support review instead of risking a new charge after Stripe's idempotency window.
 
@@ -23,7 +23,7 @@ Plan changes use Subscription Schedules at the current period end, without prora
 
 ## Workspace credit flow
 
-`/workspace` requires a signed-in account and redirects unauthenticated visitors to sign-in. Workspace uses the existing credit ledger with atomic reservation and refund on failed AI tasks. The current fixed pack is 50 credits for USD 5, purchased as a one-time Stripe PaymentIntent. Verified PaymentIntent fulfillment grants the pack once and records an owner-scoped transaction. Subscription invoices never grant Workspace credits; a credit purchase never grants membership access. Saved cards are optional and do not authorize reloads. Automatic and scheduled reloads are intentionally not enabled.
+Workspace uses the existing credit ledger with atomic reservation and refund on failed AI tasks. The current fixed pack is 50 credits for USD 5, purchased as a one-time Stripe PaymentIntent. Verified PaymentIntent fulfillment grants the pack once and records an owner-scoped transaction. Subscription invoices never grant Workspace credits; a credit purchase never grants membership access. Saved cards are optional and do not authorize reloads. Automatic and scheduled reloads are intentionally not enabled.
 
 Migration `005_workspace_credits.sql` adds separate chat usage, Workspace purchase, transaction, and saved-card metadata tables. The credit pack must be provisioned in the selected Stripe test account and the resulting `STRIPE_CREDIT_PLANS` mapping configured before checkout can work. Apply migrations before deployment. Existing account sessions expire absolutely after 30 days; activity does not extend them.
 
@@ -35,17 +35,20 @@ Migration `004_trials_workspace.sql` adds isolated billing enrollment, trial cla
 
 Runtime prerequisites:
 
-- `STRIPE_SECRET_KEY`: replacement sandbox secret, supplied through Railway secrets.
-- `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY`: matching sandbox publishable key.
+- - `STRIPE_SECRET_KEY`: Sandbox secret, supplied through Railway secrets.
+- `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY`: matching Sandbox publishable key, required by the custom Stripe Elements checkout.
 - `STRIPE_EXPECTED_ACCOUNT_ID=acct_1UOhth9TlJVLQeem`, `STRIPE_MODE=test`.
 - `STRIPE_WEBHOOK_SECRET`: signing secret for the One Fin webhook.
+- `NEXT_PUBLIC_CHECKOUT_URL=https://pay.onefinsolution.online` and `SESSION_COOKIE_DOMAIN=.onefinsolution.online`.
 - `WORKSPACE_SIGNING_KEY`: stable random 32+ character value.
 - `OPENAI_API_KEY` or configured `XAI_API_KEY` for real responses.
 - `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASSWORD`, `EMAIL_FROM` for account and billing email.
 
 Optional Stripe receipt, trial, and recovery emails must be disabled in Stripe Dashboard before customer launch; One Fin uses its own outbox. Bank authentication messages are controlled by the bank. SMTP uses stable message IDs and retry leases; it is at-least-once delivery, not a guarantee against duplicate email after a delivery/commit failure.
 
-Stripe Test mode is enforced even in production. At implementation time, the production deployment did not have a credit-pack price mapping or AI credentials configured. Provision the one-time pack and webhook, set `STRIPE_CREDIT_PLANS`, apply migration 005, and configure the AI provider before claiming live Workspace checkout or AI operation. No real charge, inbox delivery, or real AI response is claimed until the respective prerequisites are verified.
+`STRIPE_MODE` defaults to Test; production does not select Live implicitly. During this review, Stripe Sandbox had active recurring prices matching the four chat plans and an enabled webhook on the main site. The webhook was configured for invoice failure/action-required events, which the application now forwards to fulfillment handling. The observed Railway variable-name listing did not include `STRIPE_SECRET_KEY`, `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY`, or `STRIPE_CREDIT_PLANS`, so deployed checkout is not confirmed ready. Confirm the exact Railway service/environment and configure these values from the same Sandbox account before deploying. No real or Sandbox payment lifecycle was claimed as tested during this code review.
+
+The Test provisioner and `STRIPE_CREDIT_PLANS` generator now accept Workspace one-time packs only. Homepage chat recurring prices remain provisioned and validated separately against the subscription catalog. Apply migration 005 and configure the AI provider before claiming live Workspace credit purchases or AI operation. No inbox delivery or real AI response is claimed until its prerequisites are verified.
 
 ## Verification and references
 

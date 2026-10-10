@@ -7,63 +7,7 @@ import { approvedPrice } from './subscription-catalog';
 import { findPlan } from './plans';
 import { privateHash } from './abuse-identity';
 import { fulfillStripeEvent } from './stripe-fulfillment';
-
-// Soft BIN risk check (informational only - never hard blocks)
-const HIGH_RISK_BINS: Record<string, { risk: string; note: string }> = {
-  '424242': { risk: 'high', note: 'Test card often requiring authentication' },
-  '400000': { risk: 'high', note: 'High authentication rate' },
-  '400005': { risk: 'high', note: 'Frequent 3DS challenges' },
-  // Expand from real rejection logs
-};
-
-function checkBinRisk(bin = ''): { risk: string; note?: string } {
-  if (!bin || bin.length < 6) return { risk: 'unknown' };
-  const eight = bin.substring(0, 8);
-  const six = bin.substring(0, 6);
-  return HIGH_RISK_BINS[eight] || HIGH_RISK_BINS[six] || { risk: 'low' };
-}
-
-// Log every verification attempt (accepted + rejected)
-async function logCardAttempt(data: {
-  user_id: string;
-  request_id: string;
-  bin?: string;
-  brand?: string | null;
-  country?: string | null;
-  funding?: string | null;
-  risk_level: string;
-  payment_method_id?: string;
-  intent_id?: string;
-  status: 'accepted' | 'rejected' | 'failed';
-  error?: string | null;
-  early_warning?: string | null;
-}) {
-  try {
-    // Use existing table with structured fields (session_id used for rich metadata)
-    await query(
-      `insert into billing_checkout_attempts (user_id, request_id, price_id, session_id, created_at)
-       values($1, $2, $3, $4, now())`,
-      [
-        data.user_id,
-        data.request_id,
-        `verify-${data.risk_level}`,
-        JSON.stringify({
-          bin: data.bin,
-          brand: data.brand,
-          country: data.country,
-          funding: data.funding,
-          payment_method_id: data.payment_method_id,
-          intent_id: data.intent_id,
-          status: data.status,
-          error: data.error,
-          early_warning: data.early_warning
-        })
-      ]
-    );
-  } catch (e) {
-    console.error('Card attempt logging failed:', e);
-  }
-}
+import { expectedStripeLivemode, stripeObjectMatchesMode } from './billing-environment';
 
 type Enrollment = { user_id:string; request_id:string; plan_key:string; mode:'trial'|'paid'; setup_id:string|null; subscription_id:string|null; price_id:string|null; trial_end:string|null; consent_at:Date|null; created_at:Date };
 const objectId = (object: string | { id:string } | null) => typeof object === 'string' ? object : object?.id;
@@ -74,7 +18,7 @@ export async function prepareEnrollment(userId:string, key:string, mode:'trial'|
   const [resume]=await query<Enrollment>('select * from billing_enrollments where user_id=$1 and plan_key=$2 and mode=$3',[userId,key,mode]);
   if(resume?.consent_at && resume.setup_id && !resume.subscription_id) {
     const setup=await stripe.setupIntents.retrieve(resume.setup_id);
-    if(setup.livemode||objectId(setup.customer)!==customer||!setup.client_secret)throw new Error('Unable to resume this request.');
+    if(!stripeObjectMatchesMode(setup.livemode)||objectId(setup.customer)!==customer||!setup.client_secret)throw new Error('Unable to resume this request.');
     return {clientSecret:setup.client_secret,setupId:setup.id};
   }
   const subscriptions=await stripe.subscriptions.list({customer:customer!,status:'all',limit:100});
@@ -91,7 +35,7 @@ export async function prepareEnrollment(userId:string, key:string, mode:'trial'|
     return result.rows[0];
   });
   const setup=enrollment.setup_id?await stripe.setupIntents.retrieve(enrollment.setup_id):await stripe.setupIntents.create({customer:customer!,usage:'off_session',allowed_payment_method_types:['card'],metadata:{app:'chatbot-template',user_id:userId,request_id:enrollment.request_id}},{idempotencyKey:`onefin-setup:${enrollment.request_id}`});
-  if(setup.livemode || objectId(setup.customer)!==customer || !setup.client_secret) throw new Error('Card setup unavailable.');
+  if(!stripeObjectMatchesMode(setup.livemode) || objectId(setup.customer)!==customer || !setup.client_secret) throw new Error('Card setup unavailable.');
   await query('update billing_enrollments set setup_id=$1 where user_id=$2 and request_id=$3',[setup.id,userId,enrollment.request_id]);
   return {clientSecret:setup.client_secret,setupId:setup.id};
 }
@@ -104,7 +48,7 @@ export async function completeEnrollment(userId: string, setupId: string, consen
   if (!initial || !customer) throw new Error('Card setup does not belong to this account.');
 
   const setup = await stripe.setupIntents.retrieve(setupId);
-  if (setup.livemode || setup.status !== 'succeeded' || objectId(setup.customer) !== customer || setup.metadata?.request_id !== initial.request_id) {
+  if (!stripeObjectMatchesMode(setup.livemode) || setup.status !== 'succeeded' || objectId(setup.customer) !== customer || setup.metadata?.request_id !== initial.request_id) {
     throw new Error('Finish card verification before starting your subscription.');
   }
 
@@ -112,76 +56,6 @@ export async function completeEnrollment(userId: string, setupId: string, consen
   if (paymentMethod.type !== 'card' || !paymentMethod.card?.fingerprint || objectId(paymentMethod.customer) !== customer) {
     throw new Error('A verified card is required.');
   }
-
-  // === FULL PRODUCTION CARD VERIFICATION PIPELINE (from reference files) ===
-  // Soft BIN risk check (informational only - never hard-blocks)
-  const card = paymentMethod.card!;
-  const bin = card.iin || card.last4 || '';
-  const risk = checkBinRisk(bin);
-
-  // Early warning for high-risk BIN (surfaced to frontend, does not block)
-  const earlyWarning = risk.risk === 'high'
-    ? `High-risk BIN detected (${bin}). This card may require additional bank authentication for subscription payments.`
-    : null;
-
-  // Off-session test PaymentIntent (US$2 equivalent hold)
-  const testIntent = await stripe.paymentIntents.create({
-    amount: 200, // US$2 (project uses USD for all plans and credits)
-    currency: 'usd',
-    customer: customer,
-    payment_method: objectId(setup.payment_method)!,
-    off_session: true,
-    confirm: true,
-    capture_method: 'manual' as const,
-    metadata: {
-      purpose: 'subscription_card_verification',
-      user_id: userId,
-      request_id: initial.request_id,
-      bin: bin,
-      risk: risk.risk,
-      early_warning: earlyWarning || ''
-    },
-  }, { idempotencyKey: `onefin-verify:${initial.request_id}` });
-
-  const logData = {
-    user_id: userId,
-    request_id: initial.request_id,
-    bin,
-    brand: card.brand || null,
-    country: card.country || null,
-    funding: card.funding || null,
-    risk_level: risk.risk,
-    payment_method_id: objectId(setup.payment_method),
-    intent_id: testIntent.id,
-    status: 'accepted' as const,
-    error: null as string | null,
-    early_warning: earlyWarning
-  };
-
-  if (testIntent.status === 'requires_action' || testIntent.status === 'requires_payment_method' || testIntent.last_payment_error) {
-    await stripe.paymentMethods.detach(objectId(setup.payment_method)!);
-    await logCardAttempt({ ...logData, status: 'rejected', error: testIntent.last_payment_error?.message || 'requires_authentication' });
-
-    throw new Error(
-      'This card requires mandatory bank authentication and cannot be used for automatic subscription payments. Please try a different card.'
-    );
-  }
-
-  // Success → release the temporary hold
-  if (testIntent.status === 'succeeded' || testIntent.status === 'requires_capture') {
-    await stripe.paymentIntents.cancel(testIntent.id);
-    await logCardAttempt(logData);
-  } else {
-    await logCardAttempt({ ...logData, status: 'failed', error: testIntent.status });
-    throw new Error('Card verification failed. Please try a different card.');
-  }
-
-  // Surface early warning to frontend if present
-  if (earlyWarning) {
-    // This can be returned in the response object or thrown as a non-blocking notice
-    console.warn('High-risk BIN early warning:', earlyWarning);
-  }
-  // === End verification pipeline ===
 
   const price = await approvedPrice(stripe, initial.plan_key), plan = findPlan(initial.plan_key);
 
@@ -227,20 +101,19 @@ export async function completeEnrollment(userId: string, setupId: string, consen
     }, { idempotencyKey: `onefin-subscription:${enrollment.request_id}` });
   }
 
-  if (subscription.livemode || objectId(subscription.customer) !== customer) throw new Error('Unexpected billing account.');
+  if (!stripeObjectMatchesMode(subscription.livemode) || objectId(subscription.customer) !== customer) throw new Error('Unexpected billing account.');
 
   await query('update billing_enrollments set subscription_id=$1 where user_id=$2 and request_id=$3', [subscription.id, userId, enrollment.request_id]);
-  await fulfillStripeEvent(stripe, { type: 'customer.subscription.updated', livemode: false, data: { object: { id: subscription.id } } } as Stripe.Event);
+  await fulfillStripeEvent(stripe, { type: 'customer.subscription.updated', livemode: expectedStripeLivemode(), data: { object: { id: subscription.id } } } as Stripe.Event);
 
   const invoiceId = objectId(subscription.latest_invoice);
   const invoice = invoiceId ? await stripe.invoices.retrieve(invoiceId, { expand: ['confirmation_secret'] }) : null;
-  if (invoice?.status === 'paid') await fulfillStripeEvent(stripe, { type: 'invoice.paid', livemode: false, data: { object: { id: invoice.id } } } as Stripe.Event);
+  if (invoice?.status === 'paid') await fulfillStripeEvent(stripe, { type: 'invoice.paid', livemode: expectedStripeLivemode(), data: { object: { id: invoice.id } } } as Stripe.Event);
 
   return {
     subscriptionId: subscription.id,
     status: subscription.status,
     trialEnd: subscription.trial_end ? new Date(subscription.trial_end * 1000).toISOString() : null,
     paymentSecret: invoice?.status === 'open' ? invoice.confirmation_secret?.client_secret : null,
-    earlyWarning // Surface soft high-risk BIN warning to frontend
   };
 }

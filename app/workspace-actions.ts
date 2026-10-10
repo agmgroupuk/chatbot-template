@@ -13,6 +13,7 @@ import { creditPlans } from '@/lib/credit-config';
 import { fulfillStripeEvent } from '@/lib/stripe-fulfillment';
 import { throttle } from '@/lib/auth-service';
 import { revalidatePath } from 'next/cache';
+import { expectedStripeLivemode, stripeObjectMatchesMode } from '@/lib/billing-environment';
 
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -81,7 +82,7 @@ export async function createWorkspaceCreditPaymentIntent(purchaseId: string) {
     const stripe = await verifiedStripe();
     const price = await stripe.prices.retrieve(packPrices[0][0], { expand: ['product'] });
     const product = price.product as Stripe.Product;
-    if (price.livemode || !price.active || price.currency !== workspaceCreditPack.currency ||
+    if (!stripeObjectMatchesMode(price.livemode) || !price.active || price.currency !== workspaceCreditPack.currency ||
         price.unit_amount !== workspaceCreditPack.amount || price.recurring ||
         product.deleted || !product.active || product.metadata.app !== 'chatbot-template' ||
         price.metadata.app !== 'chatbot-template' ||
@@ -115,7 +116,7 @@ export async function createWorkspaceCreditPaymentIntent(purchaseId: string) {
         [intent.id, purchaseId, user.id],
       );
     }
-    if (intent.customer !== customer || intent.amount !== workspaceCreditPack.amount ||
+    if (!stripeObjectMatchesMode(intent.livemode) || intent.customer !== customer || intent.amount !== workspaceCreditPack.amount ||
         intent.currency !== workspaceCreditPack.currency || intent.metadata.purchase_id !== purchaseId ||
         intent.metadata.user_id !== user.id || intent.metadata.flow !== 'workspace-credit-purchase') {
       throw new Error('Credit purchase verification failed.');
@@ -153,7 +154,7 @@ export async function workspaceCreditPurchaseStatus(purchaseId: string) {
       await fulfillStripeEvent(stripe, {
         id: `workspace-purchase-status:${intent.id}`,
         type: 'payment_intent.succeeded',
-        livemode: false,
+        livemode: expectedStripeLivemode(),
         data: { object: { id: intent.id } },
       } as Stripe.Event);
       revalidatePath('/workspace');
@@ -199,7 +200,7 @@ export async function saveWorkspaceCard(setupIntentId: string) {
     const setup = await stripe.setupIntents.retrieve(setupIntentId, { expand: ['payment_method'] });
     const method = setup.payment_method;
     const metadata = setup.metadata || {};
-    if (!customer || setup.livemode || setup.customer !== customer || setup.status !== 'succeeded' ||
+    if (!customer || !stripeObjectMatchesMode(setup.livemode) || setup.customer !== customer || setup.status !== 'succeeded' ||
         metadata.app !== 'chatbot-template' || metadata.flow !== 'workspace-credit-card' ||
         metadata.user_id !== user.id || !method || typeof method === 'string' || method.type !== 'card' ||
         method.customer !== customer || !method.card) {

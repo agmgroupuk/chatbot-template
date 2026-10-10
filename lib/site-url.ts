@@ -10,3 +10,14 @@ export function siteUrl(): string {
   }
   return url.origin;
 }
+
+export function checkoutUrl(): string {
+  const value = process.env.NEXT_PUBLIC_CHECKOUT_URL ||
+    (process.env.NODE_ENV === 'production' ? 'https://pay.onefinsolution.online' : siteUrl());
+  const url = new URL(value);
+  if (process.env.NODE_ENV === 'production' &&
+      (url.protocol !== 'https:' || url.hostname !== 'pay.onefinsolution.online')) {
+    throw new Error('NEXT_PUBLIC_CHECKOUT_URL must be https://pay.onefinsolution.online in production.');
+  }
+  return url.origin;
+}

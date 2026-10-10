@@ -1,5 +1,6 @@
 import { stripeClient, verifiedStripe } from '@/lib/stripe';
 import { fulfillStripeEvent } from '@/lib/stripe-fulfillment';
+import { stripeObjectMatchesMode } from '@/lib/billing-environment';
 import Stripe from 'stripe';
 
 export const runtime = 'nodejs';
@@ -14,12 +15,14 @@ export async function POST(request: Request) {
   let event: Stripe.Event;
   try { event = stripeClient().webhooks.constructEvent(body, signature, secret); }
   catch { return Response.json({ error: 'Invalid signature.' }, { status: 400 }); }
-  if (event.livemode) return Response.json({ error: 'Live events are disabled.' }, { status: 400 });
+  if (!stripeObjectMatchesMode(event.livemode)) return Response.json({ error: 'Stripe event mode does not match this deployment.' }, { status: 400 });
   if (![
     'payment_intent.succeeded',
     'payment_intent.payment_failed',
     'payment_intent.canceled',
     'invoice.paid',
+    'invoice.payment_failed',
+    'invoice.payment_action_required',
     'checkout.session.completed',
     'checkout.session.async_payment_succeeded',
     'customer.subscription.created',
