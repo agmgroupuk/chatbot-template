@@ -1,3 +1,6 @@
+'use client';
+
+import Link from 'next/link';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ArrowDown,
@@ -9,8 +12,6 @@ import {
   Code2,
   Eye,
   LayoutDashboard,
-  LockKeyhole,
-  Menu,
   Monitor,
   MonitorSmartphone,
   Search,
@@ -20,13 +21,9 @@ import {
   Tablet,
   X,
 } from 'lucide-react';
-import { AuthModal, type AuthMode, type AuthUser } from './components/AuthModal';
-import { PurchaseHistoryModal } from './components/PurchaseHistoryModal';
 import { TemplatePreviewModal } from './components/TemplatePreviewModal';
 import { softwareCatalog, softwareServices, type SoftwareProduct } from './data/catalog';
 import { TEMPLATES, type TemplateProduct } from './data/templatesData';
-
-const mainSite = 'https://onefinsolution.online';
 
 interface EnquiryItem {
   id: string;
@@ -97,19 +94,6 @@ function ProductCard({
 }
 
 export default function App() {
-  const [user, setUser] = useState<AuthUser | null>(null);
-  const [authReady, setAuthReady] = useState(false);
-  const [sessionError, setSessionError] = useState('');
-  const [accountError, setAccountError] = useState('');
-  const [authMode, setAuthMode] = useState<AuthMode | null>(null);
-  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-  const [checkoutAvailable, setCheckoutAvailable] = useState(false);
-  const [checkoutError, setCheckoutError] = useState('');
-  const [paymentNotice, setPaymentNotice] = useState('');
-  const [payingProductId, setPayingProductId] = useState('');
-  const [pendingProductId, setPendingProductId] = useState('');
-  const [confirmationSessionId, setConfirmationSessionId] = useState('');
-  const [ordersOpen, setOrdersOpen] = useState(false);
   const [previewProduct, setPreviewProduct] = useState<SoftwareProduct | null>(null);
   const [activeCategory, setActiveCategory] = useState('all');
   const [searchQuery, setSearchQuery] = useState('');
@@ -117,72 +101,42 @@ export default function App() {
   const [previewTab, setPreviewTab] = useState<'preview' | 'specs'>('preview');
   const [viewportSize, setViewportSize] = useState<'desktop' | 'tablet' | 'mobile'>('desktop');
   const [isEnquiryOpen, setIsEnquiryOpen] = useState(false);
-  const [enquiry, setEnquiry] = useState<EnquiryItem[]>(() => {
-    try {
-      const saved = localStorage.getItem('one-fin-template-enquiry-v1');
-      const parsed: unknown = saved ? JSON.parse(saved) : [];
-      if (!Array.isArray(parsed)) return [];
-      return parsed.filter((item): item is EnquiryItem =>
-        typeof item?.id === 'string'
-        && TEMPLATES.some((template) => template.id === item.id)
-        && Number.isInteger(item.qty)
-        && item.qty > 0,
-      );
-    } catch (error) {
-      console.error('Could not load the saved template enquiry list.', error);
-      return [];
-    }
-  });
-  const closeOrders = useCallback(() => setOrdersOpen(false), []);
+  const [enquiry, setEnquiry] = useState<EnquiryItem[]>([]);
+  const [enquiryLoaded, setEnquiryLoaded] = useState(false);
   const closeTemplatePreview = useCallback(() => setPreviewProduct(null), []);
 
   useEffect(() => {
-    const controller = new AbortController();
-    fetch('/api/auth/session', { credentials: 'same-origin', signal: controller.signal })
-      .then(async (response) => {
-        if (!response.ok) throw new Error('Could not check the sign-in session.');
-        const data = await response.json() as { user: AuthUser | null };
-        setUser(data.user);
-      })
-      .catch((error: unknown) => {
-        if (error instanceof DOMException && error.name === 'AbortError') return;
-        console.error('Could not load software-store session.', error);
-        setSessionError('Account access is temporarily unavailable. Please try again in a moment.');
-      })
-      .finally(() => setAuthReady(true));
-
-    const query = new URLSearchParams(window.location.search);
-    if (query.has('reset')) setAuthMode('reset');
-    return () => controller.abort();
+    try {
+      const saved = localStorage.getItem('one-fin-template-enquiry-v1');
+      const parsed: unknown = saved ? JSON.parse(saved) : [];
+      if (Array.isArray(parsed)) {
+        setEnquiry(parsed.filter((item): item is EnquiryItem =>
+          typeof item?.id === 'string'
+          && TEMPLATES.some((template) => template.id === item.id)
+          && Number.isInteger(item.qty)
+          && item.qty > 0,
+        ));
+      }
+    } catch (error) {
+      console.error('Could not load the saved template enquiry list.', error);
+    } finally {
+      setEnquiryLoaded(true);
+    }
   }, []);
 
   useEffect(() => {
-    const controller = new AbortController();
-    fetch('/api/checkout/status', { signal: controller.signal })
-      .then(async (response) => {
-        if (!response.ok) throw new Error('Could not check the Stripe sandbox configuration.');
-        const data = await response.json() as { available: boolean };
-        setCheckoutAvailable(data.available);
-      })
-      .catch((error: unknown) => {
-        if (error instanceof DOMException && error.name === 'AbortError') return;
-        console.error('Could not check software-store checkout configuration.', error);
-        setCheckoutError('Sandbox checkout status could not be checked. Please refresh and try again.');
-      });
-    return () => controller.abort();
-  }, []);
-
-  useEffect(() => {
+    if (!enquiryLoaded) return;
     try {
       localStorage.setItem('one-fin-template-enquiry-v1', JSON.stringify(enquiry));
     } catch (error) {
       console.error('Could not save the template enquiry list.', error);
     }
-  }, [enquiry]);
+  }, [enquiry, enquiryLoaded]);
 
   useEffect(() => {
     if (!previewTemplate && !isEnquiryOpen) return;
-    document.body.classList.add('template-preview-open');
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
         setPreviewTemplate(null);
@@ -191,93 +145,10 @@ export default function App() {
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => {
-      document.body.classList.remove('template-preview-open');
+      document.body.style.overflow = previousOverflow;
       window.removeEventListener('keydown', handleKeyDown);
     };
   }, [previewTemplate, isEnquiryOpen]);
-
-  useEffect(() => {
-    const query = new URLSearchParams(window.location.search);
-    if (query.get('checkout') === 'cancel') {
-      setPaymentNotice('Checkout was cancelled. No payment was made.');
-      window.history.replaceState(null, '', window.location.pathname);
-    } else if (query.get('checkout') === 'success') {
-      const sessionId = query.get('session_id');
-      if (sessionId) setConfirmationSessionId(sessionId);
-      else setCheckoutError('The payment confirmation link is incomplete. Check your purchases or contact support.');
-    }
-  }, []);
-
-  useEffect(() => {
-    if (!authReady || !confirmationSessionId) return;
-    if (!user) {
-      setAuthMode('sign-in');
-      return;
-    }
-    const controller = new AbortController();
-    fetch(`/api/checkout/confirm?session_id=${encodeURIComponent(confirmationSessionId)}`, {
-      credentials: 'same-origin',
-      signal: controller.signal,
-    })
-      .then(async (response) => {
-        const data = await response.json() as { status?: string; error?: string };
-        if (!response.ok) throw new Error(data.error || 'The payment could not be verified.');
-        if (data.status === 'paid') {
-          setPaymentNotice('Stripe sandbox payment confirmed. No real charge was made. Digital file delivery is not connected yet; please contact us to arrange delivery.');
-          setConfirmationSessionId('');
-          window.history.replaceState(null, '', window.location.pathname);
-        } else if (data.status === 'pending') {
-          setPaymentNotice('Your payment is still processing. Check Purchases again shortly.');
-          setConfirmationSessionId('');
-          window.history.replaceState(null, '', window.location.pathname);
-        } else {
-          throw new Error('This checkout was not completed. No payment was recorded.');
-        }
-      })
-      .catch((error: unknown) => {
-        if (error instanceof DOMException && error.name === 'AbortError') return;
-        console.error('Could not verify storefront checkout.', error);
-        setCheckoutError(error instanceof Error ? error.message : 'The payment could not be verified.');
-        setConfirmationSessionId('');
-      });
-    return () => controller.abort();
-  }, [authReady, confirmationSessionId, user]);
-
-  const beginCheckout = async (productId: string) => {
-    setCheckoutError('');
-    setPaymentNotice('');
-    setPayingProductId(productId);
-    try {
-      const response = await fetch('/api/checkout/session', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'same-origin',
-        body: JSON.stringify({ productId }),
-      });
-      const data = await response.json() as { url?: string; error?: string };
-      if (!response.ok) throw new Error(data.error || 'Checkout could not be started.');
-      if (!data.url) throw new Error('Stripe did not provide a checkout page.');
-      window.location.assign(data.url);
-    } catch (error) {
-      console.error('Could not start storefront checkout.', error);
-      setCheckoutError(error instanceof Error ? error.message : 'Checkout could not be started.');
-    } finally {
-      setPayingProductId('');
-    }
-  };
-
-  const requestPurchase = (product: SoftwareProduct) => {
-    if (!checkoutAvailable) {
-      setCheckoutError('Stripe sandbox checkout is not configured for this storefront yet.');
-      return;
-    }
-    if (!user) {
-      setPendingProductId(product.id);
-      setAuthMode('sign-in');
-      return;
-    }
-    void beginCheckout(product.id);
-  };
 
   const filteredTemplates = useMemo(() => {
     const query = searchQuery.trim().toLowerCase();
@@ -304,7 +175,7 @@ export default function App() {
     const template = TEMPLATES.find((candidate) => candidate.id === item.id);
     return template ? `${template.name} × ${item.qty}` : '';
   }).filter(Boolean).join(', ');
-  const enquiryHref = `${mainSite}/contact?category=general&subject=${encodeURIComponent(`Template enquiry: ${enquiryDetails}`)}`;
+  const enquiryHref = `/contact?category=general&subject=${encodeURIComponent(`Template enquiry: ${enquiryDetails}`)}`;
 
   const addToEnquiry = (id: string) => {
     setEnquiry((current) => {
@@ -322,55 +193,15 @@ export default function App() {
       .filter((item) => item.qty > 0));
   };
 
-  const handleLogout = async () => {
-    setAccountError('');
-    const response = await fetch('/api/auth/logout', { method: 'POST', credentials: 'same-origin' });
-    if (!response.ok) {
-      console.error('Sign out failed:', await response.text());
-      setAccountError('Sign out could not be completed. Please try again.');
-      return;
-    }
-    setUser(null);
-    setAuthMode(null);
-    setOrdersOpen(false);
-  };
-
   return (
     <div className="ofs-app">
-      <header className="ofs-header">
-        <a className="ofs-brand" href="#home" aria-label="One Fin Solution Software home">
-          <img src="/images/one-fin-logo.png" alt="" width="42" height="42" />
-          <span>One Fin <b>Software</b></span>
-        </a>
-        <button className="mobile-menu-toggle" type="button" aria-label={mobileMenuOpen ? 'Close navigation' : 'Open navigation'} aria-expanded={mobileMenuOpen} onClick={() => setMobileMenuOpen((open) => !open)}>
-          {mobileMenuOpen ? <X size={20} /> : <Menu size={20} />}
-        </button>
-        <nav className={`ofs-nav${mobileMenuOpen ? ' is-open' : ''}`} aria-label="Main navigation">
-          <a href="#design-library" onClick={() => setMobileMenuOpen(false)}>Preview library</a>
-          <a href="#templates" onClick={() => setMobileMenuOpen(false)}>Checkout catalog</a>
-          <a href="#services" onClick={() => setMobileMenuOpen(false)}>Custom development</a>
-          <a href="#process" onClick={() => setMobileMenuOpen(false)}>How it works</a>
-          <a className="main-site-link" href={mainSite}>Main website <ArrowRight size={14} aria-hidden="true" /></a>
+      <div className="software-content">
+        <nav className="software-section-nav" aria-label="Software section">
+          <a href="#design-library">Preview library</a>
+          <a href="#templates">Software catalog</a>
+          <a href="#services">Custom development</a>
+          <a href="#process">How it works</a>
         </nav>
-        <div className="ofs-account">
-          {authReady && (user ? (
-            <div className="account-chip">
-              <span className="account-avatar" aria-hidden="true">{user.email.slice(0, 1).toUpperCase()}</span>
-              <span className="account-email">{user.email}</span>
-              <button type="button" onClick={() => setOrdersOpen(true)}>Purchases</button>
-              <button type="button" onClick={handleLogout}>Sign out</button>
-            </div>
-          ) : (
-            <button type="button" className="signin-button" onClick={() => setAuthMode('sign-in')}><LockKeyhole size={15} aria-hidden="true" /> Sign in</button>
-          ))}
-        </div>
-      </header>
-      {sessionError && <p className="service-error" role="alert">{sessionError}</p>}
-      {accountError && <p className="service-error" role="alert">{accountError}</p>}
-      {checkoutError && <p className="service-error" role="alert">{checkoutError}</p>}
-      {paymentNotice && <p className="service-notice" role="status">{paymentNotice}</p>}
-
-      <main>
         <section className="ofs-hero" id="home">
           <div className="hero-copy">
             <span className="ofs-eyebrow"><Sparkles size={15} aria-hidden="true" /> DIGITAL PRODUCTS &amp; DEVELOPMENT</span>
@@ -490,10 +321,9 @@ export default function App() {
 
         <section className="content-section" id="templates">
           <div className="section-heading">
-            <div><span className="ofs-eyebrow">SECURE STOREFRONT CHECKOUT</span><h2>Checkout catalog</h2></div>
-            <p>These products are connected to the storefront account, Stripe checkout, and purchase history.</p>
+            <div><span className="ofs-eyebrow">SOFTWARE STARTING POINTS</span><h2>Explore the software catalog</h2></div>
+            <p>Preview available directions and contact our team to discuss fit, customization, and next steps.</p>
           </div>
-          {checkoutAvailable && <p className="checkout-sandbox-note">Stripe sandbox only: no real charges are made. Digital downloads are not connected yet.</p>}
           <div className="product-grid">
             {softwareCatalog.map((product) => (
               <ProductCard
@@ -503,7 +333,7 @@ export default function App() {
               />
             ))}
           </div>
-          {!checkoutAvailable && <p className="catalog-note">Browse each design preview. Template checkout will be available after payment and digital delivery are configured.</p>}
+          <p className="catalog-note">Prices are indicative. Payments and project setup will be handled through a separately integrated workflow.</p>
         </section>
 
         <section className="content-section services-section" id="services">
@@ -519,7 +349,7 @@ export default function App() {
                 <h3>{name}</h3>
                 <p>{description}</p>
                 <strong>{priceLabel}</strong>
-                <a href={`${mainSite}/contact?category=general&subject=${encodeURIComponent(`${name} enquiry`)}`}>Discuss your project <ArrowRight size={15} aria-hidden="true" /></a>
+                <Link href={`/contact?category=general&subject=${encodeURIComponent(`${name} enquiry`)}`}>Discuss your project <ArrowRight size={15} aria-hidden="true" /></Link>
               </article>
             ))}
           </div>
@@ -548,16 +378,7 @@ export default function App() {
           <div><span className="ofs-eyebrow">YOUR NEXT STEP STARTS HERE</span><h2>Ready to Build Something Great?</h2><p>Explore a template or tell us about the software you need.</p></div>
           <div className="hero-actions"><a className="ofs-button light" href="#templates">Browse templates <ArrowDown size={16} /></a><a className="ofs-button outline" href="#services">Explore custom development <ArrowRight size={16} /></a></div>
         </section>
-      </main>
-
-      <footer className="ofs-footer">
-        <div className="footer-main">
-          <a className="ofs-brand" href="#home"><img src="/images/one-fin-logo.png" alt="" width="40" height="40" /><span>One Fin <b>Software</b></span></a>
-          <p>Practical digital products and software development for your business.</p>
-          <nav aria-label="Main website links"><a href={`${mainSite}/privacy`}>Privacy</a><a href={`${mainSite}/terms`}>Terms</a><a href={`${mainSite}/payment-policy`}>Payments &amp; refunds</a><a href={`${mainSite}/contact`}>Contact</a></nav>
-        </div>
-        <div className="footer-bottom"><span>© {new Date().getFullYear()} One Fin Solution</span><a href={mainSite}>Visit the main website <ArrowRight size={13} /></a></div>
-      </footer>
+      </div>
 
       <button className="template-enquiry-fab" type="button" onClick={() => setIsEnquiryOpen(true)} aria-label={`Open template enquiry list with ${enquiryTotalCount} items`}>
         <ShoppingBag size={17} aria-hidden="true" /> Enquiry list <span>{enquiryTotalCount}</span>
@@ -593,9 +414,9 @@ export default function App() {
             <div className="template-enquiry-total">
               <div><span>Indicative total</span><strong>{formatBaht(enquirySubtotal)}</strong></div>
               <p>No payment is taken from this list. The enquiry opens the One Fin Solution contact page.</p>
-              <a href={enquiryHref} aria-disabled={enquiry.length === 0} onClick={(event) => { if (enquiry.length === 0) event.preventDefault(); }}>
+              <Link href={enquiryHref} aria-disabled={enquiry.length === 0} onClick={(event) => { if (enquiry.length === 0) event.preventDefault(); }}>
                 Send purchase enquiry <ArrowUpRight size={16} aria-hidden="true" />
-              </a>
+              </Link>
             </div>
           </aside>
         </div>
@@ -654,33 +475,10 @@ export default function App() {
         </div>
       )}
 
-      {authMode && (
-        <AuthModal
-          mode={authMode}
-          onModeChange={setAuthMode}
-          onClose={() => setAuthMode(null)}
-          onAuthenticated={(nextUser) => {
-            setUser(nextUser);
-            setAuthMode(null);
-            if (pendingProductId) {
-              const productId = pendingProductId;
-              setPendingProductId('');
-              void beginCheckout(productId);
-            }
-          }}
-        />
-      )}
-      {ordersOpen && user && <PurchaseHistoryModal onClose={closeOrders} />}
       {previewProduct && (
         <TemplatePreviewModal
           product={previewProduct}
-          checkoutAvailable={checkoutAvailable}
-          checkoutBusy={Boolean(payingProductId)}
           onClose={closeTemplatePreview}
-          onPurchase={(product) => {
-            closeTemplatePreview();
-            requestPurchase(product);
-          }}
         />
       )}
     </div>

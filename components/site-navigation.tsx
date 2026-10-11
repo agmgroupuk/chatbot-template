@@ -6,8 +6,6 @@ import { usePathname } from 'next/navigation';
 import { useState } from 'react';
 import { useAuth } from '@/lib/auth';
 
-const softwareStoreUrl = 'https://b2b.onefinsolution.online';
-
 const navigationLinks = [
   { href: '/pricing', label: 'Pricing' },
   { href: '/about', label: 'About' },
@@ -39,7 +37,7 @@ export function SiteHeader() {
             {label}
           </Link>
         ))}
-        <a href={softwareStoreUrl}>Software</a>
+        <Link href="/software/" aria-current={isCurrentPath(pathname, '/software') ? 'page' : undefined}>Software</Link>
       </nav>
 
       <div className="header-actions">
@@ -77,7 +75,7 @@ export function SiteHeader() {
               {label}
             </Link>
           ))}
-          <a href={softwareStoreUrl} onClick={closeMenu}>Software</a>
+          <Link href="/software/" aria-current={isCurrentPath(pathname, '/software') ? 'page' : undefined} onClick={closeMenu}>Software</Link>
           {!isLoading && (
             isAuthenticated
               ? <Link href="/dashboard" onClick={closeMenu}>Dashboard</Link>
@@ -107,7 +105,7 @@ export function SiteFooter() {
             <Link href="/">Homepage chat</Link>
             <Link href="/pricing">Plans &amp; pricing</Link>
             <Link href="/support">Help center</Link>
-            <a href={softwareStoreUrl}>Software</a>
+            <Link href="/software/">Software</Link>
           </div>
           <div>
             <strong>Company</strong>

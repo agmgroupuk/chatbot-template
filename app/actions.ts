@@ -14,7 +14,7 @@ export async function signInAction(form:FormData) {
   try { await authRequestThrottle(); const id=await authenticate(String(form.get('email')||''),String(form.get('password')||'')); await createSession(id); }
   catch(error) { return encodedRedirect('error','/sign-in',error instanceof Error?error.message:'Unable to sign in.'); }
   const next=String(form.get('next')||'');
-  revalidatePath('/'); redirect(/^\/(?:workspace|subscribe)(?:\?|$)/.test(next)&&!/[\\\r\n]/.test(next)?next:'/dashboard');
+  revalidatePath('/'); redirect(/^\/(?:workspace|subscribe|software)(?:[/?]|$)/.test(next)&&!/[\\\r\n]/.test(next)?next:'/dashboard');
 }
 export async function signUpAction(form:FormData) {
   if(form.get('accept_terms')!=='on') return encodedRedirect('error','/sign-up','Please agree to the Terms & Conditions before creating an account.');

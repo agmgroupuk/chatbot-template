@@ -1,29 +1,23 @@
 import { useEffect, useRef } from 'react';
-import { ArrowRight, Check, ExternalLink, X } from 'lucide-react';
-import { createPortal } from 'react-dom';
+import { ArrowRight, Check, X } from 'lucide-react';
 import type { SoftwareProduct } from '../data/catalog';
 
 interface TemplatePreviewModalProps {
   product: SoftwareProduct;
-  checkoutAvailable: boolean;
-  checkoutBusy: boolean;
   onClose: () => void;
-  onPurchase: (product: SoftwareProduct) => void;
 }
 
 export function TemplatePreviewModal({
   product,
-  checkoutAvailable,
-  checkoutBusy,
   onClose,
-  onPurchase,
 }: TemplatePreviewModalProps) {
   const closeButtonRef = useRef<HTMLButtonElement>(null);
   const dialogRef = useRef<HTMLElement>(null);
 
   useEffect(() => {
     const previouslyFocused = document.activeElement instanceof HTMLElement ? document.activeElement : null;
-    document.body.classList.add('template-preview-open');
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
     closeButtonRef.current?.focus();
 
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -52,7 +46,7 @@ export function TemplatePreviewModal({
     window.addEventListener('keydown', handleKeyDown);
 
     return () => {
-      document.body.classList.remove('template-preview-open');
+      document.body.style.overflow = previousOverflow;
       window.removeEventListener('keydown', handleKeyDown);
       previouslyFocused?.focus();
     };
@@ -61,7 +55,7 @@ export function TemplatePreviewModal({
   const { preview } = product;
   const templateRootId = `template-preview-${product.id}`;
 
-  return createPortal(
+  return (
     <div
       className="template-preview-overlay"
       onMouseDown={(event) => {
@@ -149,17 +143,15 @@ export function TemplatePreviewModal({
 
         <div className="template-preview-purchase-bar">
           <div>
-            <span>Template preview</span>
+            <span>Indicative price</span>
             <strong>{product.priceLabel}</strong>
           </div>
-          <p>{checkoutAvailable ? 'Digital delivery is arranged separately.' : 'Checkout and digital delivery are not configured yet.'}</p>
-          <button type="button" onClick={() => onPurchase(product)} disabled={!checkoutAvailable || checkoutBusy}>
-            {checkoutBusy ? 'Opening checkout…' : 'Purchase template'}
-            {checkoutAvailable ? <ExternalLink size={15} aria-hidden="true" /> : <ArrowRight size={15} aria-hidden="true" />}
-          </button>
+          <p>Contact our team to discuss this design and your requirements.</p>
+          <a href={`/contact?category=general&subject=${encodeURIComponent(`${product.name} enquiry`)}`}>
+            Discuss this design <ArrowRight size={15} aria-hidden="true" />
+          </a>
         </div>
       </section>
-    </div>,
-    document.body,
+    </div>
   );
 }

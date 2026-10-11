@@ -42,30 +42,7 @@ export default defineRailway(() => {
     healthcheck: "/api/health",
     healthcheckTimeout: 120,
   });
-  const one_fin_software = service("one-fin-software", {
-    source: {
-      type: "github",
-      repo: "agmgroupuk/chatbot-template",
-      branch: "main",
-      rootDirectory: "/app/software",
-    },
-    env: {
-      DATABASE_URL: preserve(),
-      DATABASE_POOL_MAX: preserve(),
-      SOFTWARE_APP_URL: preserve(),
-      SOFTWARE_EMAIL_FROM: preserve(),
-      SOFTWARE_RESEND_API_KEY: preserve(),
-      SOFTWARE_TERMS_VERSION: preserve(),
-      SOFTWARE_STRIPE_SECRET_KEY: preserve(),
-      SOFTWARE_STRIPE_WEBHOOK_SECRET: preserve(),
-      PORT: "3000",
-    },
-    build: "npm run build",
-    start: "npm start",
-    healthcheck: "/api/health",
-    healthcheckTimeout: 120,
-  });
   return project("romantic-charm", {
-    resources: [chatbot_template, one_fin_software],
+    resources: [chatbot_template],
   });
 });
