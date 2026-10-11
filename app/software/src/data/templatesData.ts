@@ -15,6 +15,7 @@ export interface TemplateProduct {
   accentColor: string;
   filename: string;
   htmlSource: string;
+  previewUrl?: string;
 }
 
 export const TEMPLATES: TemplateProduct[] = [
@@ -1084,6 +1085,50 @@ export const TEMPLATES: TemplateProduct[] = [
 </body>
 </html>`
   }
+];
+
+export const STOREFRONT_TEMPLATES: TemplateProduct[] = [
+  ...TEMPLATES
+    .filter((template) => template.id !== 'atelier')
+    .map((template) => ({ ...template, price: 49 })),
+  {
+    id: 'lumen-lens',
+    name: 'Lumen & Lens Eyewear',
+    subtitle: 'Luxury eyewear and accessories storefront',
+    price: 49,
+    category: 'commerce',
+    categoryLabel: 'E-Commerce',
+    format: 'Responsive HTML / CSS / JS',
+    pagesCount: 'Complete Storefront',
+    fileSize: '24 KB',
+    updatedAt: 'Oct 2026',
+    description: 'A complete luxury eyewear storefront featuring handcrafted frames, accessories, and a refined product-led shopping experience.',
+    features: ['Responsive product and collection sections', 'Luxury editorial brand presentation', 'Standalone HTML preview'],
+    techStack: ['HTML5', 'CSS', 'JavaScript', 'Responsive'],
+    accentColor: '#7b4c37',
+    filename: 'accessories_eyewear.html',
+    htmlSource: '',
+    previewUrl: '/software/template-preview/accessories_eyewear.html',
+  },
+  {
+    id: 'pawprint-mobile',
+    name: 'Pawprint Palace Mobile Experience',
+    subtitle: 'Responsive pet care and wellness storefront',
+    price: 49,
+    category: 'mobile',
+    categoryLabel: 'Mobile UI',
+    format: 'Responsive HTML / CSS / JS',
+    pagesCount: 'Complete Mobile-Ready Page',
+    fileSize: '26 KB',
+    updatedAt: 'Oct 2026',
+    description: 'A warm, mobile-ready pet care experience with service details, wellness offerings, and a polished storefront layout.',
+    features: ['Responsive mobile-first layout', 'Pet wellness and service sections', 'Standalone HTML preview'],
+    techStack: ['HTML5', 'CSS', 'JavaScript', 'Responsive'],
+    accentColor: '#9a623c',
+    filename: 'pawprint_palace.html',
+    htmlSource: '',
+    previewUrl: '/software/template-preview/pawprint_palace.html',
+  },
 ];
 
 export function generateMasterLandingHtml(): string {

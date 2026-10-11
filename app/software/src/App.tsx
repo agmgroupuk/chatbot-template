@@ -23,14 +23,13 @@ import {
 } from 'lucide-react';
 import { TemplatePreviewModal } from './components/TemplatePreviewModal';
 import { softwareCatalog, softwareServices, type SoftwareProduct } from './data/catalog';
-import { TEMPLATES, type TemplateProduct } from './data/templatesData';
+import { STOREFRONT_TEMPLATES, type TemplateProduct } from './data/templatesData';
 
-interface EnquiryItem {
-  id: string;
-  qty: number;
-}
+const formatUsd = (amount: number) =>
+  new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(amount);
 
-const formatBaht = (amount: number) => `฿${amount.toLocaleString('en-US')}`;
+const templateInquiryHref = (template: TemplateProduct) =>
+  `/contact?category=general&subject=${encodeURIComponent(`${template.name} template enquiry - ${formatUsd(template.price)} USD`)}`;
 
 const productIcons = {
   agency: Blocks,
@@ -100,47 +99,15 @@ export default function App() {
   const [previewTemplate, setPreviewTemplate] = useState<TemplateProduct | null>(null);
   const [previewTab, setPreviewTab] = useState<'preview' | 'specs'>('preview');
   const [viewportSize, setViewportSize] = useState<'desktop' | 'tablet' | 'mobile'>('desktop');
-  const [isEnquiryOpen, setIsEnquiryOpen] = useState(false);
-  const [enquiry, setEnquiry] = useState<EnquiryItem[]>([]);
-  const [enquiryLoaded, setEnquiryLoaded] = useState(false);
   const closeTemplatePreview = useCallback(() => setPreviewProduct(null), []);
 
   useEffect(() => {
-    try {
-      const saved = localStorage.getItem('one-fin-template-enquiry-v1');
-      const parsed: unknown = saved ? JSON.parse(saved) : [];
-      if (Array.isArray(parsed)) {
-        setEnquiry(parsed.filter((item): item is EnquiryItem =>
-          typeof item?.id === 'string'
-          && TEMPLATES.some((template) => template.id === item.id)
-          && Number.isInteger(item.qty)
-          && item.qty > 0,
-        ));
-      }
-    } catch (error) {
-      console.error('Could not load the saved template enquiry list.', error);
-    } finally {
-      setEnquiryLoaded(true);
-    }
-  }, []);
-
-  useEffect(() => {
-    if (!enquiryLoaded) return;
-    try {
-      localStorage.setItem('one-fin-template-enquiry-v1', JSON.stringify(enquiry));
-    } catch (error) {
-      console.error('Could not save the template enquiry list.', error);
-    }
-  }, [enquiry, enquiryLoaded]);
-
-  useEffect(() => {
-    if (!previewTemplate && !isEnquiryOpen) return;
+    if (!previewTemplate) return;
     const previousOverflow = document.body.style.overflow;
     document.body.style.overflow = 'hidden';
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
         setPreviewTemplate(null);
-        setIsEnquiryOpen(false);
       }
     };
     window.addEventListener('keydown', handleKeyDown);
@@ -148,11 +115,11 @@ export default function App() {
       document.body.style.overflow = previousOverflow;
       window.removeEventListener('keydown', handleKeyDown);
     };
-  }, [previewTemplate, isEnquiryOpen]);
+  }, [previewTemplate]);
 
   const filteredTemplates = useMemo(() => {
     const query = searchQuery.trim().toLowerCase();
-    return TEMPLATES.filter((template) => {
+    return STOREFRONT_TEMPLATES.filter((template) => {
       const matchesCategory = activeCategory === 'all' || template.category === activeCategory;
       const matchesQuery = !query || [
         template.name,
@@ -165,33 +132,6 @@ export default function App() {
       return matchesCategory && matchesQuery;
     });
   }, [activeCategory, searchQuery]);
-
-  const enquiryTotalCount = enquiry.reduce((sum, item) => sum + item.qty, 0);
-  const enquirySubtotal = enquiry.reduce((sum, item) => {
-    const template = TEMPLATES.find((candidate) => candidate.id === item.id);
-    return sum + (template ? template.price * item.qty : 0);
-  }, 0);
-  const enquiryDetails = enquiry.map((item) => {
-    const template = TEMPLATES.find((candidate) => candidate.id === item.id);
-    return template ? `${template.name} × ${item.qty}` : '';
-  }).filter(Boolean).join(', ');
-  const enquiryHref = `/contact?category=general&subject=${encodeURIComponent(`Template enquiry: ${enquiryDetails}`)}`;
-
-  const addToEnquiry = (id: string) => {
-    setEnquiry((current) => {
-      const existing = current.find((item) => item.id === id);
-      return existing
-        ? current.map((item) => item.id === id ? { ...item, qty: item.qty + 1 } : item)
-        : [...current, { id, qty: 1 }];
-    });
-    setIsEnquiryOpen(true);
-  };
-
-  const updateEnquiryQuantity = (id: string, change: number) => {
-    setEnquiry((current) => current
-      .map((item) => item.id === id ? { ...item, qty: item.qty + change } : item)
-      .filter((item) => item.qty > 0));
-  };
 
   return (
     <div className="ofs-app">
@@ -244,7 +184,7 @@ export default function App() {
           <div className="design-library-controls">
             <div className="template-category-filters" role="group" aria-label="Filter templates by category">
               {[
-                { id: 'all', label: `All templates (${TEMPLATES.length})` },
+                { id: 'all', label: `All templates (${STOREFRONT_TEMPLATES.length})` },
                 { id: 'website', label: 'Websites' },
                 { id: 'dashboard', label: 'Dashboards' },
                 { id: 'commerce', label: 'Commerce' },
@@ -300,7 +240,7 @@ export default function App() {
                   <div className="library-template-info">
                     <div className="library-template-title">
                       <div><h3>{template.name}</h3><p>{template.subtitle}</p></div>
-                      <strong>{formatBaht(template.price)}</strong>
+                      <strong>{formatUsd(template.price)} USD</strong>
                     </div>
                     <p className="library-template-description">{template.description}</p>
                     <div className="library-template-meta">
@@ -310,16 +250,16 @@ export default function App() {
                       <button type="button" className="template-preview-button" onClick={() => { setPreviewTemplate(template); setPreviewTab('preview'); }}>
                         <Eye size={15} aria-hidden="true" /> Full preview
                       </button>
-                      <button type="button" className="template-enquiry-button" onClick={() => addToEnquiry(template.id)}>
-                        Add to enquiry
-                      </button>
+                      <Link className="template-enquiry-button" href={templateInquiryHref(template)}>
+                        Send inquiry
+                      </Link>
                     </div>
                   </div>
                 </article>
               ))}
             </div>
           )}
-          <p className="template-enquiry-note">Prices are indicative. This enquiry list does not take payment; our team will confirm availability and purchase details.</p>
+          <p className="template-enquiry-note">Each template has a fixed USD price. Send an inquiry to discuss your selection with our team.</p>
         </section>
 
         <section className="content-section" id="templates">
@@ -383,47 +323,6 @@ export default function App() {
         </section>
       </div>
 
-      <button className="template-enquiry-fab" type="button" onClick={() => setIsEnquiryOpen(true)} aria-label={`Open template enquiry list with ${enquiryTotalCount} items`}>
-        <ShoppingBag size={17} aria-hidden="true" /> Enquiry list <span>{enquiryTotalCount}</span>
-      </button>
-      {isEnquiryOpen && (
-        <div className="template-enquiry-overlay" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setIsEnquiryOpen(false); }}>
-          <aside className="template-enquiry-drawer" role="dialog" aria-modal="true" aria-labelledby="template-enquiry-title">
-            <div className="template-enquiry-heading">
-              <div><h2 id="template-enquiry-title">Template enquiry list</h2><p>Save designs to include in a message to our team.</p></div>
-              <button type="button" onClick={() => setIsEnquiryOpen(false)} aria-label="Close enquiry list"><X size={19} /></button>
-            </div>
-            <div className="template-enquiry-items">
-              {enquiry.length === 0 ? (
-                <div className="template-enquiry-empty"><p>Your enquiry list is empty.</p><button type="button" onClick={() => setIsEnquiryOpen(false)}>Browse templates</button></div>
-              ) : enquiry.map((item) => {
-                const template = TEMPLATES.find((candidate) => candidate.id === item.id);
-                if (!template) return null;
-                return (
-                  <div className="template-enquiry-item" key={item.id}>
-                    <div><strong>{template.name}</strong><span>{template.categoryLabel}</span>
-                      <div className="template-enquiry-quantity">
-                        <button type="button" onClick={() => updateEnquiryQuantity(item.id, -1)} aria-label={`Remove one ${template.name}`}>−</button>
-                        <span>{item.qty}</span>
-                        <button type="button" onClick={() => updateEnquiryQuantity(item.id, 1)} aria-label={`Add one ${template.name}`}>+</button>
-                        <button className="template-enquiry-remove" type="button" onClick={() => setEnquiry((current) => current.filter((entry) => entry.id !== item.id))}>Remove</button>
-                      </div>
-                    </div>
-                    <strong>{formatBaht(template.price * item.qty)}</strong>
-                  </div>
-                );
-              })}
-            </div>
-            <div className="template-enquiry-total">
-              <div><span>Indicative total</span><strong>{formatBaht(enquirySubtotal)}</strong></div>
-              <p>No payment is taken from this list. The enquiry opens the One Fin Solution contact page.</p>
-              <Link href={enquiryHref} aria-disabled={enquiry.length === 0} onClick={(event) => { if (enquiry.length === 0) event.preventDefault(); }}>
-                Send purchase enquiry <ArrowUpRight size={16} aria-hidden="true" />
-              </Link>
-            </div>
-          </aside>
-        </div>
-      )}
       {previewTemplate && (
         <div className="template-library-preview-overlay" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setPreviewTemplate(null); }}>
           <section className="template-library-preview" role="dialog" aria-modal="true" aria-label={`${previewTemplate.name} template preview`}>
@@ -444,12 +343,16 @@ export default function App() {
                   <button type="button" className={viewportSize === 'mobile' ? 'is-active' : ''} onClick={() => setViewportSize('mobile')} aria-label="Mobile viewport"><Smartphone size={16} /></button>
                 </div>
               )}
-              <button className="template-preview-enquire" type="button" onClick={() => { addToEnquiry(previewTemplate.id); setPreviewTemplate(null); }}>Add to enquiry list</button>
             </div>
             {previewTab === 'preview' ? (
               <div className="template-library-iframe-stage">
                 <div className={`template-library-iframe-frame viewport-${viewportSize}`}>
-                  <iframe title={`${previewTemplate.name} live preview`} srcDoc={previewTemplate.htmlSource} sandbox="allow-scripts allow-modals" />
+                  <iframe
+                    title={`${previewTemplate.name} live preview`}
+                    src={previewTemplate.previewUrl}
+                    srcDoc={previewTemplate.previewUrl ? undefined : previewTemplate.htmlSource}
+                    sandbox="allow-scripts allow-modals"
+                  />
                 </div>
               </div>
             ) : (
@@ -461,18 +364,21 @@ export default function App() {
                   <div><dt>Sections</dt><dd>{previewTemplate.pagesCount}</dd></div>
                   <div><dt>File size</dt><dd>{previewTemplate.fileSize}</dd></div>
                   <div><dt>Last updated</dt><dd>{previewTemplate.updatedAt}</dd></div>
-                  <div><dt>Indicative price</dt><dd>{formatBaht(previewTemplate.price)}</dd></div>
+                  <div><dt>Fixed price (USD)</dt><dd>{formatUsd(previewTemplate.price)}</dd></div>
                 </dl>
                 <h3>Included features</h3>
                 <ul>{previewTemplate.features.map((feature) => <li key={feature}><Check size={15} aria-hidden="true" />{feature}</li>)}</ul>
                 <h3>Technology</h3>
                 <div className="template-tech-stack">{previewTemplate.techStack.map((technology) => <span key={technology}>{technology}</span>)}</div>
-                <p className="template-enquiry-note">Price and availability are confirmed by our team. The preview is not a payment or file download.</p>
+                <p className="template-enquiry-note">This preview is not a payment or file download. Send an inquiry to continue with the team.</p>
               </div>
             )}
             <footer className="template-library-preview-footer">
-              <span>{formatBaht(previewTemplate.price)} <small>indicative price</small></span>
-              <button type="button" onClick={() => { addToEnquiry(previewTemplate.id); setPreviewTemplate(null); }}>Add to enquiry <ArrowRight size={15} /></button>
+              <span>{formatUsd(previewTemplate.price)} <small>fixed template price · USD</small></span>
+              <div className="template-library-preview-actions">
+                <Link href={templateInquiryHref(previewTemplate)}>Send inquiry <ArrowUpRight size={15} aria-hidden="true" /></Link>
+                <button type="button" onClick={() => setPreviewTemplate(null)}>Close preview</button>
+              </div>
             </footer>
           </section>
         </div>
