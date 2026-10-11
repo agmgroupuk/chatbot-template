@@ -1,5 +1,7 @@
 -- Extended profile + address fields for Account settings dashboard.
 alter table public.app_users
+  add column if not exists name text,
+  add column if not exists updated_at timestamptz not null default now(),
   add column if not exists full_name text,
   add column if not exists phone text,
   add column if not exists company_name text,
