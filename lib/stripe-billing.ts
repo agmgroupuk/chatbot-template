@@ -25,7 +25,7 @@ export async function currentCustomer(create=false) {
   if(mapping) return mapping.customer_id;
   if(!create) return null;
   const stripe=await verifiedStripe();
-  const customer=await stripe.customers.create({email:user.email,metadata:{app:'chatbot-template',user_id:user.id}},{idempotencyKey:`chatbot-customer:${user.id}`});
+  const customer=await stripe.customers.create({email:user.email,metadata:{app:'chatbot-template',billing_scope:'subscription',user_id:user.id}},{idempotencyKey:`chatbot-customer:${user.id}`});
   await query('insert into billing_customers(user_id,customer_id) values($1,$2) on conflict(user_id) do nothing',[user.id,customer.id]);
   const [saved]=await query('select customer_id from billing_customers where user_id=$1',[user.id]);
   if(saved?.customer_id!==customer.id) throw new Error('Billing account conflict.');

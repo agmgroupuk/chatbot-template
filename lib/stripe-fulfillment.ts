@@ -8,12 +8,20 @@ import { priceLabel } from './plans';
 import { workspaceCreditPack } from './workspace-credit-pack';
 import { stripeObjectMatchesMode } from './billing-environment';
 
-async function owner(customer: string | Stripe.Customer | Stripe.DeletedCustomer | null) {
+async function owner(
+  customer: string | Stripe.Customer | Stripe.DeletedCustomer | null,
+  scope: 'subscription' | 'workspace' = 'subscription',
+) {
   const id = typeof customer === 'string' ? customer : customer?.id;
   if (!id) throw new Error('Missing customer.');
-  const [data]=await query('select user_id from billing_customers where customer_id=$1',[id]);
-  if (!data) throw new Error('Customer mapping unavailable.');
-  return data.user_id as string;
+  const table = scope === 'workspace' ? 'workspace_billing_customers' : 'billing_customers';
+  const [data]=await query(`select user_id from ${table} where customer_id=$1`,[id]);
+  if (data) return data.user_id as string;
+  if (scope === 'workspace') {
+    const [legacy]=await query('select user_id from workspace_legacy_billing_customers where customer_id=$1',[id]);
+    if (legacy) return legacy.user_id as string;
+  }
+  throw new Error('Customer mapping unavailable.');
 }
 async function grant(user: string, reference: string, price: string, quantity: number) {
   const plan = creditPlans()[price];
@@ -63,7 +71,7 @@ export async function fulfillStripeEvent(stripe: Stripe, event: Stripe.Event) {
       throw new Error('Unexpected Workspace credit payment.');
     }
     const customerId = typeof intent.customer === 'string' ? intent.customer : intent.customer?.id;
-    const paymentOwner = await owner(customerId || null);
+    const paymentOwner = await owner(customerId || null, 'workspace');
     if (paymentOwner !== userId) throw new Error('Workspace credit payment owner mismatch.');
     const configuredPrice = creditPlans()[intent.metadata.price_id];
     if (!configuredPrice || configuredPrice.kind !== 'pack' || configuredPrice.credits !== workspaceCreditPack.credits) {
@@ -102,7 +110,7 @@ export async function fulfillStripeEvent(stripe: Stripe, event: Stripe.Event) {
     const session = await stripe.checkout.sessions.retrieve((event.data.object as Stripe.Checkout.Session).id);
     if (session.metadata?.app !== 'chatbot-template' || session.mode !== 'payment' || session.payment_status !== 'paid') return;
     if (!stripeObjectMatchesMode(session.livemode) || session.currency !== 'usd') throw new Error('Unexpected checkout currency or mode.');
-    const user = await owner(session.customer);
+    const user = await owner(session.customer, 'workspace');
     for await (const item of stripe.checkout.sessions.listLineItems(session.id, { limit: 100 })) {
       if (!item.price) throw new Error('Missing price.');
       await grant(user, `checkout:${session.id}:${item.id}`, item.price.id, item.quantity || 0);

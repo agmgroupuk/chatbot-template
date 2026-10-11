@@ -133,9 +133,12 @@ export async function POST(request: NextRequest) {
       }
     }
     const message = error instanceof Error ? error.message : '';
-    const status = message.includes('Not enough Workspace credits') ? 402 : message.includes('Too many') ? 429 : 503;
+    const insufficientCredits = /not enough workspace credits|insufficient credits/i.test(message);
+    const status = insufficientCredits ? 402 : message.includes('Too many') ? 429 : 503;
     return reply({
-      error: /Not enough Workspace credits|AI is not configured|AI service|Too many/.test(message)
+      error: insufficientCredits
+        ? 'Not enough Workspace credits. Add credits to continue.'
+        : /AI is not configured|AI service|Too many/.test(message)
         ? message
         : 'Unable to complete this Workspace task. Please try again later.',
     }, status);

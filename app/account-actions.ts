@@ -2,16 +2,22 @@
 
 import { revalidatePath } from 'next/cache';
 import { currentUser } from '@/lib/session';
-import { readPreferences, readProfile, updateProfileDetails, writePreferences } from '@/lib/account-service';
 import {
-  defaultPreferences,
+  readPreferences,
+  readProfile,
+  updateProfileDetails,
+  writePreferences,
+  writeWorkspacePreferences,
+} from '@/lib/account-service';
+import {
   parsePreferences,
   type AccountPreferences,
 } from '@/lib/account-preferences';
 import { changePassword, throttle } from '@/lib/auth-service';
-import { query } from '@/lib/db';
 import { listPaymentMethodsAction } from '@/app/payment-method-actions';
 import { availableModels } from '@/lib/models';
+import { updateWorkspaceBillingProfile } from '@/lib/workspace-billing-profile';
+import { syncWorkspaceCustomerProfile } from '@/lib/workspace-stripe';
 import {
   getSubscriptionDetails,
   getUserModelSettings,
@@ -32,26 +38,6 @@ export async function getAccountDashboardDataAction() {
     getUserModelSettings().catch(() => ({ enabledModels: availableModels.map((m) => m.id) })),
     getSubscriptionDetails().catch(() => null),
   ]);
-
-  let workspace: {
-    balance: string;
-    cardBrand: string | null;
-    cardLast4: string | null;
-  } | null = null;
-  try {
-    const balanceRows = await query<{ balance: string }>('select available_credits($1)::text as balance', [user.id]);
-    const cardRows = await query<{ card_brand: string | null; card_last4: string | null }>(
-      'select card_brand, card_last4 from workspace_credit_settings where user_id=$1 limit 1',
-      [user.id],
-    );
-    workspace = {
-      balance: balanceRows[0]?.balance || '0',
-      cardBrand: cardRows[0]?.card_brand || null,
-      cardLast4: cardRows[0]?.card_last4 || null,
-    };
-  } catch {
-    workspace = null;
-  }
 
   const enabledModels =
     modelSettings && 'enabledModels' in modelSettings && Array.isArray(modelSettings.enabledModels)
@@ -94,7 +80,6 @@ export async function getAccountDashboardDataAction() {
       description: 'Chat model available in One Fin.',
       enabled: enabledModels.includes(model.id),
     })),
-    workspace,
   } as const;
 }
 
@@ -167,30 +152,79 @@ export async function savePreferencesAction(formData: FormData): Promise<void> {
   }
 }
 
-export async function saveWorkspacePreferencesAction(formData: FormData): Promise<void> {
+export async function updateWorkspaceBillingProfileAction(formData: FormData) {
   const user = await currentUser();
-  if (!user) return;
+  if (!user) return { error: 'Please sign in to update Workspace billing details.' } as const;
+  try {
+    await throttle(`workspace-profile:${user.id}`, 20);
+    const fields = [
+      'fullName', 'phone', 'companyName', 'billingName', 'billingLine1', 'billingLine2',
+      'billingCity', 'billingState', 'billingPostal', 'billingCountry', 'shippingName',
+      'shippingLine1', 'shippingLine2', 'shippingCity', 'shippingState', 'shippingPostal', 'shippingCountry',
+    ] as const;
+    const values = Object.fromEntries(fields.map((field) => [field, clean(formData.get(field))]));
+    if (Object.values(values).some((value) => value.length > 200)) {
+      return { error: 'Please keep each billing detail under 200 characters.' } as const;
+    }
+    const shippingSameAsBilling = formData.get('shippingSameAsBilling') === 'on';
+    for (const country of [values.billingCountry, shippingSameAsBilling ? values.billingCountry : values.shippingCountry]) {
+      if (country && !/^[A-Za-z]{2}$/.test(country)) {
+        return { error: 'Enter country as a two-letter ISO code, such as US or GB.' } as const;
+      }
+    }
+    const profile = {
+      fullName: values.fullName,
+      phone: values.phone,
+      companyName: values.companyName,
+      billingName: values.billingName,
+      billingLine1: values.billingLine1,
+      billingLine2: values.billingLine2,
+      billingCity: values.billingCity,
+      billingState: values.billingState,
+      billingPostal: values.billingPostal,
+      billingCountry: values.billingCountry.toUpperCase(),
+      shippingName: shippingSameAsBilling ? values.billingName : values.shippingName,
+      shippingLine1: shippingSameAsBilling ? values.billingLine1 : values.shippingLine1,
+      shippingLine2: shippingSameAsBilling ? values.billingLine2 : values.shippingLine2,
+      shippingCity: shippingSameAsBilling ? values.billingCity : values.shippingCity,
+      shippingState: shippingSameAsBilling ? values.billingState : values.shippingState,
+      shippingPostal: shippingSameAsBilling ? values.billingPostal : values.shippingPostal,
+      shippingCountry: (shippingSameAsBilling ? values.billingCountry : values.shippingCountry).toUpperCase(),
+      shippingSameAsBilling,
+    };
+    await updateWorkspaceBillingProfile(user.id, profile);
+    revalidatePath('/account');
+    try {
+      await syncWorkspaceCustomerProfile(user.id, profile);
+    } catch (error) {
+      console.error('Workspace profile saved but Stripe customer sync failed:', error);
+      return {
+        success: true,
+        message: 'Workspace details were saved, but the payment profile could not be synchronized. Please save again to retry.',
+      } as const;
+    }
+    return { success: true, message: 'Workspace billing details saved.' } as const;
+  } catch (error) {
+    console.error('Unable to save Workspace billing details:', error);
+    return { error: 'Unable to save Workspace billing details right now.' } as const;
+  }
+}
+
+export async function saveWorkspacePreferencesAction(formData: FormData) {
+  const user = await currentUser();
+  if (!user) return { error: 'Please sign in to update Workspace preferences.' } as const;
   try {
     await throttle(`workspace-prefs:${user.id}`, 20);
-    const current = await readPreferences(user.id);
-    const next: AccountPreferences = {
-      ...defaultPreferences,
-      ...current,
-      theme: clean(formData.get('theme')) || current.theme || defaultPreferences.theme,
-      timezone: clean(formData.get('timezone')) || current.timezone || defaultPreferences.timezone,
-      enter_to_send: formData.has('enter_to_send') ? formData.get('enter_to_send') === 'on' : current.enter_to_send,
-      spellcheck: formData.has('spellcheck') ? formData.get('spellcheck') === 'on' : current.spellcheck,
-      context_enabled: formData.has('context_enabled')
-        ? formData.get('context_enabled') === 'on'
-        : current.context_enabled,
-      product_updates: formData.has('product_updates')
-        ? formData.get('product_updates') === 'on'
-        : current.product_updates,
-    };
-    await writePreferences(user.id, next);
+    const next: AccountPreferences = parsePreferences(formData);
+    await writeWorkspacePreferences(user.id, next);
     revalidatePath('/account');
+    revalidatePath('/account/preferences');
     revalidatePath('/workspace');
-  } catch {
-    /* keep page usable if prefs write fails */
+    return { success: true as const, message: 'Workspace preferences saved.' };
+  } catch (error) {
+    console.error('Unable to save Workspace preferences:', error);
+    return {
+      error: error instanceof Error ? error.message : 'Unable to save Workspace preferences right now.',
+    } as const;
   }
 }

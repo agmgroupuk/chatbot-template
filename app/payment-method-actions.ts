@@ -7,6 +7,7 @@ import { throttle } from '@/lib/auth-service';
 import { randomUUID } from 'node:crypto';
 import { fulfillStripeEvent } from '@/lib/stripe-fulfillment';
 import { expectedStripeLivemode, stripeObjectMatchesMode } from '@/lib/billing-environment';
+import { query } from '@/lib/db';
 import type Stripe from 'stripe';
 
 async function context() {
@@ -27,27 +28,57 @@ export type SavedPaymentMethod = {
   isDefault: boolean;
 };
 
+function stripePaymentMethodId(paymentMethod: string | Stripe.PaymentMethod | null) {
+  return typeof paymentMethod === 'string' ? paymentMethod : paymentMethod?.id || null;
+}
+
 export async function listPaymentMethodsAction(): Promise<
   { methods: SavedPaymentMethod[]; customerId: string } | { error: string }
 > {
   try {
-    const { customer, stripe } = await context();
+    const { user, customer, stripe } = await context();
     const customerObj = await stripe.customers.retrieve(customer);
-    if (customerObj.deleted) return { error: 'Billing customer is no longer available.' };
+    if (customerObj.deleted || !stripeObjectMatchesMode(customerObj.livemode)) return { error: 'Billing customer is no longer available.' };
     const defaultId =
       typeof customerObj.invoice_settings?.default_payment_method === 'string'
         ? customerObj.invoice_settings.default_payment_method
         : customerObj.invoice_settings?.default_payment_method?.id || null;
 
-    const listed = await stripe.paymentMethods.list({ customer, type: 'card', limit: 20 });
-    const methods: SavedPaymentMethod[] = listed.data.map((pm) => ({
-      id: pm.id,
-      brand: pm.card?.brand || 'card',
-      last4: pm.card?.last4 || '••••',
-      expMonth: pm.card?.exp_month ?? null,
-      expYear: pm.card?.exp_year ?? null,
-      isDefault: pm.id === defaultId,
-    }));
+    const legacyWorkspaceMethods = await query<{ payment_method_id: string }>(
+      'select payment_method_id from workspace_legacy_payment_methods where user_id=$1',
+      [user.id],
+    );
+    const legacyWorkspaceIds = new Set(legacyWorkspaceMethods.map(({ payment_method_id }) => payment_method_id));
+    const legacyCustomers = await query<{ customer_id: string }>(
+      'select customer_id from workspace_legacy_billing_customers where user_id=$1',
+      [user.id],
+    );
+    if (legacyCustomers.some(({ customer_id }) => customer_id === customer)) {
+      for await (const setup of stripe.setupIntents.list({ customer, limit: 100 })) {
+        if (setup.metadata?.app === 'chatbot-template' && setup.metadata.flow === 'workspace-credit-card') {
+          const id = stripePaymentMethodId(setup.payment_method);
+          if (id) legacyWorkspaceIds.add(id);
+        }
+      }
+      for await (const intent of stripe.paymentIntents.list({ customer, limit: 100 })) {
+        if (intent.metadata?.app === 'chatbot-template' && intent.metadata.flow === 'workspace-credit-purchase') {
+          const id = stripePaymentMethodId(intent.payment_method);
+          if (id) legacyWorkspaceIds.add(id);
+        }
+      }
+    }
+    const methods: SavedPaymentMethod[] = [];
+    for await (const pm of stripe.paymentMethods.list({ customer, type: 'card', limit: 100 })) {
+      if (legacyWorkspaceIds.has(pm.id)) continue;
+      methods.push({
+        id: pm.id,
+        brand: pm.card?.brand || 'card',
+        last4: pm.card?.last4 || '••••',
+        expMonth: pm.card?.exp_month ?? null,
+        expYear: pm.card?.exp_year ?? null,
+        isDefault: pm.id === defaultId,
+      });
+    }
     methods.sort((a, b) => Number(b.isDefault) - Number(a.isDefault));
     return { methods, customerId: customer };
   } catch (error) {

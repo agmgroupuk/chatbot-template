@@ -10,7 +10,11 @@ if (
 ) {
   throw new Error('SESSION_COOKIE_DOMAIN must be onefinsolution.online when set.');
 }
-const domain = production && configuredDomain && configuredDomain !== 'localhost' ? configuredDomain : undefined;
+const domain = production
+  ? configuredDomain && configuredDomain !== 'localhost'
+    ? configuredDomain
+    : '.onefinsolution.online'
+  : undefined;
 
 export const sessionCookie = production ? '__Secure-onefin-session' : 'onefin-session';
 export const legacySessionCookie = production ? '__Host-onefin-session' : null;

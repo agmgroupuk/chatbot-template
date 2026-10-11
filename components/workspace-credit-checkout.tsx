@@ -6,6 +6,7 @@ import { Elements, PaymentElement, useElements, useStripe } from '@stripe/react-
 import {
   createWorkspaceCreditPaymentIntent,
   prepareWorkspaceCardUpdate,
+  saveWorkspaceCard,
   workspaceCreditPurchaseStatus,
 } from '@/app/workspace-actions';
 import { publicSitePath } from '@/lib/site-url';
@@ -79,13 +80,13 @@ function CreditPaymentForm({
   );
 }
 
-function CardSetupForm({ clientSecret }: { clientSecret: string }) {
+function CardSetupForm({ returnPath }: { returnPath: string }) {
   const stripe = useStripe();
   const elements = useElements();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
-  const successUrl = publicSitePath('/workspace?billing=card_saved');
-  const cancelledUrl = '/workspace?billing=cancelled';
+  const successUrl = publicSitePath(`${returnPath}?billing=card_saved`);
+  const cancelledUrl = `${returnPath}?billing=cancelled`;
 
   async function onSubmit(event: React.FormEvent) {
     event.preventDefault();
@@ -102,6 +103,9 @@ function CardSetupForm({ clientSecret }: { clientSecret: string }) {
         setError(result.error.message || 'Unable to save card.');
         return;
       }
+      if (result.setupIntent?.status !== 'succeeded') throw new Error('Card setup has not been completed.');
+      const saved = await saveWorkspaceCard(result.setupIntent.id);
+      if (saved.error) throw new Error(saved.error);
       location.assign(successUrl);
     } catch (failure) {
       setError(failure instanceof Error ? failure.message : 'Unable to save card.');
@@ -133,9 +137,11 @@ function CardSetupForm({ clientSecret }: { clientSecret: string }) {
 export function WorkspaceCreditCheckout({
   mode,
   publishableKey,
+  returnPath = '/workspace',
 }: {
   mode: 'credits' | 'card';
   publishableKey: string;
+  returnPath?: string;
 }) {
   const stripePromise = useMemo(() => loadStripe(publishableKey), [publishableKey]);
   const [busy, setBusy] = useState(false);
@@ -191,7 +197,7 @@ export function WorkspaceCreditCheckout({
     return (
       <div className="stack">
         <Elements stripe={stripePromise} options={{ clientSecret: setupSecret }}>
-          <CardSetupForm clientSecret={setupSecret} />
+          <CardSetupForm returnPath={returnPath} />
         </Elements>
       </div>
     );

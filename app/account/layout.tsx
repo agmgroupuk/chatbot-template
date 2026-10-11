@@ -19,7 +19,7 @@ export default async function AccountLayout({ children }: { children: React.Reac
         <PageHeading
           eyebrow="WORKSPACE SETUP"
           title="Configure your Workspace."
-          description="Manage Workspace preferences, tools, credits, and privacy. Personal account details, billing addresses, modules, subscriptions, and password live in the Settings popup on the chat screen."
+          description="Manage Workspace billing details, credit balance, payment methods, and preferences. Homepage subscription billing remains separate."
         />
         <div className="button-row">
           <Link className="button secondary" href="/">

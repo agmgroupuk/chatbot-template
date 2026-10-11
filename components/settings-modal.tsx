@@ -448,29 +448,6 @@ export function SettingsModal({
                 <PaymentMethodsPanel />
               </section>
 
-              {data?.workspace ? (
-                <section className="settings-section">
-                  <div className="settings-section-head">
-                    <h3>Workspace credits snapshot</h3>
-                    <p className="muted text-sm">Full Workspace setup stays on the dedicated account page.</p>
-                  </div>
-                  <div className="settings-plan-card">
-                    <div>
-                      <p className="text-sm text-slate-700">
-                        Balance: <strong>{data.workspace.balance}</strong> credits
-                      </p>
-                      <p className="muted text-sm">
-                        {data.workspace.cardLast4
-                          ? `Workspace card on file: ${(data.workspace.cardBrand || 'card').toString()} ···· ${data.workspace.cardLast4}`
-                          : 'No dedicated Workspace card saved yet.'}
-                      </p>
-                    </div>
-                    <Link className="button secondary" href="/account" onClick={onClose}>
-                      Manage Workspace
-                    </Link>
-                  </div>
-                </section>
-              ) : null}
             </TabsContent>
           </div>
         </Tabs>

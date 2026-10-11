@@ -11,10 +11,10 @@ function load(file,dependencies={}) {
   const exports={};const {outputText}=ts.transpileModule(readFileSync(new URL(`../${file}`,import.meta.url),'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022,esModuleInterop:true}});
   runInNewContext(outputText,{exports,require:name=>name==='server-only'?{}:dependencies[name]||require(name),process,Buffer,console,Intl});return exports;
 }
-test('account preferences and support records persist with tenant isolation; security changes revoke sessions',async()=>{
+test('account preferences and support records persist with tenant isolation; password changes revoke sessions',async()=>{
   const db=new PGlite(),owner=randomUUID(),other=randomUUID();
   try {
-    for(const migration of ['001_schema.sql','002_credits.sql','003_website_foundation.sql']) await db.exec(readFileSync(new URL(`../migrations/railway/${migration}`,import.meta.url),'utf8'));
+    for(const migration of ['001_schema.sql','002_credits.sql','003_website_foundation.sql','010_user_profile_details.sql']) await db.exec(readFileSync(new URL(`../migrations/railway/${migration}`,import.meta.url),'utf8'));
     const password=load('lib/password.ts');
     const hash=await password.hashPassword('original-test-password');
     await db.query('insert into app_users(id,email,password_hash,email_verified_at) values($1,$2,$3,now()),($4,$5,$3,now())',[owner,'one@example.test',hash,other,'other@example.test']);
@@ -23,7 +23,7 @@ test('account preferences and support records persist with tenant isolation; sec
     const preferences=load('lib/account-preferences.ts');
     const account=load('lib/account-service.ts',{'./db':adapter,'./password':password,'./account-preferences':preferences});
     const form=new FormData();form.set('theme','dark');form.set('timezone','Europe/London');form.set('spellcheck','on');
-    await account.savePreferences(owner,preferences.parsePreferences(form));
+    await account.writePreferences(owner,preferences.parsePreferences(form));
     assert.equal((await account.readPreferences(owner)).theme,'dark');
     assert.equal((await account.readPreferences(owner)).enter_to_send,false);
     assert.equal((await account.readPreferences(other)).theme,'system');
@@ -42,12 +42,10 @@ test('account preferences and support records persist with tenant isolation; sec
     request.set('message','short');await assert.rejects(support.submitSupportRequest(request,null,'fixture'),/Enter/);
     const first=password.tokenHash('first'),second=password.tokenHash('second'),third=password.tokenHash('third');
     for(const [token,user] of [[first,owner],[second,owner],[third,other]]) await db.query("insert into app_sessions(token_hash,user_id,expires_at) values($1,$2,now()+interval '1 day')",[token,user]);
-    await account.revokeOtherSessions(owner,first);
-    assert.equal((await adapter.query('select * from app_sessions where user_id=$1',[owner])).length,1);
+    await assert.rejects(auth.changePassword(owner,'wrong-password','new-valid-password'),/incorrect/);
+    assert.equal((await adapter.query('select * from app_sessions where user_id=$1',[owner])).length,2);
     assert.equal((await adapter.query('select * from app_sessions where user_id=$1',[other])).length,1);
-    await assert.rejects(account.changePassword(owner,'wrong-password','new-valid-password'),/incorrect/);
-    assert.equal((await adapter.query('select * from app_sessions where user_id=$1',[owner])).length,1);
-    await account.changePassword(owner,'original-test-password','new-valid-password');
+    await auth.changePassword(owner,'original-test-password','new-valid-password');
     assert.equal((await adapter.query('select * from app_sessions where user_id=$1',[owner])).length,0);
     assert.equal((await adapter.query('select * from app_sessions where user_id=$1',[other])).length,1);
     const [changed]=await adapter.query('select password_hash from app_users where id=$1',[owner]);

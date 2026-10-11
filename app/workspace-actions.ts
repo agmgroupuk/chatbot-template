@@ -3,7 +3,7 @@
 import { randomUUID } from 'node:crypto';
 import Stripe from 'stripe';
 import { currentUser } from '@/lib/session';
-import { currentCustomer } from '@/lib/stripe-billing';
+import { workspaceCustomer } from '@/lib/workspace-stripe';
 import { verifiedStripe } from '@/lib/stripe';
 import { query } from '@/lib/db';
 import { ensureSignupCredits } from '@/lib/credits';
@@ -16,6 +16,8 @@ import { revalidatePath } from 'next/cache';
 import { expectedStripeLivemode, stripeObjectMatchesMode } from '@/lib/billing-environment';
 
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const stripeCustomerId = (customer: string | Stripe.Customer | Stripe.DeletedCustomer | null) =>
+  typeof customer === 'string' ? customer : customer?.id || null;
 
 export async function getWorkspaceBillingData() {
   const user = await currentUser();
@@ -51,6 +53,133 @@ export async function getWorkspaceBillingData() {
   }
 }
 
+export type WorkspaceSavedPaymentMethod = {
+  id: string;
+  brand: string;
+  last4: string;
+  expMonth: number | null;
+  expYear: number | null;
+  isDefault: boolean;
+};
+
+async function saveWorkspaceCardSummary(userId: string, method: Stripe.PaymentMethod | null) {
+  await query(
+    `insert into workspace_credit_settings(
+       user_id,payment_method_id,card_brand,card_last4,card_exp_month,card_exp_year,updated_at
+     ) values($1,$2,$3,$4,$5,$6,now())
+     on conflict(user_id) do update set payment_method_id=excluded.payment_method_id,
+       card_brand=excluded.card_brand,card_last4=excluded.card_last4,
+       card_exp_month=excluded.card_exp_month,card_exp_year=excluded.card_exp_year,updated_at=now()`,
+    [
+      userId,
+      method?.id ?? null,
+      method?.card?.brand ?? null,
+      method?.card?.last4 ?? null,
+      method?.card?.exp_month ?? null,
+      method?.card?.exp_year ?? null,
+    ],
+  );
+}
+
+export async function listWorkspacePaymentMethods() {
+  const user = await currentUser();
+  if (!user) return { error: 'Please sign in to manage Workspace payment methods.' } as const;
+  try {
+    const customer = await workspaceCustomer(user.id);
+    if (!customer) return { methods: [] as WorkspaceSavedPaymentMethod[] } as const;
+    const stripe = await verifiedStripe();
+    const customerRecord = await stripe.customers.retrieve(customer);
+    if (customerRecord.deleted || !stripeObjectMatchesMode(customerRecord.livemode)) {
+      throw new Error('Workspace billing customer is unavailable.');
+    }
+    const defaultValue = customerRecord.invoice_settings?.default_payment_method;
+    const defaultId = typeof defaultValue === 'string' ? defaultValue : defaultValue?.id || null;
+    const methods: WorkspaceSavedPaymentMethod[] = [];
+    for await (const method of stripe.paymentMethods.list({ customer, type: 'card', limit: 100 })) {
+      methods.push({
+        id: method.id,
+        brand: method.card?.brand || 'card',
+        last4: method.card?.last4 || '••••',
+        expMonth: method.card?.exp_month ?? null,
+        expYear: method.card?.exp_year ?? null,
+        isDefault: method.id === defaultId,
+      });
+    }
+    methods.sort((a, b) => Number(b.isDefault) - Number(a.isDefault));
+    return { methods } as const;
+  } catch (error) {
+    console.error('Unable to load Workspace payment methods:', error);
+    return { error: 'Workspace payment methods are temporarily unavailable.' } as const;
+  }
+}
+
+export async function setWorkspaceDefaultPaymentMethod(paymentMethodId: string) {
+  const user = await currentUser();
+  if (!user) return { error: 'Please sign in to manage Workspace payment methods.' } as const;
+  if (!/^pm_[a-zA-Z0-9]+$/.test(paymentMethodId)) return { error: 'Invalid Workspace payment method.' } as const;
+  try {
+    const customer = await workspaceCustomer(user.id);
+    if (!customer) return { error: 'No Workspace payment method is saved yet.' } as const;
+    const stripe = await verifiedStripe();
+    const [customerRecord, method] = await Promise.all([
+      stripe.customers.retrieve(customer),
+      stripe.paymentMethods.retrieve(paymentMethodId),
+    ]);
+    if (customerRecord.deleted || !stripeObjectMatchesMode(customerRecord.livemode) || stripeCustomerId(method.customer) !== customer) {
+      return { error: 'That card is not saved in your Workspace.' } as const;
+    }
+    await stripe.customers.update(customer, { invoice_settings: { default_payment_method: method.id } });
+    await saveWorkspaceCardSummary(user.id, method);
+    revalidatePath('/workspace');
+    revalidatePath('/account');
+    return { success: true, message: 'Workspace default payment method updated.' } as const;
+  } catch (error) {
+    console.error('Unable to update Workspace default payment method:', error);
+    return { error: 'Unable to update the Workspace default card.' } as const;
+  }
+}
+
+export async function removeWorkspacePaymentMethod(paymentMethodId: string) {
+  const user = await currentUser();
+  if (!user) return { error: 'Please sign in to manage Workspace payment methods.' } as const;
+  if (!/^pm_[a-zA-Z0-9]+$/.test(paymentMethodId)) return { error: 'Invalid Workspace payment method.' } as const;
+  try {
+    const customer = await workspaceCustomer(user.id);
+    if (!customer) return { error: 'No Workspace payment method is saved yet.' } as const;
+    const stripe = await verifiedStripe();
+    const [customerRecord, method] = await Promise.all([
+      stripe.customers.retrieve(customer),
+      stripe.paymentMethods.retrieve(paymentMethodId),
+    ]);
+    if (customerRecord.deleted || !stripeObjectMatchesMode(customerRecord.livemode) || stripeCustomerId(method.customer) !== customer) {
+      return { error: 'That card is not saved in your Workspace.' } as const;
+    }
+    const defaultValue = customerRecord.invoice_settings?.default_payment_method;
+    const defaultId = typeof defaultValue === 'string' ? defaultValue : defaultValue?.id || null;
+    await stripe.paymentMethods.detach(method.id);
+    const remaining = await stripe.paymentMethods.list({ customer, type: 'card', limit: 100 });
+    const nextDefault = defaultId === method.id ? remaining.data[0] || null : null;
+    if (defaultId === method.id) {
+      await stripe.customers.update(customer, {
+        invoice_settings: { default_payment_method: nextDefault?.id || '' },
+      });
+    }
+    const summaryMethod = defaultId && defaultId !== method.id
+      ? await stripe.paymentMethods.retrieve(defaultId)
+      : nextDefault;
+    if (summaryMethod && stripeCustomerId(summaryMethod.customer) !== customer) {
+      throw new Error('Workspace default card is not attached to the billing customer.');
+    }
+    await saveWorkspaceCardSummary(user.id, summaryMethod);
+    revalidatePath('/workspace');
+    revalidatePath('/account');
+    return { success: true, message: 'Workspace payment method removed.' } as const;
+  } catch (error) {
+    console.error('Unable to remove Workspace payment method:', error);
+    return { error: 'Unable to remove the Workspace payment method.' } as const;
+  }
+}
+
 export async function createWorkspaceCreditPaymentIntent(purchaseId: string) {
   const user = await currentUser();
   if (!user) return { error: 'Please sign in to add Workspace credits.' } as const;
@@ -58,7 +187,7 @@ export async function createWorkspaceCreditPaymentIntent(purchaseId: string) {
 
   try {
     await throttle(`workspace-credit-purchase:${user.id}`, 10);
-    const customer = await currentCustomer(true);
+    const customer = await workspaceCustomer(user.id, true);
     if (!customer) throw new Error('Unable to prepare the billing account.');
     const packPrices = Object.entries(creditPlans()).filter(([, plan]) =>
       plan.kind === 'pack' && plan.credits === workspaceCreditPack.credits,
@@ -173,7 +302,7 @@ export async function prepareWorkspaceCardUpdate() {
   if (!user) return { error: 'Please sign in to manage Workspace payment settings.' } as const;
   try {
     await throttle(`workspace-payment-method:${user.id}`, 10);
-    const customer = await currentCustomer(true);
+    const customer = await workspaceCustomer(user.id, true);
     if (!customer) throw new Error('Billing account unavailable.');
     const stripe = await verifiedStripe();
     const setup = await stripe.setupIntents.create({
@@ -195,15 +324,15 @@ export async function saveWorkspaceCard(setupIntentId: string) {
   if (!user) return { error: 'Please sign in to manage Workspace payment settings.' } as const;
   if (!/^seti_[a-zA-Z0-9]+$/.test(setupIntentId)) return { error: 'Invalid card setup reference.' } as const;
   try {
-    const customer = await currentCustomer();
+    const customer = await workspaceCustomer(user.id);
     const stripe = await verifiedStripe();
     const setup = await stripe.setupIntents.retrieve(setupIntentId, { expand: ['payment_method'] });
     const method = setup.payment_method;
     const metadata = setup.metadata || {};
-    if (!customer || !stripeObjectMatchesMode(setup.livemode) || setup.customer !== customer || setup.status !== 'succeeded' ||
+    if (!customer || !stripeObjectMatchesMode(setup.livemode) || stripeCustomerId(setup.customer) !== customer || setup.status !== 'succeeded' ||
         metadata.app !== 'chatbot-template' || metadata.flow !== 'workspace-credit-card' ||
         metadata.user_id !== user.id || !method || typeof method === 'string' || method.type !== 'card' ||
-        method.customer !== customer || !method.card) {
+        stripeCustomerId(method.customer) !== customer || !method.card) {
       throw new Error('Card verification failed.');
     }
     await query(
@@ -213,7 +342,9 @@ export async function saveWorkspaceCard(setupIntentId: string) {
          card_last4=excluded.card_last4,card_exp_month=excluded.card_exp_month,card_exp_year=excluded.card_exp_year,updated_at=now()`,
       [user.id, method.id, method.card.brand, method.card.last4, method.card.exp_month, method.card.exp_year],
     );
+    await stripe.customers.update(customer, { invoice_settings: { default_payment_method: method.id } });
     revalidatePath('/workspace');
+    revalidatePath('/account');
     return { success: true } as const;
   } catch (error) {
     console.error('Unable to save Workspace card:', error);

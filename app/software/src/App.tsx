@@ -1,25 +1,39 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ArrowDown,
   ArrowRight,
+  ArrowUpRight,
   BarChart3,
   Blocks,
   Check,
   Code2,
+  Eye,
   LayoutDashboard,
   LockKeyhole,
   Menu,
+  Monitor,
   MonitorSmartphone,
+  Search,
   ShoppingBag,
+  Smartphone,
   Sparkles,
+  Tablet,
   X,
 } from 'lucide-react';
 import { AuthModal, type AuthMode, type AuthUser } from './components/AuthModal';
 import { PurchaseHistoryModal } from './components/PurchaseHistoryModal';
 import { TemplatePreviewModal } from './components/TemplatePreviewModal';
 import { softwareCatalog, softwareServices, type SoftwareProduct } from './data/catalog';
+import { TEMPLATES, type TemplateProduct } from './data/templatesData';
 
 const mainSite = 'https://onefinsolution.online';
+
+interface EnquiryItem {
+  id: string;
+  qty: number;
+}
+
+const formatBaht = (amount: number) => `฿${amount.toLocaleString('en-US')}`;
 
 const productIcons = {
   agency: Blocks,
@@ -97,6 +111,28 @@ export default function App() {
   const [confirmationSessionId, setConfirmationSessionId] = useState('');
   const [ordersOpen, setOrdersOpen] = useState(false);
   const [previewProduct, setPreviewProduct] = useState<SoftwareProduct | null>(null);
+  const [activeCategory, setActiveCategory] = useState('all');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [previewTemplate, setPreviewTemplate] = useState<TemplateProduct | null>(null);
+  const [previewTab, setPreviewTab] = useState<'preview' | 'specs'>('preview');
+  const [viewportSize, setViewportSize] = useState<'desktop' | 'tablet' | 'mobile'>('desktop');
+  const [isEnquiryOpen, setIsEnquiryOpen] = useState(false);
+  const [enquiry, setEnquiry] = useState<EnquiryItem[]>(() => {
+    try {
+      const saved = localStorage.getItem('one-fin-template-enquiry-v1');
+      const parsed: unknown = saved ? JSON.parse(saved) : [];
+      if (!Array.isArray(parsed)) return [];
+      return parsed.filter((item): item is EnquiryItem =>
+        typeof item?.id === 'string'
+        && TEMPLATES.some((template) => template.id === item.id)
+        && Number.isInteger(item.qty)
+        && item.qty > 0,
+      );
+    } catch (error) {
+      console.error('Could not load the saved template enquiry list.', error);
+      return [];
+    }
+  });
   const closeOrders = useCallback(() => setOrdersOpen(false), []);
   const closeTemplatePreview = useCallback(() => setPreviewProduct(null), []);
 
@@ -135,6 +171,30 @@ export default function App() {
       });
     return () => controller.abort();
   }, []);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('one-fin-template-enquiry-v1', JSON.stringify(enquiry));
+    } catch (error) {
+      console.error('Could not save the template enquiry list.', error);
+    }
+  }, [enquiry]);
+
+  useEffect(() => {
+    if (!previewTemplate && !isEnquiryOpen) return;
+    document.body.classList.add('template-preview-open');
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setPreviewTemplate(null);
+        setIsEnquiryOpen(false);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => {
+      document.body.classList.remove('template-preview-open');
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [previewTemplate, isEnquiryOpen]);
 
   useEffect(() => {
     const query = new URLSearchParams(window.location.search);
@@ -219,6 +279,49 @@ export default function App() {
     void beginCheckout(product.id);
   };
 
+  const filteredTemplates = useMemo(() => {
+    const query = searchQuery.trim().toLowerCase();
+    return TEMPLATES.filter((template) => {
+      const matchesCategory = activeCategory === 'all' || template.category === activeCategory;
+      const matchesQuery = !query || [
+        template.name,
+        template.subtitle,
+        template.categoryLabel,
+        template.description,
+        ...template.features,
+        ...template.techStack,
+      ].some((value) => value.toLowerCase().includes(query));
+      return matchesCategory && matchesQuery;
+    });
+  }, [activeCategory, searchQuery]);
+
+  const enquiryTotalCount = enquiry.reduce((sum, item) => sum + item.qty, 0);
+  const enquirySubtotal = enquiry.reduce((sum, item) => {
+    const template = TEMPLATES.find((candidate) => candidate.id === item.id);
+    return sum + (template ? template.price * item.qty : 0);
+  }, 0);
+  const enquiryDetails = enquiry.map((item) => {
+    const template = TEMPLATES.find((candidate) => candidate.id === item.id);
+    return template ? `${template.name} × ${item.qty}` : '';
+  }).filter(Boolean).join(', ');
+  const enquiryHref = `${mainSite}/contact?category=general&subject=${encodeURIComponent(`Template enquiry: ${enquiryDetails}`)}`;
+
+  const addToEnquiry = (id: string) => {
+    setEnquiry((current) => {
+      const existing = current.find((item) => item.id === id);
+      return existing
+        ? current.map((item) => item.id === id ? { ...item, qty: item.qty + 1 } : item)
+        : [...current, { id, qty: 1 }];
+    });
+    setIsEnquiryOpen(true);
+  };
+
+  const updateEnquiryQuantity = (id: string, change: number) => {
+    setEnquiry((current) => current
+      .map((item) => item.id === id ? { ...item, qty: item.qty + change } : item)
+      .filter((item) => item.qty > 0));
+  };
+
   const handleLogout = async () => {
     setAccountError('');
     const response = await fetch('/api/auth/logout', { method: 'POST', credentials: 'same-origin' });
@@ -243,7 +346,8 @@ export default function App() {
           {mobileMenuOpen ? <X size={20} /> : <Menu size={20} />}
         </button>
         <nav className={`ofs-nav${mobileMenuOpen ? ' is-open' : ''}`} aria-label="Main navigation">
-          <a href="#templates" onClick={() => setMobileMenuOpen(false)}>Templates</a>
+          <a href="#design-library" onClick={() => setMobileMenuOpen(false)}>Preview library</a>
+          <a href="#templates" onClick={() => setMobileMenuOpen(false)}>Checkout catalog</a>
           <a href="#services" onClick={() => setMobileMenuOpen(false)}>Custom development</a>
           <a href="#process" onClick={() => setMobileMenuOpen(false)}>How it works</a>
           <a className="main-site-link" href={mainSite}>Main website <ArrowRight size={14} aria-hidden="true" /></a>
@@ -273,7 +377,7 @@ export default function App() {
             <h1>Custom Software &amp; Digital Templates <span>for Your Business</span></h1>
             <p>Discover ready-made website templates, SaaS dashboards, e-commerce designs, and mobile UI kits—or get custom software built around your business needs.</p>
             <div className="hero-actions">
-              <a className="ofs-button primary" href="#templates">Explore templates <ArrowDown size={16} aria-hidden="true" /></a>
+              <a className="ofs-button primary" href="#design-library">Explore templates <ArrowDown size={16} aria-hidden="true" /></a>
               <a className="ofs-button secondary" href="#services">Get custom software <ArrowRight size={16} aria-hidden="true" /></a>
             </div>
             <div className="hero-assurance"><span><Check size={14} aria-hidden="true" /></span> Practical digital foundations, tailored to your next idea.</div>
@@ -301,10 +405,93 @@ export default function App() {
           </div>
         </section>
 
+        <section className="design-library-section" id="design-library">
+          <div className="section-heading">
+            <div><span className="ofs-eyebrow">INTERACTIVE DESIGN COLLECTION</span><h2>Explore the template library</h2></div>
+            <p>Search and filter the collection, inspect a live responsive preview, and send selected designs to our team as an enquiry.</p>
+          </div>
+          <div className="design-library-controls">
+            <div className="template-category-filters" role="group" aria-label="Filter templates by category">
+              {[
+                { id: 'all', label: `All templates (${TEMPLATES.length})` },
+                { id: 'website', label: 'Websites' },
+                { id: 'dashboard', label: 'Dashboards' },
+                { id: 'commerce', label: 'Commerce' },
+                { id: 'saas', label: 'SaaS' },
+                { id: 'mobile', label: 'Mobile UI' },
+              ].map((category) => (
+                <button
+                  key={category.id}
+                  type="button"
+                  className={activeCategory === category.id ? 'is-active' : ''}
+                  aria-pressed={activeCategory === category.id}
+                  onClick={() => setActiveCategory(category.id)}
+                >
+                  {category.label}
+                </button>
+              ))}
+            </div>
+            <label className="template-search">
+              <Search size={16} aria-hidden="true" />
+              <span className="visually-hidden">Search templates</span>
+              <input
+                type="search"
+                value={searchQuery}
+                onChange={(event) => setSearchQuery(event.target.value)}
+                placeholder="Search templates and features"
+              />
+            </label>
+          </div>
+          {filteredTemplates.length === 0 ? (
+            <div className="template-empty-state">
+              <p>No templates match “{searchQuery}”.</p>
+              <button type="button" onClick={() => { setActiveCategory('all'); setSearchQuery(''); }}>Reset filters</button>
+            </div>
+          ) : (
+            <div className="template-library-grid">
+              {filteredTemplates.map((template) => (
+                <article className="library-template-card" key={template.id}>
+                  <button
+                    className="library-template-art"
+                    style={{ background: template.accentColor }}
+                    type="button"
+                    onClick={() => { setPreviewTemplate(template); setPreviewTab('preview'); }}
+                    aria-label={`Open full preview of ${template.name}`}
+                  >
+                    <span className="library-template-window" aria-hidden="true"><i /><i /><i /><span /></span>
+                    <strong>{template.name}</strong>
+                    <small>{template.categoryLabel} · {template.pagesCount}</small>
+                    <span className="library-template-preview-label"><Eye size={14} /> Live preview</span>
+                  </button>
+                  <div className="library-template-info">
+                    <div className="library-template-title">
+                      <div><h3>{template.name}</h3><p>{template.subtitle}</p></div>
+                      <strong>{formatBaht(template.price)}</strong>
+                    </div>
+                    <p className="library-template-description">{template.description}</p>
+                    <div className="library-template-meta">
+                      <span>{template.format}</span><span>{template.fileSize}</span><span>Updated {template.updatedAt}</span>
+                    </div>
+                    <div className="library-template-actions">
+                      <button type="button" className="template-preview-button" onClick={() => { setPreviewTemplate(template); setPreviewTab('preview'); }}>
+                        <Eye size={15} aria-hidden="true" /> Full preview
+                      </button>
+                      <button type="button" className="template-enquiry-button" onClick={() => addToEnquiry(template.id)}>
+                        Add to enquiry
+                      </button>
+                    </div>
+                  </div>
+                </article>
+              ))}
+            </div>
+          )}
+          <p className="template-enquiry-note">Prices are indicative. This enquiry list does not take payment; our team will confirm availability and purchase details.</p>
+        </section>
+
         <section className="content-section" id="templates">
           <div className="section-heading">
-            <div><span className="ofs-eyebrow">A SMARTER STARTING POINT</span><h2>Digital templates</h2></div>
-            <p>Choose a considered starting point for your website, dashboard, store, or app.</p>
+            <div><span className="ofs-eyebrow">SECURE STOREFRONT CHECKOUT</span><h2>Checkout catalog</h2></div>
+            <p>These products are connected to the storefront account, Stripe checkout, and purchase history.</p>
           </div>
           {checkoutAvailable && <p className="checkout-sandbox-note">Stripe sandbox only: no real charges are made. Digital downloads are not connected yet.</p>}
           <div className="product-grid">
@@ -371,6 +558,101 @@ export default function App() {
         </div>
         <div className="footer-bottom"><span>© {new Date().getFullYear()} One Fin Solution</span><a href={mainSite}>Visit the main website <ArrowRight size={13} /></a></div>
       </footer>
+
+      <button className="template-enquiry-fab" type="button" onClick={() => setIsEnquiryOpen(true)} aria-label={`Open template enquiry list with ${enquiryTotalCount} items`}>
+        <ShoppingBag size={17} aria-hidden="true" /> Enquiry list <span>{enquiryTotalCount}</span>
+      </button>
+      {isEnquiryOpen && (
+        <div className="template-enquiry-overlay" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setIsEnquiryOpen(false); }}>
+          <aside className="template-enquiry-drawer" role="dialog" aria-modal="true" aria-labelledby="template-enquiry-title">
+            <div className="template-enquiry-heading">
+              <div><h2 id="template-enquiry-title">Template enquiry list</h2><p>Save designs to include in a message to our team.</p></div>
+              <button type="button" onClick={() => setIsEnquiryOpen(false)} aria-label="Close enquiry list"><X size={19} /></button>
+            </div>
+            <div className="template-enquiry-items">
+              {enquiry.length === 0 ? (
+                <div className="template-enquiry-empty"><p>Your enquiry list is empty.</p><button type="button" onClick={() => setIsEnquiryOpen(false)}>Browse templates</button></div>
+              ) : enquiry.map((item) => {
+                const template = TEMPLATES.find((candidate) => candidate.id === item.id);
+                if (!template) return null;
+                return (
+                  <div className="template-enquiry-item" key={item.id}>
+                    <div><strong>{template.name}</strong><span>{template.categoryLabel}</span>
+                      <div className="template-enquiry-quantity">
+                        <button type="button" onClick={() => updateEnquiryQuantity(item.id, -1)} aria-label={`Remove one ${template.name}`}>−</button>
+                        <span>{item.qty}</span>
+                        <button type="button" onClick={() => updateEnquiryQuantity(item.id, 1)} aria-label={`Add one ${template.name}`}>+</button>
+                        <button className="template-enquiry-remove" type="button" onClick={() => setEnquiry((current) => current.filter((entry) => entry.id !== item.id))}>Remove</button>
+                      </div>
+                    </div>
+                    <strong>{formatBaht(template.price * item.qty)}</strong>
+                  </div>
+                );
+              })}
+            </div>
+            <div className="template-enquiry-total">
+              <div><span>Indicative total</span><strong>{formatBaht(enquirySubtotal)}</strong></div>
+              <p>No payment is taken from this list. The enquiry opens the One Fin Solution contact page.</p>
+              <a href={enquiryHref} aria-disabled={enquiry.length === 0} onClick={(event) => { if (enquiry.length === 0) event.preventDefault(); }}>
+                Send purchase enquiry <ArrowUpRight size={16} aria-hidden="true" />
+              </a>
+            </div>
+          </aside>
+        </div>
+      )}
+      {previewTemplate && (
+        <div className="template-library-preview-overlay" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setPreviewTemplate(null); }}>
+          <section className="template-library-preview" role="dialog" aria-modal="true" aria-label={`${previewTemplate.name} template preview`}>
+            <header className="template-library-preview-toolbar">
+              <div className="template-library-preview-dots" aria-hidden="true"><i /><i /><i /></div>
+              <strong>{previewTemplate.name}</strong>
+              <button type="button" onClick={() => setPreviewTemplate(null)} aria-label="Close template preview"><X size={19} /></button>
+            </header>
+            <div className="template-library-preview-controls">
+              <div className="template-preview-tabs" role="tablist" aria-label="Template preview details">
+                <button type="button" role="tab" aria-selected={previewTab === 'preview'} onClick={() => setPreviewTab('preview')}>Live preview</button>
+                <button type="button" role="tab" aria-selected={previewTab === 'specs'} onClick={() => setPreviewTab('specs')}>Specifications</button>
+              </div>
+              {previewTab === 'preview' && (
+                <div className="template-viewport-controls" role="group" aria-label="Preview viewport size">
+                  <button type="button" className={viewportSize === 'desktop' ? 'is-active' : ''} onClick={() => setViewportSize('desktop')} aria-label="Desktop viewport"><Monitor size={16} /></button>
+                  <button type="button" className={viewportSize === 'tablet' ? 'is-active' : ''} onClick={() => setViewportSize('tablet')} aria-label="Tablet viewport"><Tablet size={16} /></button>
+                  <button type="button" className={viewportSize === 'mobile' ? 'is-active' : ''} onClick={() => setViewportSize('mobile')} aria-label="Mobile viewport"><Smartphone size={16} /></button>
+                </div>
+              )}
+              <button className="template-preview-enquire" type="button" onClick={() => { addToEnquiry(previewTemplate.id); setPreviewTemplate(null); }}>Add to enquiry list</button>
+            </div>
+            {previewTab === 'preview' ? (
+              <div className="template-library-iframe-stage">
+                <div className={`template-library-iframe-frame viewport-${viewportSize}`}>
+                  <iframe title={`${previewTemplate.name} live preview`} srcDoc={previewTemplate.htmlSource} sandbox="allow-scripts allow-modals" />
+                </div>
+              </div>
+            ) : (
+              <div className="template-library-specs">
+                <span className="ofs-eyebrow">{previewTemplate.categoryLabel} · {previewTemplate.format}</span>
+                <h2>{previewTemplate.name}</h2>
+                <p>{previewTemplate.description}</p>
+                <dl>
+                  <div><dt>Sections</dt><dd>{previewTemplate.pagesCount}</dd></div>
+                  <div><dt>File size</dt><dd>{previewTemplate.fileSize}</dd></div>
+                  <div><dt>Last updated</dt><dd>{previewTemplate.updatedAt}</dd></div>
+                  <div><dt>Indicative price</dt><dd>{formatBaht(previewTemplate.price)}</dd></div>
+                </dl>
+                <h3>Included features</h3>
+                <ul>{previewTemplate.features.map((feature) => <li key={feature}><Check size={15} aria-hidden="true" />{feature}</li>)}</ul>
+                <h3>Technology</h3>
+                <div className="template-tech-stack">{previewTemplate.techStack.map((technology) => <span key={technology}>{technology}</span>)}</div>
+                <p className="template-enquiry-note">Price and availability are confirmed by our team. The preview is not a payment or file download.</p>
+              </div>
+            )}
+            <footer className="template-library-preview-footer">
+              <span>{formatBaht(previewTemplate.price)} <small>indicative price</small></span>
+              <button type="button" onClick={() => { addToEnquiry(previewTemplate.id); setPreviewTemplate(null); }}>Add to enquiry <ArrowRight size={15} /></button>
+            </footer>
+          </section>
+        </div>
+      )}
 
       {authMode && (
         <AuthModal

@@ -227,3 +227,38 @@ export async function writePreferences(userId: string, preferences: AccountPrefe
     );
   }
 }
+
+export async function readWorkspacePreferences(userId: string): Promise<AccountPreferences> {
+  const rows = await query<SettingsRow>(
+    `select theme, timezone, enter_to_send, spellcheck, context_enabled, product_updates
+     from workspace_account_settings where user_id=$1 limit 1`,
+    [userId],
+  );
+  return mapPreferences(rows[0]);
+}
+
+export async function writeWorkspacePreferences(userId: string, preferences: AccountPreferences) {
+  const next = { ...defaultPreferences, ...preferences };
+  await query(
+    `insert into workspace_account_settings(
+       user_id, theme, timezone, enter_to_send, spellcheck, context_enabled, product_updates, updated_at
+     ) values ($1,$2,$3,$4,$5,$6,$7,now())
+     on conflict (user_id) do update set
+       theme=excluded.theme,
+       timezone=excluded.timezone,
+       enter_to_send=excluded.enter_to_send,
+       spellcheck=excluded.spellcheck,
+       context_enabled=excluded.context_enabled,
+       product_updates=excluded.product_updates,
+       updated_at=now()`,
+    [
+      userId,
+      next.theme,
+      next.timezone,
+      next.enter_to_send,
+      next.spellcheck,
+      next.context_enabled,
+      next.product_updates,
+    ],
+  );
+}
