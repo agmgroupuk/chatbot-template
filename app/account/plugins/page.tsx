@@ -1,7 +1,40 @@
 import Link from 'next/link';
+import { redirect } from 'next/navigation';
+import { currentUser } from '@/lib/session';
 import { getUserModelSettings } from '@/app/actions';
 import { ModelPreferences } from '@/components/model-preferences';
-export default async function Plugins() {
-  const settings=await getUserModelSettings();
-  return <><section className="panel"><h2>Plugins & integrations</h2><p>Manage the tools available in your workspace.</p><div className="setting-row"><div><strong>Saved context</strong><p>Attach your own reference notes to a new conversation.</p><Link className="text-link" href="/context">Manage saved context</Link></div><span className="badge">Built in</span></div><div className="empty-state"><h3>Third-party plugins</h3><p>No third-party plugins are connected. External accounts and permissions will appear here when a supported connection is available.</p></div><Link className="text-link" href="/account/preferences">Configure built-in extensions →</Link></section><ModelPreferences enabled={settings.enabledModels} /></>;
+
+export const metadata = {
+  title: 'Workspace tools',
+  robots: { index: false, follow: false },
+};
+
+export default async function PluginsPage() {
+  const user = await currentUser();
+  if (!user) redirect('/sign-in');
+
+  const settings = await getUserModelSettings();
+
+  return (
+    <>
+      <section className="panel stack">
+        <div>
+          <h2>Workspace tools</h2>
+          <p className="muted">
+            Optional Workspace helpers and model preferences for credit-based tasks. Chat module enablement for the
+            homepage experience is also available in Settings → Modules.
+          </p>
+        </div>
+        <div className="button-row">
+          <Link className="button secondary" href="/">
+            Open Settings modules
+          </Link>
+          <Link className="text-link" href="/workspace">
+            Open Workspace
+          </Link>
+        </div>
+      </section>
+      <ModelPreferences enabled={settings.enabledModels} />
+    </>
+  );
 }

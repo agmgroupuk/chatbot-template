@@ -119,6 +119,9 @@ export default async function Dashboard() {
               {data.openRequests} open support {data.openRequests === '1' ? 'request' : 'requests'}.
             </p>
             <div className="button-row">
+              <Link href="/" className="button secondary small">
+                Account settings
+              </Link>
               <Link href="/account" className="button secondary small">
                 Workspace setup
               </Link>

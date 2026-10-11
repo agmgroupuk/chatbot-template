@@ -1,5 +1,6 @@
 import { Suspense } from 'react';
 import Link from 'next/link';
+import { PaymentMethodsPanel } from '@/components/payment-methods-panel';
 import planIds from '@/billing/personal-plan-ids.json';
 import { findPlan, priceLabel } from '@/lib/plans';
 import { currentUser } from '@/lib/session';
@@ -101,6 +102,14 @@ export default async function Billing({
           </article>
         )}
       </section>
+      <section className="panel stack section-space">
+        <div>
+          <h2>Payment methods</h2>
+          <p className="muted">Add, update, remove, or set a default card for homepage chat billing.</p>
+        </div>
+        <PaymentMethodsPanel />
+      </section>
+
       {subscriptions.length > 0 && /^pk_test_/.test(process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY || '') && (
         <BillingCard
           publishableKey={process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY!}

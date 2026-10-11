@@ -4,22 +4,32 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 
 const items = [
-  { href: '/account', label: 'Workspace setup' },
-  { href: '/account/preferences', label: 'Preferences' },
+  { href: '/account', label: 'Workspace setup', exact: true },
+  { href: '/account/preferences', label: 'Workspace preferences' },
   { href: '/account/plugins', label: 'Workspace tools' },
+  { href: '/account/privacy', label: 'Privacy & data' },
   { href: '/workspace', label: 'Open Workspace' },
+  { href: '/dashboard', label: 'Dashboard' },
   { href: '/dashboard/billing', label: 'Plans & billing' },
 ];
 
 export function AccountNavigation() {
-  const path = usePathname();
+  const pathname = usePathname();
+
   return (
-    <nav className="account-menu" aria-label="Workspace account">
-      {items.map(({ href, label }) => {
-        const active = path === href || (href !== '/account' && path.startsWith(href));
+    <nav className="account-nav" aria-label="Workspace setup">
+      {items.map((item) => {
+        const active = item.exact
+          ? pathname === item.href
+          : pathname === item.href || pathname.startsWith(`${item.href}/`);
         return (
-          <Link key={href} href={href} className={active ? 'active' : undefined} aria-current={active ? 'page' : undefined}>
-            {label}
+          <Link
+            key={item.href}
+            href={item.href}
+            className={active ? 'account-nav-link active' : 'account-nav-link'}
+            aria-current={active ? 'page' : undefined}
+          >
+            {item.label}
           </Link>
         );
       })}

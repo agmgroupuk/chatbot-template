@@ -60,6 +60,7 @@ export function SidebarComponent({ className, onToggleCollapse, collapsed = fals
   const [historySearch, setHistorySearch] = useState('');
   const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false);
+  const [settingsTab, setSettingsTab] = useState<'account' | 'modules' | 'subscriptions'>('account');
   const profileMenuRef = useRef<HTMLDivElement>(null);
   const router = useRouter();
   const pathname = usePathname();
@@ -207,7 +208,7 @@ export function SidebarComponent({ className, onToggleCollapse, collapsed = fals
                 <Link href="/dashboard" onClick={() => setShowProfileMenu(false)}><LayoutDashboard /><span>Dashboard</span></Link>
                 <Link href="/workspace" onClick={() => setShowProfileMenu(false)}><Blocks /><span>Workspace</span></Link>
                 <Link href="/context" onClick={() => setShowProfileMenu(false)}><BookOpen /><span>Context</span></Link>
-                                <button type="button" onClick={() => { setShowProfileMenu(false); setIsSettingsModalOpen(true); }}>
+                                <button type="button" onClick={() => { setShowProfileMenu(false); setSettingsTab('account'); setIsSettingsModalOpen(true); }}>
                   <User /><span>Account settings</span>
                 </button>
                 <Link href="/account" onClick={() => setShowProfileMenu(false)}><Blocks /><span>Workspace setup</span></Link>
@@ -216,7 +217,7 @@ export function SidebarComponent({ className, onToggleCollapse, collapsed = fals
                 <Link href="/about" onClick={() => setShowProfileMenu(false)}><Info /><span>About One Fin</span></Link>
                 {!isAuthLoading && (isAuthenticated ? (
                   <>
-                    <button type="button" onClick={() => { setIsSettingsModalOpen(true); setShowProfileMenu(false); }}><Settings /><span>Settings</span></button>
+                    <button type="button" onClick={() => { setSettingsTab('account'); setIsSettingsModalOpen(true); setShowProfileMenu(false); }}><Settings /><span>Settings</span></button>
                     <button type="button" onClick={handleSignOut}><LogOut /><span>Sign out</span></button>
                   </>
                 ) : (
@@ -427,6 +428,7 @@ export function SidebarComponent({ className, onToggleCollapse, collapsed = fals
                      type="button"
                      className="w-full px-4 py-2 text-left flex items-center gap-3 hover:bg-stone-100 text-stone-700"
                      onClick={() => {
+                       setSettingsTab('account');
                        setIsSettingsModalOpen(true);
                        setShowProfileMenu(false);
                      }}
@@ -464,6 +466,7 @@ export function SidebarComponent({ className, onToggleCollapse, collapsed = fals
         isOpen={isSettingsModalOpen}
         setIsOpen={setIsSettingsModalOpen}
         onSettingsChanged={handleSettingsChanged}
+        initialTab={settingsTab}
       />
       <DeleteConfirmationModal
         isOpen={isDeleteModalOpen}
