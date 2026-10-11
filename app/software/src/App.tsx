@@ -16,6 +16,7 @@ import {
 } from 'lucide-react';
 import { AuthModal, type AuthMode, type AuthUser } from './components/AuthModal';
 import { PurchaseHistoryModal } from './components/PurchaseHistoryModal';
+import { TemplatePreviewModal } from './components/TemplatePreviewModal';
 import { softwareCatalog, softwareServices, type SoftwareProduct } from './data/catalog';
 
 const mainSite = 'https://onefinsolution.online';
@@ -27,6 +28,12 @@ const productIcons = {
   landing: Sparkles,
   mobile: MonitorSmartphone,
   crm: BarChart3,
+  finance: BarChart3,
+  restaurant: ShoppingBag,
+  'real-estate': Blocks,
+  portfolio: Sparkles,
+  booking: MonitorSmartphone,
+  education: LayoutDashboard,
 };
 
 function ProductPreview({ product }: { product: SoftwareProduct }) {
@@ -51,14 +58,10 @@ function ProductPreview({ product }: { product: SoftwareProduct }) {
 
 function ProductCard({
   product,
-  onPurchase,
-  disabled,
-  busy,
+  onPreview,
 }: {
   product: SoftwareProduct;
-  onPurchase: (product: SoftwareProduct) => void;
-  disabled: boolean;
-  busy: boolean;
+  onPreview: (product: SoftwareProduct) => void;
 }) {
   const Icon = productIcons[product.id];
   return (
@@ -70,8 +73,8 @@ function ProductCard({
         <p>{product.description}</p>
         <div className="product-card-footer">
           <strong>{product.priceLabel}</strong>
-          <button type="button" onClick={() => onPurchase(product)} disabled={disabled}>
-            {busy ? 'Opening checkout…' : 'Purchase template'} <ArrowRight size={15} aria-hidden="true" />
+          <button type="button" onClick={() => onPreview(product)} aria-label={`Preview ${product.name}`}>
+            Preview template <ArrowRight size={15} aria-hidden="true" />
           </button>
         </div>
       </div>
@@ -93,7 +96,9 @@ export default function App() {
   const [pendingProductId, setPendingProductId] = useState('');
   const [confirmationSessionId, setConfirmationSessionId] = useState('');
   const [ordersOpen, setOrdersOpen] = useState(false);
+  const [previewProduct, setPreviewProduct] = useState<SoftwareProduct | null>(null);
   const closeOrders = useCallback(() => setOrdersOpen(false), []);
+  const closeTemplatePreview = useCallback(() => setPreviewProduct(null), []);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -307,13 +312,11 @@ export default function App() {
               <ProductCard
                 key={product.id}
                 product={product}
-                onPurchase={requestPurchase}
-                disabled={!checkoutAvailable || Boolean(payingProductId)}
-                busy={payingProductId === product.id}
+                onPreview={setPreviewProduct}
               />
             ))}
           </div>
-          {!checkoutAvailable && <p className="catalog-note">Stripe sandbox checkout is not configured yet. Contact One Fin Solution about template availability.</p>}
+          {!checkoutAvailable && <p className="catalog-note">Browse each design preview. Template checkout will be available after payment and digital delivery are configured.</p>}
         </section>
 
         <section className="content-section services-section" id="services">
@@ -386,6 +389,18 @@ export default function App() {
         />
       )}
       {ordersOpen && user && <PurchaseHistoryModal onClose={closeOrders} />}
+      {previewProduct && (
+        <TemplatePreviewModal
+          product={previewProduct}
+          checkoutAvailable={checkoutAvailable}
+          checkoutBusy={Boolean(payingProductId)}
+          onClose={closeTemplatePreview}
+          onPurchase={(product) => {
+            closeTemplatePreview();
+            requestPurchase(product);
+          }}
+        />
+      )}
     </div>
   );
 }
