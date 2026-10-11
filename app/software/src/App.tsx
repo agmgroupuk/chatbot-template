@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import {
   ArrowDown,
   ArrowRight,
@@ -15,6 +15,7 @@ import {
   X,
 } from 'lucide-react';
 import { AuthModal, type AuthMode, type AuthUser } from './components/AuthModal';
+import { PurchaseHistoryModal } from './components/PurchaseHistoryModal';
 import { softwareCatalog, softwareServices, type SoftwareProduct } from './data/catalog';
 
 const mainSite = 'https://onefinsolution.online';
@@ -48,7 +49,17 @@ function ProductPreview({ product }: { product: SoftwareProduct }) {
   );
 }
 
-function ProductCard({ product, onEnquire }: { product: SoftwareProduct; onEnquire: (product: SoftwareProduct) => void }) {
+function ProductCard({
+  product,
+  onPurchase,
+  disabled,
+  busy,
+}: {
+  product: SoftwareProduct;
+  onPurchase: (product: SoftwareProduct) => void;
+  disabled: boolean;
+  busy: boolean;
+}) {
   const Icon = productIcons[product.id];
   return (
     <article className="product-card">
@@ -59,7 +70,9 @@ function ProductCard({ product, onEnquire }: { product: SoftwareProduct; onEnqui
         <p>{product.description}</p>
         <div className="product-card-footer">
           <strong>{product.priceLabel}</strong>
-          <button type="button" onClick={() => onEnquire(product)}>Ask about this <ArrowRight size={15} aria-hidden="true" /></button>
+          <button type="button" onClick={() => onPurchase(product)} disabled={disabled}>
+            {busy ? 'Opening checkout…' : 'Purchase template'} <ArrowRight size={15} aria-hidden="true" />
+          </button>
         </div>
       </div>
     </article>
@@ -73,6 +86,14 @@ export default function App() {
   const [accountError, setAccountError] = useState('');
   const [authMode, setAuthMode] = useState<AuthMode | null>(null);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [checkoutAvailable, setCheckoutAvailable] = useState(false);
+  const [checkoutError, setCheckoutError] = useState('');
+  const [paymentNotice, setPaymentNotice] = useState('');
+  const [payingProductId, setPayingProductId] = useState('');
+  const [pendingProductId, setPendingProductId] = useState('');
+  const [confirmationSessionId, setConfirmationSessionId] = useState('');
+  const [ordersOpen, setOrdersOpen] = useState(false);
+  const closeOrders = useCallback(() => setOrdersOpen(false), []);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -94,8 +115,103 @@ export default function App() {
     return () => controller.abort();
   }, []);
 
-  const openEnquiry = (subject: string) => {
-    window.location.assign(`${mainSite}/contact?category=pricing&subject=${encodeURIComponent(subject)}`);
+  useEffect(() => {
+    const controller = new AbortController();
+    fetch('/api/checkout/status', { signal: controller.signal })
+      .then(async (response) => {
+        if (!response.ok) throw new Error('Could not check the Stripe sandbox configuration.');
+        const data = await response.json() as { available: boolean };
+        setCheckoutAvailable(data.available);
+      })
+      .catch((error: unknown) => {
+        if (error instanceof DOMException && error.name === 'AbortError') return;
+        console.error('Could not check software-store checkout configuration.', error);
+        setCheckoutError('Sandbox checkout status could not be checked. Please refresh and try again.');
+      });
+    return () => controller.abort();
+  }, []);
+
+  useEffect(() => {
+    const query = new URLSearchParams(window.location.search);
+    if (query.get('checkout') === 'cancel') {
+      setPaymentNotice('Checkout was cancelled. No payment was made.');
+      window.history.replaceState(null, '', window.location.pathname);
+    } else if (query.get('checkout') === 'success') {
+      const sessionId = query.get('session_id');
+      if (sessionId) setConfirmationSessionId(sessionId);
+      else setCheckoutError('The payment confirmation link is incomplete. Check your purchases or contact support.');
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!authReady || !confirmationSessionId) return;
+    if (!user) {
+      setAuthMode('sign-in');
+      return;
+    }
+    const controller = new AbortController();
+    fetch(`/api/checkout/confirm?session_id=${encodeURIComponent(confirmationSessionId)}`, {
+      credentials: 'same-origin',
+      signal: controller.signal,
+    })
+      .then(async (response) => {
+        const data = await response.json() as { status?: string; error?: string };
+        if (!response.ok) throw new Error(data.error || 'The payment could not be verified.');
+        if (data.status === 'paid') {
+          setPaymentNotice('Stripe sandbox payment confirmed. No real charge was made. Digital file delivery is not connected yet; please contact us to arrange delivery.');
+          setConfirmationSessionId('');
+          window.history.replaceState(null, '', window.location.pathname);
+        } else if (data.status === 'pending') {
+          setPaymentNotice('Your payment is still processing. Check Purchases again shortly.');
+          setConfirmationSessionId('');
+          window.history.replaceState(null, '', window.location.pathname);
+        } else {
+          throw new Error('This checkout was not completed. No payment was recorded.');
+        }
+      })
+      .catch((error: unknown) => {
+        if (error instanceof DOMException && error.name === 'AbortError') return;
+        console.error('Could not verify storefront checkout.', error);
+        setCheckoutError(error instanceof Error ? error.message : 'The payment could not be verified.');
+        setConfirmationSessionId('');
+      });
+    return () => controller.abort();
+  }, [authReady, confirmationSessionId, user]);
+
+  const beginCheckout = async (productId: string) => {
+    setCheckoutError('');
+    setPaymentNotice('');
+    setPayingProductId(productId);
+    try {
+      const response = await fetch('/api/checkout/session', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'same-origin',
+        body: JSON.stringify({ productId }),
+      });
+      const data = await response.json() as { url?: string; error?: string };
+      if (!response.ok) throw new Error(data.error || 'Checkout could not be started.');
+      if (!data.url) throw new Error('Stripe did not provide a checkout page.');
+      window.location.assign(data.url);
+    } catch (error) {
+      console.error('Could not start storefront checkout.', error);
+      setCheckoutError(error instanceof Error ? error.message : 'Checkout could not be started.');
+    } finally {
+      setPayingProductId('');
+    }
+  };
+
+  const requestPurchase = (product: SoftwareProduct) => {
+    if (!checkoutAvailable) {
+      setCheckoutError('Stripe sandbox checkout is not configured for this storefront yet.');
+      return;
+    }
+    if (!user) {
+      setPendingProductId(product.id);
+      setAuthMode('sign-in');
+      return;
+    }
+    void beginCheckout(product.id);
   };
 
   const handleLogout = async () => {
@@ -108,6 +224,7 @@ export default function App() {
     }
     setUser(null);
     setAuthMode(null);
+    setOrdersOpen(false);
   };
 
   return (
@@ -131,6 +248,7 @@ export default function App() {
             <div className="account-chip">
               <span className="account-avatar" aria-hidden="true">{user.email.slice(0, 1).toUpperCase()}</span>
               <span className="account-email">{user.email}</span>
+              <button type="button" onClick={() => setOrdersOpen(true)}>Purchases</button>
               <button type="button" onClick={handleLogout}>Sign out</button>
             </div>
           ) : (
@@ -140,6 +258,8 @@ export default function App() {
       </header>
       {sessionError && <p className="service-error" role="alert">{sessionError}</p>}
       {accountError && <p className="service-error" role="alert">{accountError}</p>}
+      {checkoutError && <p className="service-error" role="alert">{checkoutError}</p>}
+      {paymentNotice && <p className="service-notice" role="status">{paymentNotice}</p>}
 
       <main>
         <section className="ofs-hero" id="home">
@@ -181,12 +301,19 @@ export default function App() {
             <div><span className="ofs-eyebrow">A SMARTER STARTING POINT</span><h2>Digital templates</h2></div>
             <p>Choose a considered starting point for your website, dashboard, store, or app.</p>
           </div>
+          {checkoutAvailable && <p className="checkout-sandbox-note">Stripe sandbox only: no real charges are made. Digital downloads are not connected yet.</p>}
           <div className="product-grid">
             {softwareCatalog.map((product) => (
-              <ProductCard key={product.id} product={product} onEnquire={(item) => openEnquiry(`Template enquiry: ${item.name}`)} />
+              <ProductCard
+                key={product.id}
+                product={product}
+                onPurchase={requestPurchase}
+                disabled={!checkoutAvailable || Boolean(payingProductId)}
+                busy={payingProductId === product.id}
+              />
             ))}
           </div>
-          <p className="catalog-note">For template availability and purchasing information, contact One Fin Solution. Checkout and file delivery will be added once this store’s payment setup is configured.</p>
+          {!checkoutAvailable && <p className="catalog-note">Stripe sandbox checkout is not configured yet. Contact One Fin Solution about template availability.</p>}
         </section>
 
         <section className="content-section services-section" id="services">
@@ -247,9 +374,18 @@ export default function App() {
           mode={authMode}
           onModeChange={setAuthMode}
           onClose={() => setAuthMode(null)}
-          onAuthenticated={(nextUser) => { setUser(nextUser); setAuthMode(null); }}
+          onAuthenticated={(nextUser) => {
+            setUser(nextUser);
+            setAuthMode(null);
+            if (pendingProductId) {
+              const productId = pendingProductId;
+              setPendingProductId('');
+              void beginCheckout(productId);
+            }
+          }}
         />
       )}
+      {ordersOpen && user && <PurchaseHistoryModal onClose={closeOrders} />}
     </div>
   );
 }

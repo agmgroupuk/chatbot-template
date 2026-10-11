@@ -5,7 +5,9 @@ import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { Pool, type PoolClient } from 'pg';
+import Stripe from 'stripe';
 import dotenv from 'dotenv';
+import { softwareCatalog } from './src/data/catalog';
 
 dotenv.config();
 
@@ -33,6 +35,24 @@ function databasePool() {
     connectionTimeoutMillis: 10000,
     idleTimeoutMillis: 30000,
   });
+}
+
+function softwareStripe() {
+  const key = process.env.SOFTWARE_STRIPE_SECRET_KEY?.trim();
+  if (!key || !key.startsWith('sk_test_')) {
+    throw new RequestError(503, 'The One Fin Software Stripe sandbox is not configured.');
+  }
+  return new Stripe(key, { maxNetworkRetries: 2, timeout: 15000 });
+}
+
+function softwareAppUrl() {
+  const value = process.env.SOFTWARE_APP_URL?.trim();
+  if (!value) throw new RequestError(503, 'The storefront URL is not configured.');
+  const url = new URL(value);
+  if (process.env.NODE_ENV === 'production' && url.protocol !== 'https:') {
+    throw new RequestError(503, 'The storefront URL must use HTTPS.');
+  }
+  return url.origin;
 }
 
 const pool = databasePool();
@@ -224,6 +244,106 @@ app.use((_request, response, next) => {
   response.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=()');
   next();
 });
+app.post('/api/stripe/webhook', express.raw({ type: 'application/json', limit: '1mb' }), asyncRoute(async (request, response) => {
+  const secret = process.env.SOFTWARE_STRIPE_WEBHOOK_SECRET?.trim();
+  if (!secret) throw new RequestError(503, 'The One Fin Software Stripe webhook is not configured.');
+  const stripe = softwareStripe();
+  const signature = request.get('stripe-signature');
+  if (!signature || !Buffer.isBuffer(request.body)) {
+    throw new RequestError(400, 'A valid Stripe signature is required.');
+  }
+
+  let event: Stripe.Event;
+  try {
+    event = stripe.webhooks.constructEvent(request.body, signature, secret);
+  } catch {
+    throw new RequestError(400, 'The Stripe signature is invalid.');
+  }
+  if (event.livemode) throw new RequestError(400, 'Live Stripe events are not accepted by the sandbox storefront.');
+
+  const handledEvents = new Set([
+    'checkout.session.completed',
+    'checkout.session.async_payment_succeeded',
+    'checkout.session.async_payment_failed',
+    'checkout.session.expired',
+  ]);
+  if (!handledEvents.has(event.type)) {
+    response.json({ received: true });
+    return;
+  }
+
+  const checkout = event.data.object as Stripe.Checkout.Session;
+  if (!checkout.id.startsWith('cs_test_')) {
+    throw new RequestError(400, 'Only Stripe test-mode checkout sessions are accepted.');
+  }
+  const orderId = checkout.metadata?.orderId;
+  if (!orderId || !/^[0-9a-f-]{36}$/i.test(orderId)) {
+    throw new RequestError(400, 'The checkout session does not contain a valid order reference.');
+  }
+
+  const client = await pool.connect();
+  try {
+    await client.query('begin');
+    const eventInsert = await client.query(
+      `insert into ofs_store.stripe_events (event_id, event_type)
+       values ($1, $2) on conflict (event_id) do nothing returning event_id`,
+      [event.id, event.type],
+    );
+    if (eventInsert.rowCount === 0) {
+      await client.query('commit');
+      response.json({ received: true });
+      return;
+    }
+
+    const orderResult = await client.query<{
+      id: string;
+      amount_satang: number;
+      currency: string;
+      stripe_checkout_session_id: string | null;
+    }>(
+      `select id, amount_satang, currency, stripe_checkout_session_id
+       from ofs_store.orders where id = $1 for update`,
+      [orderId],
+    );
+    const order = orderResult.rows[0];
+    if (!order ||
+      (order.stripe_checkout_session_id && order.stripe_checkout_session_id !== checkout.id) ||
+      checkout.amount_total !== order.amount_satang ||
+      checkout.currency !== order.currency) {
+      throw new Error(`Stripe checkout event ${event.id} did not match its order.`);
+    }
+
+    if (event.type === 'checkout.session.completed' || event.type === 'checkout.session.async_payment_succeeded') {
+      if (checkout.payment_status === 'paid') {
+        const paymentIntentId = typeof checkout.payment_intent === 'string' ? checkout.payment_intent : checkout.payment_intent?.id ?? null;
+        await client.query(
+          `update ofs_store.orders
+           set status = 'paid', stripe_checkout_session_id = $2, stripe_payment_intent_id = $3, updated_at = now()
+           where id = $1`,
+          [order.id, checkout.id, paymentIntentId],
+        );
+      } else if (!order.stripe_checkout_session_id) {
+        await client.query(
+          `update ofs_store.orders set stripe_checkout_session_id = $2, updated_at = now() where id = $1`,
+          [order.id, checkout.id],
+        );
+      }
+    } else if (event.type === 'checkout.session.async_payment_failed' || event.type === 'checkout.session.expired') {
+      await client.query(
+        `update ofs_store.orders set status = $2, stripe_checkout_session_id = $3, updated_at = now()
+         where id = $1 and status = 'pending'`,
+        [order.id, event.type.endsWith('.expired') ? 'canceled' : 'failed', checkout.id],
+      );
+    }
+    await client.query('commit');
+    response.json({ received: true });
+  } catch (error) {
+    await client.query('rollback');
+    throw error;
+  } finally {
+    client.release();
+  }
+}));
 app.use('/api', express.json({ limit: '24kb', type: 'application/json' }));
 
 app.get('/api/health', asyncRoute(async (_request, response) => {
@@ -231,8 +351,156 @@ app.get('/api/health', asyncRoute(async (_request, response) => {
   response.json({ status: 'ok' });
 }));
 
+app.get('/api/checkout/status', (_request, response) => {
+  const secretKey = process.env.SOFTWARE_STRIPE_SECRET_KEY?.trim();
+  const webhookSecret = process.env.SOFTWARE_STRIPE_WEBHOOK_SECRET?.trim();
+  response.json({ available: Boolean(secretKey?.startsWith('sk_test_') && webhookSecret && process.env.SOFTWARE_APP_URL?.trim()) });
+});
+
 app.get('/api/auth/session', asyncRoute(async (request, response) => {
   response.json({ user: await currentUser(request) });
+}));
+
+app.post('/api/checkout/session', asyncRoute(async (request, response) => {
+  requireSameOrigin(request);
+  const user = await currentUser(request);
+  if (!user) throw new RequestError(401, 'Sign in to purchase a template.');
+
+  const productId = request.body?.productId;
+  if (typeof productId !== 'string') throw new RequestError(400, 'Choose a valid template.');
+  const product = softwareCatalog.find((candidate) => candidate.id === productId);
+  if (!product) throw new RequestError(400, 'Choose a valid template.');
+
+  const stripe = softwareStripe();
+  const baseUrl = softwareAppUrl();
+  const address = request.ip || 'unknown';
+  await limitAttempts('checkout', user.email, address, 8);
+  const orderResult = await pool.query<{ id: string }>(
+    `insert into ofs_store.orders (user_id, product_id, product_name, amount_satang)
+     values ($1, $2, $3, $4) returning id`,
+    [user.id, product.id, product.name, product.amountSatang],
+  );
+  const orderId = orderResult.rows[0].id;
+  try {
+    const session = await stripe.checkout.sessions.create({
+      mode: 'payment',
+      customer_email: user.email,
+      client_reference_id: orderId,
+      metadata: { orderId, userId: user.id, productId: product.id },
+      payment_intent_data: { metadata: { orderId, userId: user.id, productId: product.id } },
+      line_items: [{
+        quantity: 1,
+        price_data: {
+          currency: 'thb',
+          unit_amount: product.amountSatang,
+          product_data: { name: product.name, description: product.description },
+        },
+      }],
+      success_url: `${baseUrl}/?checkout=success&session_id={CHECKOUT_SESSION_ID}`,
+      cancel_url: `${baseUrl}/?checkout=cancel`,
+    });
+    if (!session.url) throw new Error('Stripe did not return a checkout URL.');
+    await pool.query(
+      `update ofs_store.orders set stripe_checkout_session_id = $2, updated_at = now() where id = $1`,
+      [orderId, session.id],
+    );
+    response.status(201).json({ url: session.url });
+  } catch (error) {
+    await pool.query(
+      `update ofs_store.orders set status = 'failed', updated_at = now() where id = $1 and status = 'pending'`,
+      [orderId],
+    );
+    throw error;
+  }
+}));
+
+app.get('/api/checkout/confirm', asyncRoute(async (request, response) => {
+  const user = await currentUser(request);
+  if (!user) throw new RequestError(401, 'Sign in to view this purchase.');
+  const sessionId = request.query.session_id;
+  if (typeof sessionId !== 'string' || !/^cs_test_[A-Za-z0-9_]{8,240}$/.test(sessionId)) {
+    throw new RequestError(400, 'The checkout reference is invalid.');
+  }
+
+  const stripe = softwareStripe();
+  const session = await stripe.checkout.sessions.retrieve(sessionId);
+  const orderId = session.metadata?.orderId;
+  if (!orderId || session.metadata?.userId !== user.id) {
+    throw new RequestError(404, 'This purchase could not be found for your account.');
+  }
+
+  const client = await pool.connect();
+  let status: 'paid' | 'pending' | 'failed' | 'canceled' = 'pending';
+  try {
+    await client.query('begin');
+    const orderResult = await client.query<{
+      id: string;
+      user_id: string;
+      amount_satang: number;
+      currency: string;
+      status: 'paid' | 'pending' | 'failed' | 'canceled';
+      stripe_checkout_session_id: string | null;
+    }>(
+      `select id, user_id, amount_satang, currency, status, stripe_checkout_session_id
+       from ofs_store.orders where id = $1 for update`,
+      [orderId],
+    );
+    const order = orderResult.rows[0];
+    if (!order ||
+      order.user_id !== user.id ||
+      (order.stripe_checkout_session_id && order.stripe_checkout_session_id !== session.id) ||
+      session.amount_total !== order.amount_satang ||
+      session.currency !== order.currency ||
+      session.mode !== 'payment' ||
+      session.livemode) {
+      throw new RequestError(404, 'This purchase could not be verified.');
+    }
+
+    if (session.payment_status === 'paid') {
+      const paymentIntentId = typeof session.payment_intent === 'string' ? session.payment_intent : session.payment_intent?.id ?? null;
+      await client.query(
+        `update ofs_store.orders
+         set status = 'paid', stripe_checkout_session_id = $2, stripe_payment_intent_id = $3, updated_at = now()
+         where id = $1`,
+        [order.id, session.id, paymentIntentId],
+      );
+      status = 'paid';
+    } else if (session.status === 'expired') {
+      await client.query(
+        `update ofs_store.orders set status = 'canceled', stripe_checkout_session_id = $2, updated_at = now()
+         where id = $1 and status = 'pending'`,
+        [order.id, session.id],
+      );
+      status = 'canceled';
+    } else if (order.status === 'failed' || order.status === 'canceled') {
+      status = order.status;
+    }
+    await client.query('commit');
+  } catch (error) {
+    await client.query('rollback');
+    throw error;
+  } finally {
+    client.release();
+  }
+  response.json({ status });
+}));
+
+app.get('/api/orders', asyncRoute(async (request, response) => {
+  const user = await currentUser(request);
+  if (!user) throw new RequestError(401, 'Sign in to view your purchases.');
+  const orders = await pool.query<{
+    id: string;
+    product_name: string;
+    amount_satang: number;
+    currency: string;
+    status: string;
+    created_at: Date;
+  }>(
+    `select id, product_name, amount_satang, currency, status, created_at
+     from ofs_store.orders where user_id = $1 order by created_at desc limit 50`,
+    [user.id],
+  );
+  response.json({ orders: orders.rows });
 }));
 
 app.post('/api/auth/sign-up', asyncRoute(async (request, response) => {

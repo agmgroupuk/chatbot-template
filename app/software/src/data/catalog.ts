@@ -7,15 +7,16 @@ export interface SoftwareProduct {
   category: string;
   description: string;
   priceLabel: string;
+  amountSatang: number;
 }
 
 export const softwareCatalog: SoftwareProduct[] = [
-  { id: 'agency', name: 'Agency Website Kit', category: 'Business website', description: 'A polished starting point for creative studios and service agencies.', priceLabel: '฿2,490' },
-  { id: 'admin', name: 'SaaS Admin Dashboard', category: 'SaaS dashboard', description: 'A clear interface for managing users, metrics, and product settings.', priceLabel: '฿3,490' },
-  { id: 'commerce', name: 'E-commerce Storefront', category: 'Online store', description: 'A product-first storefront concept for presenting your collection.', priceLabel: '฿2,990' },
-  { id: 'landing', name: 'SaaS Landing Page', category: 'Landing page', description: 'A focused layout for introducing and explaining a digital product.', priceLabel: '฿1,790' },
-  { id: 'mobile', name: 'Mobile App UI Starter', category: 'Mobile UI', description: 'A flexible visual foundation for a new mobile application.', priceLabel: '฿2,490' },
-  { id: 'crm', name: 'CRM & Sales Dashboard', category: 'CRM dashboard', description: 'A practical concept for contacts, sales pipeline, and activity.', priceLabel: '฿3,990' },
+  { id: 'agency', name: 'Agency Website Kit', category: 'Business website', description: 'A polished starting point for creative studios and service agencies.', priceLabel: '฿2,490', amountSatang: 249000 },
+  { id: 'admin', name: 'SaaS Admin Dashboard', category: 'SaaS dashboard', description: 'A clear interface for managing users, metrics, and product settings.', priceLabel: '฿3,490', amountSatang: 349000 },
+  { id: 'commerce', name: 'E-commerce Storefront', category: 'Online store', description: 'A product-first storefront concept for presenting your collection.', priceLabel: '฿2,990', amountSatang: 299000 },
+  { id: 'landing', name: 'SaaS Landing Page', category: 'Landing page', description: 'A focused layout for introducing and explaining a digital product.', priceLabel: '฿1,790', amountSatang: 179000 },
+  { id: 'mobile', name: 'Mobile App UI Starter', category: 'Mobile UI', description: 'A flexible visual foundation for a new mobile application.', priceLabel: '฿2,490', amountSatang: 249000 },
+  { id: 'crm', name: 'CRM & Sales Dashboard', category: 'CRM dashboard', description: 'A practical concept for contacts, sales pipeline, and activity.', priceLabel: '฿3,990', amountSatang: 399000 },
 ];
 
 export const softwareServices: Array<{
