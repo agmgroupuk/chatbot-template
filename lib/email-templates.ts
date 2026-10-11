@@ -30,15 +30,96 @@ type BuiltTemplate = {
   ctaLabel?: string;
   ctaUrl?: string;
   footerNote?: string;
+  /** Optional code / key callout (activity_key). */
+  highlightCode?: string;
+  /** Optional meta rows under the body (plan / trial details). */
+  details?: Array<{ label: string; value: string }>;
+  /** Visual theme for hero imagery + accent. */
+  theme: EmailTheme;
+};
+
+type EmailTheme = {
+  kicker: string;
+  heroImage: string;
+  accent: string;
+  accentSoft: string;
+  badge: string;
 };
 
 const brand = {
   product: 'One Fin Solution',
+  tagline: 'AI chat and software workspace',
   support: 'https://onefinsolution.online/support',
   privacy: 'https://onefinsolution.online/privacy',
   billing: 'https://onefinsolution.online/dashboard/billing',
+  pricing: 'https://onefinsolution.online/pricing',
   signIn: 'https://onefinsolution.online/sign-in',
   workspace: 'https://onefinsolution.online/workspace',
+  home: 'https://onefinsolution.online/',
+};
+
+/** Public assets under /public — always absolute for email clients. */
+function asset(path: string): string {
+  const base = siteUrl().replace(/\/$/, '') || 'https://onefinsolution.online';
+  const clean = path.startsWith('/') ? path : `/${path}`;
+  return `${base}${clean}`;
+}
+
+const assets = {
+  logo: asset('/logo/one-fin-logo.png'),
+  /** Distinct heroes from public/images so templates feel related but not identical. */
+  heroWelcome: asset('/images/iages4.jpg'),
+  heroAuth: asset('/images/iages5.jpg'),
+  heroSecurity: asset('/images/iages2.jpg'),
+  heroActivity: asset('/images/images1.jpg'),
+  heroBilling: asset('/images/iages7.jpg'),
+  heroTrial: asset('/images/iages9.jpg'),
+  heroSoft: asset('/images/iages3.jpg'),
+};
+
+const themes: Record<string, EmailTheme> = {
+  welcome: {
+    kicker: 'Welcome',
+    heroImage: assets.heroWelcome,
+    accent: '#0f766e',
+    accentSoft: '#ecfdf5',
+    badge: 'New account',
+  },
+  auth: {
+    kicker: 'Secure access',
+    heroImage: assets.heroAuth,
+    accent: '#0f766e',
+    accentSoft: '#f0fdfa',
+    badge: 'Sign-in',
+  },
+  security: {
+    kicker: 'Security',
+    heroImage: assets.heroSecurity,
+    accent: '#0e7490',
+    accentSoft: '#ecfeff',
+    badge: 'Password',
+  },
+  activity: {
+    kicker: 'Verification',
+    heroImage: assets.heroActivity,
+    accent: '#0f766e',
+    accentSoft: '#f0fdf4',
+    badge: 'Activity key',
+  },
+  billing: {
+    kicker: 'Billing',
+    heroImage: assets.heroBilling,
+    accent: '#0f766e',
+    accentSoft: '#f8fafc',
+    badge: 'Subscription',
+  },
+  trial: {
+    kicker: 'Trial',
+    heroImage: assets.heroTrial,
+    accent: '#115e59',
+    accentSoft: '#f0fdfa',
+    badge: 'Reminder',
+  },
 };
 
 function displayName(input: EmailTemplateInput): string {
@@ -61,6 +142,7 @@ export function buildEmailTemplate(id: EmailTemplateId, input: EmailTemplateInpu
     case 'welcome':
       return {
         id,
+        theme: themes.welcome,
         subject: `Welcome to ${brand.product}`,
         preheader: 'Your account is ready. Confirm your email to unlock full access.',
         heading: `Welcome, ${name}`,
@@ -77,6 +159,7 @@ export function buildEmailTemplate(id: EmailTemplateId, input: EmailTemplateInpu
     case 'login_reminder':
       return {
         id,
+        theme: themes.auth,
         subject: `Your ${brand.product} sign-in link`,
         preheader: 'Use this secure link to access your account.',
         heading: 'Sign in to your account',
@@ -87,96 +170,103 @@ export function buildEmailTemplate(id: EmailTemplateId, input: EmailTemplateInpu
         ],
         ctaLabel: 'Sign in securely',
         ctaUrl: actionUrl || brand.signIn,
+        footerNote: 'For your protection, never share this link with anyone.',
       };
 
     case 'forgot_password':
       return {
         id,
+        theme: themes.security,
         subject: `Reset your ${brand.product} password`,
         preheader: 'Choose a new password with this secure link.',
-        heading: 'Password reset request',
+        heading: 'Reset your password',
         body: [
           `Hi ${name},`,
-          'We received a request to reset the password for your account. Click below to choose a new password.',
-          'If you did not ask for a reset, ignore this email. Your current password will keep working.',
+          'We received a request to reset the password for your account. Click below to choose a new one.',
+          'If you did not ask for a reset, you can ignore this email — your current password stays the same.',
         ],
-        ctaLabel: 'Reset password',
-        ctaUrl: actionUrl || `${brand.signIn.replace('/sign-in', '/forgot-password')}`,
-        footerNote: 'This reset link expires for your security.',
+        ctaLabel: 'Choose a new password',
+        ctaUrl: actionUrl || brand.signIn,
+        footerNote: 'This reset link expires soon and can only be used once.',
       };
 
     case 'password_reset':
       return {
         id,
+        theme: themes.security,
         subject: `Your ${brand.product} password was updated`,
-        preheader: 'This is a confirmation that your password changed.',
+        preheader: 'A password change was completed on your account.',
         heading: 'Password updated',
         body: [
           `Hi ${name},`,
-          'Your password was changed successfully. If you made this change, no further action is needed.',
-          'If you did not change your password, reset it immediately and contact support.',
+          'Your password was changed successfully. You can sign in with your new password anytime.',
+          'If you did not make this change, reset your password immediately and contact support.',
         ],
-        ctaLabel: 'Review account security',
+        ctaLabel: 'Sign in',
         ctaUrl: actionUrl || brand.signIn,
+        footerNote: 'This is a security notification from One Fin Solution.',
       };
 
     case 'activity_key':
       return {
         id,
-        subject: `Your ${brand.product} verification code`,
-        preheader: input.code ? `Your code is ${input.code}` : 'Your one-time activity key is ready.',
-        heading: 'Activity verification key',
+        theme: themes.activity,
+        subject: `Your ${brand.product} activity key`,
+        preheader: 'Use this one-time key to continue.',
+        heading: 'Your activity key',
         body: [
           `Hi ${name},`,
-          'Use this one-time key to complete your secure activity:',
-          input.code ? `Code: ${input.code}` : 'Open the secure link below to continue.',
-          'This key expires shortly and should not be shared with anyone.',
+          'Use the one-time key below to continue a secure action in One Fin Solution.',
+          'Do not share this key. It expires shortly and can only be used once.',
         ],
-        ctaLabel: actionUrl ? 'Continue securely' : undefined,
+        highlightCode: (input.code || '').trim() || undefined,
+        ctaLabel: actionUrl ? 'Continue in One Fin' : undefined,
         ctaUrl: actionUrl,
-        footerNote: 'Never share this code. One Fin staff will never ask for it.',
+        footerNote: 'If you did not request this key, you can ignore this email.',
       };
 
     case 'subscription_plan_reminder':
       return {
         id,
-        subject: input.planName
-          ? `${brand.product}: ${input.planName} plan reminder`
-          : `${brand.product} subscription reminder`,
-        preheader: 'A quick update about your homepage chat subscription.',
+        theme: themes.billing,
+        subject: `Your ${input.planName || 'plan'} is coming up for renewal`,
+        preheader: 'A quick look at your upcoming subscription billing.',
         heading: 'Subscription reminder',
         body: [
           `Hi ${name},`,
-          input.planName
-            ? `This is a reminder about your ${input.planName} homepage chat plan.`
-            : 'This is a reminder about your homepage chat subscription.',
-          input.periodEnd ? `Current period ends: ${input.periodEnd}.` : '',
-          input.amountLabel ? `Upcoming charge: ${input.amountLabel}.` : '',
-          input.note || 'You can switch plans, update your card, or cancel from Plans & billing before the next renewal.',
-        ].filter(Boolean),
-        ctaLabel: 'Manage subscription',
+          `This is a friendly reminder about your ${input.planName || 'homepage chat'} subscription on ${brand.product}.`,
+          input.note || 'You can review plan details, payment methods, and renewals anytime from Plans & billing.',
+        ],
+        details: [
+          input.planName ? { label: 'Plan', value: input.planName } : null,
+          input.amountLabel ? { label: 'Amount', value: input.amountLabel } : null,
+          input.periodEnd ? { label: 'Next billing', value: input.periodEnd } : null,
+        ].filter(Boolean) as Array<{ label: string; value: string }>,
+        ctaLabel: 'Manage billing',
         ctaUrl: actionUrl || brand.billing,
+        footerNote: 'Homepage chat plans are separate from Workspace credits.',
       };
 
     case 'trial_reminder':
       return {
         id,
-        subject: input.planName
-          ? `${brand.product}: ${input.planName} trial ending soon`
-          : `${brand.product} trial ending soon`,
-        preheader: 'Your free trial is ending soon. Cancel anytime before the first charge.',
+        theme: themes.trial,
+        subject: `Your ${input.planName || 'trial'} ends soon`,
+        preheader: 'Your trial period is ending — keep access without interruption.',
         heading: 'Trial ending soon',
         body: [
           `Hi ${name},`,
-          input.planName
-            ? `Your free trial of the ${input.planName} plan is ending soon.`
-            : 'Your free trial is ending soon.',
-          input.trialEnd ? `First automatic payment: ${input.trialEnd}.` : '',
-          input.amountLabel ? `Then ${input.amountLabel}, billed automatically unless you cancel.` : '',
-          input.note || 'Cancel before the trial ends to avoid the first charge. You can also keep the plan and continue unlimited homepage chat.',
-        ].filter(Boolean),
-        ctaLabel: 'Review trial & billing',
-        ctaUrl: actionUrl || brand.billing,
+          `Your ${input.planName || 'One Fin'} trial is ending soon. Stay on a plan to keep unlimited homepage chat without interruption.`,
+          input.note || 'Choose Monthly or Yearly from pricing, or manage billing from your dashboard.',
+        ],
+        details: [
+          input.planName ? { label: 'Plan', value: input.planName } : null,
+          input.amountLabel ? { label: 'After trial', value: input.amountLabel } : null,
+          input.trialEnd ? { label: 'Trial ends', value: input.trialEnd } : null,
+        ].filter(Boolean) as Array<{ label: string; value: string }>,
+        ctaLabel: 'View plans',
+        ctaUrl: actionUrl || brand.pricing,
+        footerNote: 'You will not be charged until the trial ends, based on your selected plan.',
       };
 
     default: {
@@ -186,51 +276,209 @@ export function buildEmailTemplate(id: EmailTemplateId, input: EmailTemplateInpu
   }
 }
 
-function escapeHtml(value: string): string {
+export function escapeHtml(value: string): string {
   return value
-    .replaceAll('&', '&amp;')
-    .replaceAll('<', '&lt;')
-    .replaceAll('>', '&gt;')
-    .replaceAll('"', '&quot;');
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
 }
 
+/**
+ * Branded HTML shell aligned with the One Fin website:
+ * teal accents, Inter/Segoe stack, rounded cards, logo header, hero imagery.
+ */
 export function renderEmailHtml(template: BuiltTemplate): string {
+  const theme = template.theme;
+  const accent = theme.accent;
+  const accentSoft = theme.accentSoft;
+  const hero = theme.heroImage;
+  const logo = assets.logo;
+
   const paragraphs = template.body
     .map(
       (line) =>
-        `<p style="margin:0 0 16px;font-size:16px;line-height:1.55;color:#1f2937;">${escapeHtml(line)}</p>`,
+        `<p style="margin:0 0 16px;font-size:16px;line-height:1.6;color:#334155;">${escapeHtml(line)}</p>`,
     )
     .join('');
-  const cta = template.ctaUrl
-    ? `<p style="margin:28px 0 8px;"><a href="${escapeHtml(template.ctaUrl)}" style="display:inline-block;background:#0f766e;color:#ffffff;text-decoration:none;padding:12px 18px;border-radius:8px;font-weight:600;">${escapeHtml(template.ctaLabel || 'Continue')}</a></p>`
-    : '';
-  const footerNote = template.footerNote
-    ? `<p style="margin:24px 0 0;font-size:13px;line-height:1.5;color:#6b7280;">${escapeHtml(template.footerNote)}</p>`
+
+  const details =
+    template.details && template.details.length
+      ? `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:8px 0 20px;border-collapse:separate;border-spacing:0;background:${accentSoft};border:1px solid rgba(15,118,110,0.12);border-radius:14px;overflow:hidden;">
+          ${template.details
+            .map(
+              (row, index) => `
+            <tr>
+              <td style="padding:12px 16px;font-size:13px;color:#64748b;border-top:${index === 0 ? '0' : '1px solid rgba(15,23,42,0.06)'};width:38%;">${escapeHtml(row.label)}</td>
+              <td style="padding:12px 16px;font-size:14px;font-weight:600;color:#0f172a;text-align:right;border-top:${index === 0 ? '0' : '1px solid rgba(15,23,42,0.06)'};">${escapeHtml(row.value)}</td>
+            </tr>`,
+            )
+            .join('')}
+        </table>`
+      : '';
+
+  const codeBlock = template.highlightCode
+    ? `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:8px 0 24px;">
+        <tr>
+          <td align="center" style="background:linear-gradient(180deg,#f8fafc 0%,${accentSoft} 100%);border:1px dashed rgba(15,118,110,0.35);border-radius:16px;padding:22px 16px;">
+            <p style="margin:0 0 8px;font-size:11px;letter-spacing:0.16em;text-transform:uppercase;color:${accent};font-weight:700;">One-time key</p>
+            <p style="margin:0;font-size:32px;letter-spacing:0.28em;font-weight:700;color:#0f172a;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;">${escapeHtml(template.highlightCode)}</p>
+          </td>
+        </tr>
+      </table>`
     : '';
 
-  return `<!doctype html>
+  const cta =
+    template.ctaUrl && template.ctaLabel
+      ? `<table role="presentation" cellpadding="0" cellspacing="0" style="margin:8px 0 24px;">
+          <tr>
+            <td align="center" bgcolor="${accent}" style="border-radius:999px;background:${accent};">
+              <a href="${escapeHtml(template.ctaUrl)}" style="display:inline-block;padding:14px 28px;font-size:15px;font-weight:700;color:#ffffff;text-decoration:none;border-radius:999px;letter-spacing:0.01em;">
+                ${escapeHtml(template.ctaLabel)}
+              </a>
+            </td>
+          </tr>
+        </table>
+        <p style="margin:0 0 20px;font-size:12px;line-height:1.5;color:#94a3b8;word-break:break-all;">
+          Or open this link:<br />
+          <a href="${escapeHtml(template.ctaUrl)}" style="color:${accent};text-decoration:underline;">${escapeHtml(template.ctaUrl)}</a>
+        </p>`
+      : '';
+
+  const footerNote = template.footerNote
+    ? `<p style="margin:0 0 18px;font-size:13px;line-height:1.55;color:#64748b;">${escapeHtml(template.footerNote)}</p>`
+    : '';
+
+  return `<!DOCTYPE html>
 <html lang="en">
-  <body style="margin:0;padding:0;background:#f3f4f6;">
-    <div style="display:none;max-height:0;overflow:hidden;opacity:0;color:transparent;">${escapeHtml(template.preheader)}</div>
-    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background:#f3f4f6;padding:24px 12px;">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="light" />
+    <meta name="supported-color-schemes" content="light" />
+    <title>${escapeHtml(template.subject)}</title>
+    <!--[if mso]>
+    <style type="text/css">
+      body, table, td, a { font-family: Arial, Helvetica, sans-serif !important; }
+    </style>
+    <![endif]-->
+  </head>
+  <body style="margin:0;padding:0;background:#e8eef5;color:#0f172a;">
+    <div style="display:none;max-height:0;overflow:hidden;opacity:0;color:transparent;">
+      ${escapeHtml(template.preheader)}
+    </div>
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#e8eef5;margin:0;padding:0;width:100%;">
       <tr>
-        <td align="center">
-          <table role="presentation" width="100%" style="max-width:560px;background:#ffffff;border-radius:16px;padding:32px 28px;font-family:Segoe UI,Roboto,Helvetica,Arial,sans-serif;">
+        <td align="center" style="padding:28px 14px 36px;">
+          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:600px;width:100%;border-collapse:separate;">
+
+            <!-- Brand header -->
             <tr>
-              <td>
-                <p style="margin:0 0 8px;font-size:12px;letter-spacing:0.08em;text-transform:uppercase;color:#0f766e;font-weight:700;">${escapeHtml(brand.product)}</p>
-                <h1 style="margin:0 0 20px;font-size:24px;line-height:1.3;color:#111827;">${escapeHtml(template.heading)}</h1>
-                ${paragraphs}
-                ${cta}
-                ${footerNote}
-                <hr style="border:none;border-top:1px solid #e5e7eb;margin:28px 0;" />
-                <p style="margin:0;font-size:12px;line-height:1.5;color:#9ca3af;">
-                  ${escapeHtml(brand.product)} ·
-                  <a href="${escapeHtml(brand.support)}" style="color:#0f766e;">Support</a> ·
-                  <a href="${escapeHtml(brand.privacy)}" style="color:#0f766e;">Privacy</a>
+              <td style="padding:0 4px 14px;">
+                <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
+                  <tr>
+                    <td align="left" style="vertical-align:middle;">
+                      <a href="${escapeHtml(brand.home)}" style="text-decoration:none;color:#0f172a;">
+                        <img src="${escapeHtml(logo)}" width="40" height="40" alt="${escapeHtml(brand.product)}" style="display:inline-block;border:0;border-radius:10px;vertical-align:middle;outline:none;" />
+                        <span style="display:inline-block;vertical-align:middle;margin-left:10px;font-family:Inter,Segoe UI,Roboto,Helvetica,Arial,sans-serif;font-size:16px;font-weight:700;letter-spacing:-0.01em;color:#0f172a;">
+                          ${escapeHtml(brand.product)}
+                        </span>
+                      </a>
+                    </td>
+                    <td align="right" style="vertical-align:middle;">
+                      <span style="display:inline-block;padding:6px 12px;border-radius:999px;background:#ffffff;border:1px solid rgba(15,118,110,0.18);font-family:Inter,Segoe UI,Roboto,Helvetica,Arial,sans-serif;font-size:11px;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;color:${accent};">
+                        ${escapeHtml(theme.badge)}
+                      </span>
+                    </td>
+                  </tr>
+                </table>
+              </td>
+            </tr>
+
+            <!-- Card -->
+            <tr>
+              <td style="background:#ffffff;border-radius:22px;overflow:hidden;box-shadow:0 18px 50px rgba(15,23,42,0.12);border:1px solid rgba(15,23,42,0.06);">
+
+                <!-- Hero -->
+                <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
+                  <tr>
+                    <td background="${escapeHtml(hero)}" bgcolor="#0f766e" style="background-image:url('${escapeHtml(hero)}');background-size:cover;background-position:center;background-color:#0f766e;">
+                      <!--[if gte mso 9]>
+                      <v:rect xmlns:v="urn:schemas-microsoft-com:vml" fill="true" stroke="false" style="width:600px;height:168px;">
+                        <v:fill type="frame" src="${escapeHtml(hero)}" color="#0f766e" />
+                        <v:textbox inset="0,0,0,0">
+                      <![endif]-->
+                      <div style="background:linear-gradient(180deg,rgba(15,23,42,0.28) 0%,rgba(15,118,110,0.78) 100%);padding:28px 28px 26px;">
+                        <p style="margin:0 0 8px;font-family:Inter,Segoe UI,Roboto,Helvetica,Arial,sans-serif;font-size:11px;letter-spacing:0.16em;text-transform:uppercase;font-weight:700;color:#ccfbf1;">
+                          ${escapeHtml(theme.kicker)}
+                        </p>
+                        <h1 style="margin:0;font-family:Inter,Segoe UI,Roboto,Helvetica,Arial,sans-serif;font-size:28px;line-height:1.25;font-weight:700;color:#ffffff;letter-spacing:-0.02em;">
+                          ${escapeHtml(template.heading)}
+                        </h1>
+                        <p style="margin:10px 0 0;font-family:Inter,Segoe UI,Roboto,Helvetica,Arial,sans-serif;font-size:13px;line-height:1.5;color:rgba(255,255,255,0.88);">
+                          ${escapeHtml(brand.tagline)}
+                        </p>
+                      </div>
+                      <!--[if gte mso 9]>
+                        </v:textbox>
+                      </v:rect>
+                      <![endif]-->
+                    </td>
+                  </tr>
+                </table>
+
+                <!-- Body -->
+                <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
+                  <tr>
+                    <td style="padding:28px 28px 8px;font-family:Inter,Segoe UI,Roboto,Helvetica,Arial,sans-serif;">
+                      ${paragraphs}
+                      ${details}
+                      ${codeBlock}
+                      ${cta}
+                      ${footerNote}
+                    </td>
+                  </tr>
+                </table>
+
+                <!-- Soft footer strip inside card -->
+                <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
+                  <tr>
+                    <td style="padding:0 28px 26px;font-family:Inter,Segoe UI,Roboto,Helvetica,Arial,sans-serif;">
+                      <div style="border-top:1px solid #e2e8f0;padding-top:18px;">
+                        <p style="margin:0 0 8px;font-size:13px;line-height:1.5;color:#475569;">
+                          Need help? Our team is here for you.
+                        </p>
+                        <p style="margin:0;font-size:13px;">
+                          <a href="${escapeHtml(brand.support)}" style="color:${accent};font-weight:600;text-decoration:none;">Support</a>
+                          <span style="color:#cbd5e1;">&nbsp;·&nbsp;</span>
+                          <a href="${escapeHtml(brand.billing)}" style="color:${accent};font-weight:600;text-decoration:none;">Billing</a>
+                          <span style="color:#cbd5e1;">&nbsp;·&nbsp;</span>
+                          <a href="${escapeHtml(brand.workspace)}" style="color:${accent};font-weight:600;text-decoration:none;">Workspace</a>
+                          <span style="color:#cbd5e1;">&nbsp;·&nbsp;</span>
+                          <a href="${escapeHtml(brand.privacy)}" style="color:${accent};font-weight:600;text-decoration:none;">Privacy</a>
+                        </p>
+                      </div>
+                    </td>
+                  </tr>
+                </table>
+              </td>
+            </tr>
+
+            <!-- Outer footer -->
+            <tr>
+              <td style="padding:18px 8px 0;text-align:center;font-family:Inter,Segoe UI,Roboto,Helvetica,Arial,sans-serif;">
+                <p style="margin:0 0 6px;font-size:12px;line-height:1.5;color:#64748b;">
+                  © ${new Date().getFullYear()} ${escapeHtml(brand.product)}. All rights reserved.
+                </p>
+                <p style="margin:0;font-size:12px;line-height:1.5;color:#94a3b8;">
+                  AI-powered conversations and practical software tools.
+                  <br />
+                  <a href="${escapeHtml(brand.home)}" style="color:${accent};text-decoration:none;">onefinsolution.online</a>
                 </p>
               </td>
             </tr>
+
           </table>
         </td>
       </tr>
@@ -240,15 +488,24 @@ export function renderEmailHtml(template: BuiltTemplate): string {
 }
 
 export function renderEmailText(template: BuiltTemplate): string {
+  const detailLines =
+    template.details?.map((row) => `${row.label}: ${row.value}`) || [];
   const lines = [
+    `${brand.product}`,
     template.heading,
     '',
     ...template.body,
     '',
+    ...detailLines,
+    template.highlightCode ? `Activity key: ${template.highlightCode}` : '',
+    '',
     template.ctaUrl ? `${template.ctaLabel || 'Continue'}: ${template.ctaUrl}` : '',
     template.footerNote || '',
     '',
-    `${brand.product} · ${brand.support}`,
+    `Support: ${brand.support}`,
+    `Billing: ${brand.billing}`,
+    `Privacy: ${brand.privacy}`,
+    brand.home,
   ].filter((line, index, arr) => !(line === '' && arr[index - 1] === ''));
   return lines.join('\n');
 }
