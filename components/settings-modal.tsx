@@ -1,479 +1,476 @@
 'use client';
 
-import { availableModels } from '@/lib/models';
-import React, { useState, useEffect, Fragment } from 'react';
-import { Button } from '@/components/ui/button';
-import { X, ArrowUpCircle, XCircle, LayoutGrid, RefreshCcw, User, CreditCard, List } from 'lucide-react';
-import { getCurrentUserAction } from '@/app/actions';
-import {
-  getSubscriptionDetails,
-  cancelSubscriptionAction,
-  reactivateSubscriptionAction,
-  getUserModelSettings,
-  updateUserModelSettings
-} from '@/app/actions';
+import React, { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
-import { Spinner } from '@/components/ui/spinner';
-import { Menu, Transition } from '@headlessui/react';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Checkbox } from '@/components/ui/checkbox';
-import { Label } from '@/components/ui/label';
-import { cn } from '@/lib/utils';
+import { X, CreditCard, Puzzle, UserRound, Shield } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import {
+  getAccountDashboardDataAction,
+  updateAccountPasswordAction,
+  updateAccountProfileAction,
+} from '@/app/account-actions';
+import {
+  cancelSubscriptionAction,
+  updateUserModelSettings,
+} from '@/app/actions';
+import { PaymentMethodsPanel } from '@/components/payment-methods-panel';
+import { availableModels } from '@/lib/models';
 
-interface SettingsModalProps {
+type DashboardData = Exclude<Awaited<ReturnType<typeof getAccountDashboardDataAction>>, { error: string }>;
+
+export function SettingsModal({
+  isOpen,
+  setIsOpen,
+  onSettingsChanged,
+  initialTab = 'account',
+}: {
   isOpen: boolean;
-  setIsOpen: (isOpen: boolean) => void;
-  onSettingsChanged?: () => void;
-}
+  setIsOpen: (open: boolean) => void;
+  onSettingsChanged?: () => void | Promise<void>;
+  initialTab?: 'account' | 'modules' | 'subscriptions';
+}) {
+  const onClose = () => setIsOpen(false);
+  const [tab, setTab] = useState(initialTab);
+  const [loading, setLoading] = useState(false);
+  const [data, setData] = useState<DashboardData | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [message, setMessage] = useState<string | null>(null);
+  const [savingProfile, setSavingProfile] = useState(false);
+  const [savingPassword, setSavingPassword] = useState(false);
+  const [savingModules, setSavingModules] = useState(false);
+  const [canceling, setCanceling] = useState(false);
+  const [sameAsBilling, setSameAsBilling] = useState(true);
+  const [enabledModels, setEnabledModels] = useState<string[]>(availableModels.map((m) => m.id));
 
-// Extend state type for subscription details
-interface SubscriptionDetailsState {
-  planName: string | null;
-  subscriptionId: string | null;
-  canUpgrade: boolean;
-  renewalDate: string | null;
-  isCancelled: boolean;
-}
-
-// Model Settings Interface
-interface ModelSetting {
-  id: string; // Technical ID for API
-  name: string; // Keep name if used elsewhere, or make it the display name
-  displayName: string; // User-friendly name
-  enabled: boolean;
-}
-
-// Define the available models with display names
-const availableConfiguredModels = availableModels;
-
-// Helper function to capitalize first letter
-function capitalizeFirstLetter(string: string | null): string {
-  if (!string) return '';
-  return string.charAt(0).toUpperCase() + string.slice(1);
-}
-
-export function SettingsModal({ isOpen, setIsOpen, onSettingsChanged }: SettingsModalProps) {
-  const [subscriptionDetails, setSubscriptionDetails] = useState<SubscriptionDetailsState>({ planName: null, subscriptionId: null, canUpgrade: false, renewalDate: null, isCancelled: false });
-  const [userEmail, setUserEmail] = useState<string | null>(null);
-  const [isLoading, setIsLoading] = useState(false);
-  const [isCancelling, setIsCancelling] = useState(false);
-  const [cancelError, setCancelError] = useState<string | null>(null);
-  const [cancelSuccessMessage, setCancelSuccessMessage] = useState<string | null>(null);
-  const [isReactivating, setIsReactivating] = useState(false);
-  const [reactivateError, setReactivateError] = useState<string | null>(null);
-  const [reactivateSuccessMessage, setReactivateSuccessMessage] = useState<string | null>(null);
-  const [isLoadingModels, setIsLoadingModels] = useState(false); // Loading state for models
-  const [isSavingModels, setIsSavingModels] = useState(false); // Saving state for models
-  const [modelSaveError, setModelSaveError] = useState<string | null>(null); // Error state for models save
-
-  // Model state - initialized empty, will be loaded
-  const [models, setModels] = useState<ModelSetting[]>([]);
+  const load = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    const result = await getAccountDashboardDataAction();
+    if ('error' in result && result.error && !('profile' in result)) {
+      setError(result.error);
+      setData(null);
+      setLoading(false);
+      return;
+    }
+    const dashboard = result as DashboardData;
+    setData(dashboard);
+    setSameAsBilling(dashboard.profile.shippingSameAsBilling !== false);
+    setEnabledModels(dashboard.modules.filter((m) => m.enabled).map((m) => m.id));
+    setLoading(false);
+  }, []);
 
   useEffect(() => {
     if (!isOpen) return;
-    const previousOverflow = document.body.style.overflow;
-    document.body.style.overflow = 'hidden';
-    function handleKeyDown(event: KeyboardEvent) {
-      if (event.key === 'Escape') setIsOpen(false);
-    }
-    window.addEventListener('keydown', handleKeyDown);
-    return () => {
-      document.body.style.overflow = previousOverflow;
-      window.removeEventListener('keydown', handleKeyDown);
-    };
-  }, [isOpen, setIsOpen]);
+    setTab(initialTab);
+    setMessage(null);
+    void load();
+  }, [isOpen, initialTab, load]);
 
-  // Updated useEffect to load settings
   useEffect(() => {
-    async function fetchData() {
-      if (isOpen) {
-        setIsLoading(true);
-        setIsLoadingModels(true);
-        // Reset errors/messages
-        setCancelError(null);
-        setCancelSuccessMessage(null);
-        setReactivateError(null);
-        setReactivateSuccessMessage(null);
-        setModelSaveError(null);
-        try {
-          // Fetch user email and subscription details (parallel fetch)
-          const userPromise = getCurrentUserAction();
-          const subscriptionPromise = getSubscriptionDetails();
-          const modelsPromise = getUserModelSettings();
-
-          const [user, subscriptionData, userSettings] = await Promise.all([
-            userPromise,
-            subscriptionPromise,
-            modelsPromise
-          ]);
-
-
-
-          setUserEmail(user?.email ?? null);
-          setSubscriptionDetails(subscriptionData);
-
-          // Initialize models state using the correct field from the settings object
-          setModels(
-            availableConfiguredModels.map(model => ({
-              ...model,
-              enabled: userSettings.enabledModels.includes(model.id)
-            }))
-          );
-
-        } catch (error) {
-          console.error("Error fetching settings data:", error);
-          // Define fallback settings locally
-          const fallbackEnabled = availableModels.map(model => model.id);
-          setModels(
-             availableConfiguredModels.map(model => ({
-              ...model,
-              enabled: fallbackEnabled.includes(model.id) // Use the local fallback array
-            }))
-          );
-        } finally {
-          setIsLoading(false);
-          setIsLoadingModels(false);
-        }
-      }
-    }
-    fetchData();
+    if (!isOpen) return;
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') onClose();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
   }, [isOpen]);
-
-  // Updated Model Checkbox Handler to save
-  const handleCheckedChange = async (id: string, checked: boolean | 'indeterminate') => {
-    const isTryingToDisable = !checked;
-    const enabledModelsCount = models.filter(model => model.enabled).length;
-    const changingModel = models.find(model => model.id === id);
-
-    if (isTryingToDisable && changingModel?.enabled && enabledModelsCount <= 1) {
-
-      setModelSaveError("At least one model must remain enabled."); // User feedback
-      // Clear error after a delay
-      setTimeout(() => setModelSaveError(null), 3000);
-      return;
-    }
-
-    // Optimistically update local state
-    const newModelsState = models.map(model =>
-      model.id === id ? { ...model, enabled: !!checked } : model
-    );
-    setModels(newModelsState);
-    setModelSaveError(null); // Clear previous errors
-    setIsSavingModels(true); // Set saving state
-
-    // Prepare IDs to save
-    const enabledIdsToSave = newModelsState
-      .filter(model => model.enabled)
-      .map(model => model.id);
-
-    // Call server action to update settings
-    try {
-      const result = await updateUserModelSettings(enabledIdsToSave);
-      if (!result.success) {
-        setModelSaveError(result.error || "Failed to save model settings.");
-      } else {
-
-        onSettingsChanged?.();
-      }
-    } catch (error) {
-       console.error("Error calling updateUserModelSettings:", error);
-       setModelSaveError("An unexpected error occurred while saving enabled models.");
-    } finally {
-       setIsSavingModels(false); // Clear saving state
-    }
-  };
-
-  async function handleCancel() {
-    if (!subscriptionDetails.subscriptionId) return;
-
-    setIsCancelling(true);
-    setCancelError(null);
-    setCancelSuccessMessage(null);
-    setReactivateError(null);
-    setReactivateSuccessMessage(null);
-    try {
-      const result = await cancelSubscriptionAction(subscriptionDetails.subscriptionId);
-      if (result.success) {
-        const details = await getSubscriptionDetails();
-        setSubscriptionDetails(details);
-        setCancelSuccessMessage("Subscription cancellation scheduled.");
-      } else {
-        setCancelError(result.error || "Failed to cancel subscription.");
-      }
-    } catch (error: unknown) {
-      const message = error instanceof Error ? error.message : "An unexpected error occurred.";
-      setCancelError(message);
-    } finally {
-      setIsCancelling(false);
-    }
-  }
-
-  async function handleReactivate() {
-    if (!subscriptionDetails.subscriptionId) return;
-    setIsReactivating(true);
-    setReactivateError(null);
-    setReactivateSuccessMessage(null);
-    setCancelError(null);
-    setCancelSuccessMessage(null);
-    try {
-      const result = await reactivateSubscriptionAction(subscriptionDetails.subscriptionId);
-      if (result.success) {
-        const details = await getSubscriptionDetails();
-        setSubscriptionDetails(details);
-        setReactivateSuccessMessage("Subscription reactivated successfully.");
-      } else {
-        setReactivateError(result.error || "Failed to reactivate subscription.");
-      }
-    } catch (error: unknown) {
-      const message = error instanceof Error ? error.message : "An unexpected error occurred.";
-      setReactivateError(message);
-    } finally {
-      setIsReactivating(false);
-    }
-  }
-
-  function closeModal() {
-    setIsOpen(false);
-  }
 
   if (!isOpen) return null;
 
-  const displayPlanName = subscriptionDetails.planName ? capitalizeFirstLetter(subscriptionDetails.planName) : 'Free';
-  const isPaidPlan = !!subscriptionDetails.planName;
+  const profile = data?.profile;
+  const subscription = data?.subscription as
+    | {
+        planName?: string | null;
+        subscriptionId?: string | null;
+        canUpgrade?: boolean;
+        renewalDate?: string | null;
+        isCancelled?: boolean;
+        error?: string;
+      }
+    | null
+    | undefined;
 
-  const renderAccountContent = () => (
-    <section aria-labelledby="account-heading" className="space-y-4">
-       <h2 id="account-heading" className="text-lg font-semibold text-gray-900">Account Information</h2>
-       <dl className="space-y-3">
-         <div className="flex justify-between">
-           <dt className="text-sm text-gray-600">Email address</dt>
-           <dd className="text-sm font-medium text-gray-800">{userEmail ?? '-'}</dd>
-         </div>
-       </dl>
-       <Link href="/account" onClick={closeModal} className="block text-sm underline">View and edit your profile</Link>
-    </section>
-  );
+  async function onSaveProfile(formData: FormData) {
+    setSavingProfile(true);
+    setMessage(null);
+    setError(null);
+    formData.set('shippingSameAsBilling', sameAsBilling ? 'true' : 'false');
+    const result = await updateAccountProfileAction(formData);
+    if ('error' in result && result.error) setError(result.error);
+    else {
+      setMessage(result.message || 'Account details saved.');
+      await onSettingsChanged?.();
+    }
+    await load();
+    setSavingProfile(false);
+  }
 
-  const renderSubscriptionContent = () => (
-    <section aria-labelledby="subscription-heading" className="space-y-6">
-      <div className="flex justify-between items-start">
-        <div>
-          <h2 id="subscription-heading" className="text-lg font-semibold text-gray-900">{displayPlanName} Plan</h2>
-          <p className="text-sm text-gray-500 mt-1">
-            {isPaidPlan
-              ? subscriptionDetails.isCancelled
-                ? `Plan cancelled. Access ends on ${subscriptionDetails.renewalDate || '[Date Unavailable]'}`
-                : `Your plan auto-renews on ${subscriptionDetails.renewalDate || '[Date Unavailable]'}`
-              : "Current plan details"}
-          </p>
-        </div>
-        {isPaidPlan && (
-          <Menu as="div" className="relative inline-block text-left">
-            <div>
-              <Menu.Button as={Fragment}>
-                <Button variant="outline" size="sm">
-                  Manage
-                </Button>
-              </Menu.Button>
-            </div>
-            <Transition
-              as={Fragment}
-              enter="transition ease-out duration-100"
-              enterFrom="transform opacity-0 scale-95"
-              enterTo="transform opacity-100 scale-100"
-              leave="transition ease-in duration-75"
-              leaveFrom="transform opacity-100 scale-100"
-              leaveTo="transform opacity-0 scale-95"
-            >
-              <Menu.Items className="absolute right-0 mt-2 w-56 origin-top-right divide-y divide-gray-100 rounded-md bg-white shadow-lg ring-1 ring-black/5 focus:outline-none z-10">
-                <div className="px-1 py-1 ">
-                  {subscriptionDetails.canUpgrade && (
-                    <Menu.Item>
-                      {({ active }) => (
-                        <Link href="/pricing" passHref>
-                          <button
-                            onClick={closeModal}
-                            className={`${ active ? 'bg-indigo-500 text-white' : 'text-gray-900' } group flex w-full items-center rounded-md px-2 py-2 text-sm`}
-                          >
-                             <ArrowUpCircle className="mr-2 h-5 w-5" aria-hidden="true" />
-                            Upgrade plan
-                          </button>
-                        </Link>
-                      )}
-                    </Menu.Item>
-                  )}
-                  {subscriptionDetails.subscriptionId && (
-                    <Menu.Item>
-                      {({ active }) => (
-                        subscriptionDetails.isCancelled ? (
-                          <button
-                            onClick={handleReactivate}
-                            disabled={isReactivating}
-                            className={`${ active ? 'bg-green-100 text-green-700' : 'text-green-600' } group flex w-full items-center rounded-md px-2 py-2 text-sm ${isReactivating ? 'opacity-50 cursor-not-allowed' : ''}`}
-                          >
-                            {isReactivating ? (
-                              <Spinner className="mr-2 h-5 w-5 animate-spin" />
-                            ) : (
-                              <RefreshCcw className="mr-2 h-5 w-5" aria-hidden="true" />
-                            )}
-                            Reactivate Subscription
-                          </button>
-                        ) : (
-                          <button
-                            onClick={handleCancel}
-                            disabled={isCancelling}
-                            className={`${ active ? 'bg-red-100 text-red-700' : 'text-red-600' } group flex w-full items-center rounded-md px-2 py-2 text-sm ${isCancelling ? 'opacity-50 cursor-not-allowed' : ''}`}
-                          >
-                            {isCancelling ? (
-                              <Spinner className="mr-2 h-5 w-5 animate-spin" />
-                            ) : (
-                              <XCircle className="mr-2 h-5 w-5" aria-hidden="true" />
-                            )}
-                            Cancel Subscription
-                          </button>
-                        )
-                      )}
-                    </Menu.Item>
-                  )}
-                </div>
-                <div className="px-1 py-1">
-                  <Menu.Item>
-                    {({ active }) => (
-                      <Link href="/pricing" passHref>
-                         <button
-                            onClick={closeModal}
-                            className={`${ active ? 'bg-gray-100 text-gray-900' : 'text-gray-700' } group flex w-full items-center rounded-md px-2 py-2 text-sm`}
-                          >
-                            <LayoutGrid className="mr-2 h-5 w-5" aria-hidden="true" />
-                            View Plans
-                          </button>
-                      </Link>
-                    )}
-                  </Menu.Item>
-                </div>
-              </Menu.Items>
-            </Transition>
-          </Menu>
-        )}
-      </div>
+  async function onSavePassword(formData: FormData) {
+    setSavingPassword(true);
+    setMessage(null);
+    setError(null);
+    const result = await updateAccountPasswordAction(formData);
+    if ('error' in result && result.error) setError(result.error);
+    else setMessage(result.message || 'Password updated.');
+    setSavingPassword(false);
+  }
 
-      <Link href="/pricing" onClick={closeModal} className="block text-sm underline">View available plans and pricing</Link>
+  async function onSaveModules() {
+    setSavingModules(true);
+    setMessage(null);
+    setError(null);
+    const result = await updateUserModelSettings(enabledModels);
+    if (result && 'error' in result && result.error) setError(result.error);
+    else {
+      setMessage('Modules updated.');
+      await onSettingsChanged?.();
+      await load();
+    }
+    setSavingModules(false);
+  }
 
-      <div className="mt-4 text-center h-5">
-         {cancelSuccessMessage && (
-            <p className="text-sm text-green-600"> {cancelSuccessMessage}</p>
-         )}
-         {cancelError && (
-            <p className="text-sm text-red-600">Error: {cancelError}</p>
-         )}
-         {reactivateSuccessMessage && (
-            <p className="text-sm text-green-600"> {reactivateSuccessMessage}</p>
-         )}
-         {reactivateError && (
-            <p className="text-sm text-red-600">Error: {reactivateError}</p>
-         )}
-      </div>
-
-    </section>
-  );
-
-  // Updated render function for Models Tab
-  const renderModelsContent = () => (
-    <section aria-labelledby="models-heading" className="space-y-4 pt-4 relative">
-       {/* Saving Overlay */}
-       {isSavingModels && (
-         <div className="absolute inset-0 bg-white/50 flex items-center justify-center z-10 rounded-md">
-           <Spinner className="h-6 w-6" />
-         </div>
-       )}
-       <h2 id="models-heading" className="text-lg font-semibold text-gray-900">Model Names</h2>
-      <p className="text-sm text-gray-600 mb-6">
-        Select the AI models you want to enable for use in the application.
-      </p>
-       {isLoadingModels ? (
-         <div className="flex justify-center items-center py-8"><Spinner /></div>
-       ) : (
-         <div className="space-y-4">
-          {models.map((model) => (
-            <div key={model.id} className="flex items-center space-x-3">
-              <Checkbox
-                id={model.id}
-                checked={model.enabled}
-                onCheckedChange={(checked: boolean | 'indeterminate') => handleCheckedChange(model.id, checked)}
-                disabled={isSavingModels}
-              />
-              <Label
-                 htmlFor={model.id}
-                 className={cn(
-                   "text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70",
-                   isSavingModels && "opacity-50"
-                 )}
-              >
-                {model.displayName}
-              </Label>
-            </div>
-          ))}
-         </div>
-       )}
-       {modelSaveError && <p className="mt-4 text-sm text-red-600">Error: {modelSaveError}</p>}
-    </section>
-  );
+  async function onCancelSubscription() {
+    if (!subscription?.subscriptionId) return;
+    setCanceling(true);
+    setMessage(null);
+    setError(null);
+    const result = await cancelSubscriptionAction(subscription.subscriptionId);
+    if (!result.success) setError(result.error || 'Unable to cancel subscription.');
+    else {
+      setMessage('Cancellation scheduled for the end of the current period.');
+      await onSettingsChanged?.();
+      await load();
+    }
+    setCanceling(false);
+  }
 
   return (
-    <div className="fixed inset-0 z-50 overflow-y-auto bg-black/30 backdrop-blur-sm flex items-center justify-center p-4" onClick={closeModal}>
+    <div className="settings-modal-overlay" role="presentation" onClick={onClose}>
       <div
-        className="relative bg-white rounded-lg shadow-xl w-full max-w-5xl h-[75vh] min-h-[420px] flex flex-col"
+        className="settings-modal-panel"
         role="dialog"
         aria-modal="true"
-        aria-labelledby="settings-title"
-        onClick={(e) => e.stopPropagation()}
+        aria-label="Account settings"
+        onClick={(event) => event.stopPropagation()}
       >
-        <div className="px-6 py-4 border-b border-gray-200 flex justify-between items-center flex-shrink-0">
-          <h1 id="settings-title" className="text-xl font-semibold text-gray-900">Settings</h1>
-          <Button variant="ghost" size="icon" onClick={closeModal} className="rounded-full" aria-label="Close settings">
+        <div className="settings-modal-header">
+          <div>
+            <p className="settings-kicker">User dashboard</p>
+            <h2>Settings</h2>
+            <p className="muted text-sm">
+              Manage personal account details, modules, subscriptions, and payment methods here. Workspace setup stays on{' '}
+              <Link href="/account" className="text-link" onClick={onClose}>
+                /account
+              </Link>
+              .
+            </p>
+          </div>
+          <button type="button" className="settings-close" onClick={onClose} aria-label="Close settings">
             <X className="h-5 w-5" />
-          </Button>
+          </button>
         </div>
 
-        <Tabs defaultValue="account" className="flex flex-1 overflow-hidden">
-          <TabsList className="h-auto w-1/4 min-w-[190px] max-w-[250px] flex flex-col justify-start items-start p-4 space-y-1 border-r border-gray-200 bg-gray-50/50 rounded-none">
-            <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2 px-2">Settings</h3>
-            <TabsTrigger
-              value="account"
-              className="w-full flex items-center gap-3 px-3 py-2 rounded-md text-sm font-medium text-left justify-start data-[state=active]:bg-gray-200 data-[state=active]:text-gray-900 text-gray-600 hover:bg-gray-100 hover:text-gray-900"
-            >
-               <User className="h-5 w-5 flex-shrink-0" />
-               <span>Account</span>
+        {error ? <p className="settings-banner settings-banner-error">{error}</p> : null}
+        {message ? <p className="settings-banner settings-banner-ok">{message}</p> : null}
+        {loading && !data ? <p className="muted px-1 py-2 text-sm">Loading your dashboard…</p> : null}
+
+        <Tabs value={tab} onValueChange={(value) => setTab(value as typeof tab)} className="settings-tabs">
+          <TabsList className="settings-tablist">
+            <TabsTrigger value="account" className="settings-tab">
+              <UserRound className="h-4 w-4" />
+              Account
             </TabsTrigger>
-            <TabsTrigger
-              value="models"
-              className="w-full flex items-center gap-3 px-3 py-2 rounded-md text-sm font-medium text-left justify-start data-[state=active]:bg-gray-200 data-[state=active]:text-gray-900 text-gray-600 hover:bg-gray-100 hover:text-gray-900"
-            >
-               <List className="h-5 w-5 flex-shrink-0" />
-               <span>Models</span>
-             </TabsTrigger>
-            <TabsTrigger
-              value="subscription"
-              className="w-full flex items-center gap-3 px-3 py-2 rounded-md text-sm font-medium text-left justify-start data-[state=active]:bg-gray-200 data-[state=active]:text-gray-900 text-gray-600 hover:bg-gray-100 hover:text-gray-900"
-             >
-               <CreditCard className="h-5 w-5 flex-shrink-0" />
-               <span>Subscription</span>
-             </TabsTrigger>
+            <TabsTrigger value="modules" className="settings-tab">
+              <Puzzle className="h-4 w-4" />
+              Modules
+            </TabsTrigger>
+            <TabsTrigger value="subscriptions" className="settings-tab">
+              <CreditCard className="h-4 w-4" />
+              Subscriptions
+            </TabsTrigger>
           </TabsList>
 
-          <div className="flex-1 overflow-y-auto p-6">
-            <TabsContent value="account" className="mt-0">
-               {isLoading ? <Spinner /> : renderAccountContent()}
+          <div className="settings-tab-body">
+            <TabsContent value="account" className="settings-tab-content">
+              <section className="settings-section">
+                <div className="settings-section-head">
+                  <h3>Profile</h3>
+                  <p className="muted text-sm">Personal details used across One Fin account screens.</p>
+                </div>
+                <form action={onSaveProfile} className="settings-form-grid">
+                  <label className="field">
+                    <span>Full name</span>
+                    <input name="fullName" defaultValue={profile?.fullName || profile?.name || ''} placeholder="Your full name" />
+                  </label>
+                  <label className="field">
+                    <span>Email address</span>
+                    <input value={profile?.email || ''} readOnly disabled placeholder="you@example.com" />
+                  </label>
+                  <label className="field">
+                    <span>Phone</span>
+                    <input name="phone" defaultValue={profile?.phone || ''} placeholder="+1 555 000 0000" />
+                  </label>
+                  <label className="field">
+                    <span>Company</span>
+                    <input name="companyName" defaultValue={profile?.companyName || ''} placeholder="Company or team name" />
+                  </label>
+
+                  <div className="settings-subsection">
+                    <h4>Billing details</h4>
+                    <div className="settings-form-grid">
+                      <label className="field">
+                        <span>Billing name</span>
+                        <input name="billingName" defaultValue={profile?.billingName || ''} placeholder="Name on invoices" />
+                      </label>
+                      <label className="field">
+                        <span>Billing address line 1</span>
+                        <input name="billingLine1" defaultValue={profile?.billingLine1 || ''} placeholder="Street address" />
+                      </label>
+                      <label className="field">
+                        <span>Billing address line 2</span>
+                        <input name="billingLine2" defaultValue={profile?.billingLine2 || ''} placeholder="Apt, suite, etc." />
+                      </label>
+                      <label className="field">
+                        <span>City</span>
+                        <input name="billingCity" defaultValue={profile?.billingCity || ''} placeholder="City" />
+                      </label>
+                      <label className="field">
+                        <span>State / region</span>
+                        <input name="billingState" defaultValue={profile?.billingState || ''} placeholder="State" />
+                      </label>
+                      <label className="field">
+                        <span>Postal code</span>
+                        <input name="billingPostal" defaultValue={profile?.billingPostal || ''} placeholder="Postal code" />
+                      </label>
+                      <label className="field">
+                        <span>Country</span>
+                        <input name="billingCountry" defaultValue={profile?.billingCountry || ''} placeholder="Country" />
+                      </label>
+                    </div>
+                  </div>
+
+                  <div className="settings-subsection">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <h4>Shipping address</h4>
+                      <label className="inline-flex items-center gap-2 text-sm text-slate-700">
+                        <input
+                          type="checkbox"
+                          checked={sameAsBilling}
+                          onChange={(event) => setSameAsBilling(event.target.checked)}
+                        />
+                        Same as billing
+                      </label>
+                    </div>
+                    {!sameAsBilling ? (
+                      <div className="settings-form-grid">
+                        <label className="field">
+                          <span>Shipping name</span>
+                          <input name="shippingName" defaultValue={profile?.shippingName || ''} placeholder="Recipient name" />
+                        </label>
+                        <label className="field">
+                          <span>Shipping address line 1</span>
+                          <input name="shippingLine1" defaultValue={profile?.shippingLine1 || ''} placeholder="Street address" />
+                        </label>
+                        <label className="field">
+                          <span>Shipping address line 2</span>
+                          <input name="shippingLine2" defaultValue={profile?.shippingLine2 || ''} placeholder="Apt, suite, etc." />
+                        </label>
+                        <label className="field">
+                          <span>City</span>
+                          <input name="shippingCity" defaultValue={profile?.shippingCity || ''} placeholder="City" />
+                        </label>
+                        <label className="field">
+                          <span>State / region</span>
+                          <input name="shippingState" defaultValue={profile?.shippingState || ''} placeholder="State" />
+                        </label>
+                        <label className="field">
+                          <span>Postal code</span>
+                          <input name="shippingPostal" defaultValue={profile?.shippingPostal || ''} placeholder="Postal code" />
+                        </label>
+                        <label className="field">
+                          <span>Country</span>
+                          <input name="shippingCountry" defaultValue={profile?.shippingCountry || ''} placeholder="Country" />
+                        </label>
+                      </div>
+                    ) : (
+                      <p className="muted text-sm">Shipping copies your billing address until you turn this off.</p>
+                    )}
+                  </div>
+
+                  <div className="button-row">
+                    <Button type="submit" disabled={savingProfile}>
+                      {savingProfile ? 'Saving…' : 'Save account details'}
+                    </Button>
+                  </div>
+                </form>
+              </section>
+
+              <section className="settings-section">
+                <div className="settings-section-head">
+                  <h3 className="inline-flex items-center gap-2">
+                    <Shield className="h-4 w-4" />
+                    Password & security
+                  </h3>
+                  <p className="muted text-sm">Change your password. Other sessions are signed out after a successful update.</p>
+                </div>
+                <form action={onSavePassword} className="settings-form-grid">
+                  <label className="field">
+                    <span>Current password</span>
+                    <input name="currentPassword" type="password" autoComplete="current-password" required placeholder="Current password" />
+                  </label>
+                  <label className="field">
+                    <span>New password</span>
+                    <input name="nextPassword" type="password" autoComplete="new-password" required minLength={12} placeholder="At least 12 characters" />
+                  </label>
+                  <label className="field">
+                    <span>Confirm new password</span>
+                    <input name="confirmPassword" type="password" autoComplete="new-password" required minLength={12} placeholder="Repeat new password" />
+                  </label>
+                  <div className="button-row">
+                    <Button type="submit" variant="outline" disabled={savingPassword}>
+                      {savingPassword ? 'Updating…' : 'Update password'}
+                    </Button>
+                  </div>
+                </form>
+              </section>
+
+              <section className="settings-section">
+                <PaymentMethodsPanel compact />
+              </section>
             </TabsContent>
-            <TabsContent value="models" className="mt-0">
-               {renderModelsContent()}
+
+            <TabsContent value="modules" className="settings-tab-content">
+              <section className="settings-section">
+                <div className="settings-section-head">
+                  <h3>Modules</h3>
+                  <p className="muted text-sm">
+                    Enable chat models available in your experience. Disabled modules stay hidden from selectors.
+                  </p>
+                </div>
+                <ul className="settings-module-list">
+                  {(data?.modules || availableModels.map((m) => ({ id: m.id, name: m.name, description: '', enabled: true }))).map(
+                    (module) => {
+                      const checked = enabledModels.includes(module.id);
+                      return (
+                        <li key={module.id} className="settings-module-item">
+                          <label className="flex cursor-pointer items-start gap-3">
+                            <input
+                              type="checkbox"
+                              className="mt-1"
+                              checked={checked}
+                              onChange={(event) => {
+                                setEnabledModels((current) => {
+                                  if (event.target.checked) return Array.from(new Set([...current, module.id]));
+                                  if (current.length <= 1) return current;
+                                  return current.filter((id) => id !== module.id);
+                                });
+                              }}
+                            />
+                            <span>
+                              <span className="block font-medium text-slate-900">{module.name}</span>
+                              <span className="muted block text-sm">{module.description || module.id}</span>
+                              <span className="mt-1 inline-block rounded-full bg-slate-100 px-2 py-0.5 text-xs text-slate-600">
+                                {checked ? 'Enabled' : 'Disabled'}
+                              </span>
+                            </span>
+                          </label>
+                        </li>
+                      );
+                    },
+                  )}
+                </ul>
+                <div className="button-row mt-4">
+                  <Button type="button" onClick={() => void onSaveModules()} disabled={savingModules || enabledModels.length === 0}>
+                    {savingModules ? 'Saving…' : 'Save modules'}
+                  </Button>
+                </div>
+              </section>
             </TabsContent>
-            <TabsContent value="subscription" className="mt-0">
-               {isLoading ? <Spinner /> : renderSubscriptionContent()}
-               {cancelError && <p className="mt-4 text-sm text-red-600">Error: {cancelError}</p>}
-               {cancelSuccessMessage && <p className="mt-4 text-sm text-green-600">{cancelSuccessMessage}</p>}
-               {reactivateError && <p className="mt-4 text-sm text-red-600">Error: {reactivateError}</p>}
-               {reactivateSuccessMessage && <p className="mt-4 text-sm text-green-600">{reactivateSuccessMessage}</p>}
+
+            <TabsContent value="subscriptions" className="settings-tab-content">
+              <section className="settings-section">
+                <div className="settings-section-head">
+                  <h3>Homepage chat subscription</h3>
+                  <p className="muted text-sm">Current plan, renewal status, and billing shortcuts.</p>
+                </div>
+
+                {subscription?.subscriptionId ? (
+                  <div className="settings-plan-card">
+                    <div>
+                      <p className="text-xs font-semibold uppercase tracking-[0.14em] text-teal-800">Current plan</p>
+                      <h4 className="text-xl font-semibold text-slate-900">{subscription.planName || 'Active plan'}</h4>
+                      <p className="muted text-sm">
+                        {subscription.isCancelled ? 'Cancels at period end' : 'Active subscription'}
+                      </p>
+                      {subscription.renewalDate ? (
+                        <p className="muted text-sm">
+                          {subscription.isCancelled ? 'Ends' : 'Renews'} {subscription.renewalDate}
+                        </p>
+                      ) : null}
+                    </div>
+                    <div className="button-row">
+                      <Link className="button secondary" href="/dashboard/billing" onClick={onClose}>
+                        Plans & billing
+                      </Link>
+                      <Link className="button secondary" href="/pricing" onClick={onClose}>
+                        Change plan
+                      </Link>
+                      {!subscription.isCancelled ? (
+                        <Button type="button" variant="outline" disabled={canceling} onClick={() => void onCancelSubscription()}>
+                          {canceling ? 'Canceling…' : 'Cancel at period end'}
+                        </Button>
+                      ) : null}
+                    </div>
+                  </div>
+                ) : (
+                  <div className="settings-plan-card">
+                    <div>
+                      <h4 className="text-lg font-semibold text-slate-900">No active homepage plan</h4>
+                      <p className="muted text-sm">
+                        Choose a Monthly or Yearly plan for unlimited homepage chat. Workspace credits are managed separately.
+                      </p>
+                      {subscription?.error ? <p className="text-sm text-amber-700">{subscription.error}</p> : null}
+                    </div>
+                    <div className="button-row">
+                      <Link className="button" href="/pricing" onClick={onClose}>
+                        View plans
+                      </Link>
+                      <Link className="button secondary" href="/dashboard/billing" onClick={onClose}>
+                        Open billing
+                      </Link>
+                    </div>
+                  </div>
+                )}
+              </section>
+
+              <section className="settings-section">
+                <PaymentMethodsPanel />
+              </section>
+
+              {data?.workspace ? (
+                <section className="settings-section">
+                  <div className="settings-section-head">
+                    <h3>Workspace credits snapshot</h3>
+                    <p className="muted text-sm">Full Workspace setup stays on the dedicated account page.</p>
+                  </div>
+                  <div className="settings-plan-card">
+                    <div>
+                      <p className="text-sm text-slate-700">
+                        Balance: <strong>{data.workspace.balance}</strong> credits
+                      </p>
+                      <p className="muted text-sm">
+                        {data.workspace.cardLast4
+                          ? `Workspace card on file: ${(data.workspace.cardBrand || 'card').toString()} ···· ${data.workspace.cardLast4}`
+                          : 'No dedicated Workspace card saved yet.'}
+                      </p>
+                    </div>
+                    <Link className="button secondary" href="/account" onClick={onClose}>
+                      Manage Workspace
+                    </Link>
+                  </div>
+                </section>
+              ) : null}
             </TabsContent>
           </div>
         </Tabs>

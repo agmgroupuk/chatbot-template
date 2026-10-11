@@ -74,3 +74,23 @@ export async function resetPassword(token:string,password:string) {
     try { await sendPasswordChangedEmail(userEmail, '/sign-in'); } catch { /* non-blocking confirmation */ }
   }
 }
+
+export async function changePassword(userId: string, currentPassword: string, nextPassword: string) {
+  if (nextPassword.length < 12) throw new Error('Use at least 12 characters for your new password.');
+  const rows = await query<{ password_hash: string; email: string }>(
+    'select password_hash, email from app_users where id=$1 limit 1',
+    [userId],
+  );
+  const row = rows[0];
+  if (!row?.password_hash) throw new Error('Account password is not available.');
+  const ok = await verifyPassword(currentPassword, row.password_hash);
+  if (!ok) throw new Error('Current password is incorrect.');
+  const hash = await hashPassword(nextPassword);
+  await query('update app_users set password_hash=$1, updated_at=now() where id=$2', [hash, userId]);
+  await query('delete from app_sessions where user_id=$1', [userId]);
+  try {
+    await sendPasswordChangedEmail(row.email, '/sign-in');
+  } catch {
+    /* confirmation email is best-effort */
+  }
+}

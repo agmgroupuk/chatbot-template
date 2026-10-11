@@ -207,7 +207,10 @@ export function SidebarComponent({ className, onToggleCollapse, collapsed = fals
                 <Link href="/dashboard" onClick={() => setShowProfileMenu(false)}><LayoutDashboard /><span>Dashboard</span></Link>
                 <Link href="/workspace" onClick={() => setShowProfileMenu(false)}><Blocks /><span>Workspace</span></Link>
                 <Link href="/context" onClick={() => setShowProfileMenu(false)}><BookOpen /><span>Context</span></Link>
-                <Link href="/account" onClick={() => setShowProfileMenu(false)}><User /><span>Account</span></Link>
+                                <button type="button" onClick={() => { setShowProfileMenu(false); setIsSettingsModalOpen(true); }}>
+                  <User /><span>Account settings</span>
+                </button>
+                <Link href="/account" onClick={() => setShowProfileMenu(false)}><Blocks /><span>Workspace setup</span></Link>
                 <Link href="/pricing" onClick={() => setShowProfileMenu(false)}><Settings /><span>Chat plans</span></Link>
                 <Link href="/support" onClick={() => setShowProfileMenu(false)}><CircleHelp /><span>Help center</span></Link>
                 <Link href="/about" onClick={() => setShowProfileMenu(false)}><Info /><span>About One Fin</span></Link>
