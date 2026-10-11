@@ -161,19 +161,69 @@ export async function updateProfileDetails(
   );
 }
 
-export async function readPreferences(userId: string) {
-  const rows = await query<{ preferences: AccountPreferences | null }>(
-    'select preferences from account_preferences where user_id=$1',
-    [userId],
-  );
-  return { ...defaultPreferences, ...(rows[0]?.preferences || {}) } as AccountPreferences;
+type SettingsRow = {
+  theme: string | null;
+  timezone: string | null;
+  enter_to_send: boolean | null;
+  spellcheck: boolean | null;
+  context_enabled: boolean | null;
+  product_updates: boolean | null;
+};
+
+function mapPreferences(row?: SettingsRow | null): AccountPreferences {
+  if (!row) return { ...defaultPreferences };
+  return {
+    theme: (row.theme as AccountPreferences['theme']) || defaultPreferences.theme,
+    timezone: row.timezone || defaultPreferences.timezone,
+    enter_to_send: row.enter_to_send ?? defaultPreferences.enter_to_send,
+    spellcheck: row.spellcheck ?? defaultPreferences.spellcheck,
+    context_enabled: row.context_enabled ?? defaultPreferences.context_enabled,
+    product_updates: row.product_updates ?? defaultPreferences.product_updates,
+  };
+}
+
+export async function readPreferences(userId: string): Promise<AccountPreferences> {
+  try {
+    const rows = await query<SettingsRow>(
+      `select theme, timezone, enter_to_send, spellcheck, context_enabled, product_updates
+       from account_settings where user_id=$1 limit 1`,
+      [userId],
+    );
+    return mapPreferences(rows[0]);
+  } catch {
+    // Never block sign-in / dashboard if settings table is unavailable.
+    return { ...defaultPreferences };
+  }
 }
 
 export async function writePreferences(userId: string, preferences: AccountPreferences) {
-  await query(
-    `insert into account_preferences(user_id,preferences,updated_at)
-     values ($1,$2::jsonb,now())
-     on conflict (user_id) do update set preferences=excluded.preferences, updated_at=now()`,
-    [userId, JSON.stringify(preferences)],
-  );
+  const next = { ...defaultPreferences, ...preferences };
+  try {
+    await query(
+      `insert into account_settings(
+         user_id, theme, timezone, enter_to_send, spellcheck, context_enabled, product_updates, updated_at
+       ) values ($1,$2,$3,$4,$5,$6,$7,now())
+       on conflict (user_id) do update set
+         theme=excluded.theme,
+         timezone=excluded.timezone,
+         enter_to_send=excluded.enter_to_send,
+         spellcheck=excluded.spellcheck,
+         context_enabled=excluded.context_enabled,
+         product_updates=excluded.product_updates,
+         updated_at=now()`,
+      [
+        userId,
+        next.theme,
+        next.timezone,
+        next.enter_to_send,
+        next.spellcheck,
+        next.context_enabled,
+        next.product_updates,
+      ],
+    );
+  } catch (error) {
+    throw new Error(
+      error instanceof Error ? error.message : 'Unable to save preferences right now.',
+    );
+  }
 }

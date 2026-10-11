@@ -58,69 +58,78 @@ const brand = {
   home: 'https://onefinsolution.online/',
 };
 
-/** Public assets under /public — always absolute for email clients. */
+/** Public assets under /public — always absolute for email clients. Resolved lazily (never at import time). */
 function asset(path: string): string {
-  const base = siteUrl().replace(/\/$/, '') || 'https://onefinsolution.online';
+  let base = 'https://onefinsolution.online';
+  try {
+    base = siteUrl().replace(/\/$/, '') || base;
+  } catch {
+    /* keep production fallback if site URL env is missing during render */
+  }
   const clean = path.startsWith('/') ? path : `/${path}`;
   return `${base}${clean}`;
 }
 
-const assets = {
-  logo: asset('/logo/one-fin-logo.png'),
-  /** Distinct heroes from public/images so templates feel related but not identical. */
-  heroWelcome: asset('/images/iages4.jpg'),
-  heroAuth: asset('/images/iages5.jpg'),
-  heroSecurity: asset('/images/iages2.jpg'),
-  heroActivity: asset('/images/images1.jpg'),
-  heroBilling: asset('/images/iages7.jpg'),
-  heroTrial: asset('/images/iages9.jpg'),
-  heroSoft: asset('/images/iages3.jpg'),
-};
+function assets() {
+  return {
+    logo: asset('/logo/one-fin-logo.png'),
+    heroWelcome: asset('/images/iages4.jpg'),
+    heroAuth: asset('/images/iages5.jpg'),
+    heroSecurity: asset('/images/iages2.jpg'),
+    heroActivity: asset('/images/images1.jpg'),
+    heroBilling: asset('/images/iages7.jpg'),
+    heroTrial: asset('/images/iages9.jpg'),
+    heroSoft: asset('/images/iages3.jpg'),
+  } as const;
+}
 
-const themes: Record<string, EmailTheme> = {
-  welcome: {
-    kicker: 'Welcome',
-    heroImage: assets.heroWelcome,
-    accent: '#0f766e',
-    accentSoft: '#ecfdf5',
-    badge: 'New account',
-  },
-  auth: {
-    kicker: 'Secure access',
-    heroImage: assets.heroAuth,
-    accent: '#0f766e',
-    accentSoft: '#f0fdfa',
-    badge: 'Sign-in',
-  },
-  security: {
-    kicker: 'Security',
-    heroImage: assets.heroSecurity,
-    accent: '#0e7490',
-    accentSoft: '#ecfeff',
-    badge: 'Password',
-  },
-  activity: {
-    kicker: 'Verification',
-    heroImage: assets.heroActivity,
-    accent: '#0f766e',
-    accentSoft: '#f0fdf4',
-    badge: 'Activity key',
-  },
-  billing: {
-    kicker: 'Billing',
-    heroImage: assets.heroBilling,
-    accent: '#0f766e',
-    accentSoft: '#f8fafc',
-    badge: 'Subscription',
-  },
-  trial: {
-    kicker: 'Trial',
-    heroImage: assets.heroTrial,
-    accent: '#115e59',
-    accentSoft: '#f0fdfa',
-    badge: 'Reminder',
-  },
-};
+function themes(): Record<string, EmailTheme> {
+  const a = assets();
+  return {
+    welcome: {
+      kicker: 'Welcome',
+      heroImage: a.heroWelcome,
+      accent: '#0f766e',
+      accentSoft: '#ecfdf5',
+      badge: 'New account',
+    },
+    auth: {
+      kicker: 'Secure access',
+      heroImage: a.heroAuth,
+      accent: '#0f766e',
+      accentSoft: '#f0fdfa',
+      badge: 'Sign-in',
+    },
+    security: {
+      kicker: 'Security',
+      heroImage: a.heroSecurity,
+      accent: '#0e7490',
+      accentSoft: '#ecfeff',
+      badge: 'Password',
+    },
+    activity: {
+      kicker: 'Verification',
+      heroImage: a.heroActivity,
+      accent: '#0f766e',
+      accentSoft: '#f0fdf4',
+      badge: 'Activity key',
+    },
+    billing: {
+      kicker: 'Billing',
+      heroImage: a.heroBilling,
+      accent: '#0f766e',
+      accentSoft: '#f8fafc',
+      badge: 'Subscription',
+    },
+    trial: {
+      kicker: 'Trial',
+      heroImage: a.heroTrial,
+      accent: '#115e59',
+      accentSoft: '#f0fdfa',
+      badge: 'Reminder',
+    },
+  };
+}
 
 function displayName(input: EmailTemplateInput): string {
   const name = (input.toName || '').trim();
@@ -130,8 +139,7 @@ function displayName(input: EmailTemplateInput): string {
 function absolute(pathOrUrl?: string): string | undefined {
   if (!pathOrUrl) return undefined;
   if (/^https?:\/\//i.test(pathOrUrl)) return pathOrUrl;
-  const base = siteUrl().replace(/\/$/, '');
-  return `${base}${pathOrUrl.startsWith('/') ? pathOrUrl : `/${pathOrUrl}`}`;
+  return asset(pathOrUrl.startsWith('/') ? pathOrUrl : `/${pathOrUrl}`);
 }
 
 export function buildEmailTemplate(id: EmailTemplateId, input: EmailTemplateInput = {}): BuiltTemplate {
@@ -142,7 +150,7 @@ export function buildEmailTemplate(id: EmailTemplateId, input: EmailTemplateInpu
     case 'welcome':
       return {
         id,
-        theme: themes.welcome,
+        theme: themes().welcome,
         subject: `Welcome to ${brand.product}`,
         preheader: 'Your account is ready. Confirm your email to unlock full access.',
         heading: `Welcome, ${name}`,
@@ -159,7 +167,7 @@ export function buildEmailTemplate(id: EmailTemplateId, input: EmailTemplateInpu
     case 'login_reminder':
       return {
         id,
-        theme: themes.auth,
+        theme: themes().auth,
         subject: `Your ${brand.product} sign-in link`,
         preheader: 'Use this secure link to access your account.',
         heading: 'Sign in to your account',
@@ -176,7 +184,7 @@ export function buildEmailTemplate(id: EmailTemplateId, input: EmailTemplateInpu
     case 'forgot_password':
       return {
         id,
-        theme: themes.security,
+        theme: themes().security,
         subject: `Reset your ${brand.product} password`,
         preheader: 'Choose a new password with this secure link.',
         heading: 'Reset your password',
@@ -193,7 +201,7 @@ export function buildEmailTemplate(id: EmailTemplateId, input: EmailTemplateInpu
     case 'password_reset':
       return {
         id,
-        theme: themes.security,
+        theme: themes().security,
         subject: `Your ${brand.product} password was updated`,
         preheader: 'A password change was completed on your account.',
         heading: 'Password updated',
@@ -210,7 +218,7 @@ export function buildEmailTemplate(id: EmailTemplateId, input: EmailTemplateInpu
     case 'activity_key':
       return {
         id,
-        theme: themes.activity,
+        theme: themes().activity,
         subject: `Your ${brand.product} activity key`,
         preheader: 'Use this one-time key to continue.',
         heading: 'Your activity key',
@@ -228,7 +236,7 @@ export function buildEmailTemplate(id: EmailTemplateId, input: EmailTemplateInpu
     case 'subscription_plan_reminder':
       return {
         id,
-        theme: themes.billing,
+        theme: themes().billing,
         subject: `Your ${input.planName || 'plan'} is coming up for renewal`,
         preheader: 'A quick look at your upcoming subscription billing.',
         heading: 'Subscription reminder',
@@ -250,7 +258,7 @@ export function buildEmailTemplate(id: EmailTemplateId, input: EmailTemplateInpu
     case 'trial_reminder':
       return {
         id,
-        theme: themes.trial,
+        theme: themes().trial,
         subject: `Your ${input.planName || 'trial'} ends soon`,
         preheader: 'Your trial period is ending — keep access without interruption.',
         heading: 'Trial ending soon',
@@ -294,7 +302,7 @@ export function renderEmailHtml(template: BuiltTemplate): string {
   const accent = theme.accent;
   const accentSoft = theme.accentSoft;
   const hero = theme.heroImage;
-  const logo = assets.logo;
+  const logo = assets().logo;
 
   const paragraphs = template.body
     .map(
