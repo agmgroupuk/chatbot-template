@@ -124,8 +124,8 @@ export async function schedulePlanChange(planKey: string) {
       await client.query('update billing_subscriptions set next_plan_key=null,next_plan_at=null where id=$1',[sub.id]);
       return new Date(item.current_period_end*1000).toISOString();
     }
-    const target=schedule||await stripe.subscriptionSchedules.create({from_subscription:sub.id,metadata:{app:'chatbot-template'}});
-    await stripe.subscriptionSchedules.update(target.id,{end_behavior:'release',proration_behavior:'none',phases:[
+    const target=schedule||await stripe.subscriptionSchedules.create({from_subscription:sub.id});
+    await stripe.subscriptionSchedules.update(target.id,{metadata:{app:'chatbot-template'},end_behavior:'release',proration_behavior:'none',phases:[
       {start_date:target.current_phase?.start_date||item.current_period_start,end_date:item.current_period_end,items:[{price:item.price.id,quantity:1}],proration_behavior:'none',...(sub.status==='trialing'?{trial_end:sub.trial_end!}:{})},
       {items:[{price:price.id,quantity:1}],duration:{interval:plan.interval,interval_count:1},proration_behavior:'none',metadata:{app:'chatbot-template',plan_key:plan.key}},
     ]});
