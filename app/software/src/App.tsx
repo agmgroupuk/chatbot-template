@@ -284,7 +284,10 @@ export default function App() {
                 <article className="library-template-card" key={template.id}>
                   <button
                     className="library-template-art"
-                    style={{ background: template.accentColor }}
+                    style={{
+                      background: template.accentColor,
+                      backgroundImage: `linear-gradient(115deg, color-mix(in srgb, ${template.accentColor} 88%, #182b2a), rgba(24, 43, 42, .42)), url('${template.category === 'mobile' ? '/images/iages8.png' : '/images/iages9.jpg'}')`,
+                    }}
                     type="button"
                     onClick={() => { setPreviewTemplate(template); setPreviewTab('preview'); }}
                     aria-label={`Open full preview of ${template.name}`}

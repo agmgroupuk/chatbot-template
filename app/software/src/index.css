@@ -328,6 +328,704 @@
 .ofs-app .software-section-nav { display:flex; flex-wrap:wrap; gap:10px 24px; margin:0; padding:14px 0; border-bottom:1px solid var(--ofs-line); }
 .ofs-app .software-section-nav a { color:var(--ofs-muted); font-size:12px; font-weight:650; text-decoration:none; }
 .ofs-app .software-section-nav a:hover { color:var(--ofs-purple); }
+
+.ofs-app {
+  --ofs-ink: #101c3a;
+  --ofs-muted: #5b6985;
+  --ofs-purple: #1749bd;
+  --ofs-purple-deep: #173b9a;
+  --ofs-line: rgb(137 157 191 / 24%);
+  --ofs-surface: #fff;
+  color: var(--ofs-ink);
+  background: #f4f7fc;
+}
+
+.ofs-app,
+.ofs-app .software-content {
+  background: linear-gradient(180deg, #f4f7fc 0%, #fff 46%, #f4f7fc 100%);
+}
+
+.ofs-app .software-content {
+  padding-bottom: 76px;
+}
+
+.ofs-app .software-section-nav {
+  position: sticky;
+  z-index: 10;
+  top: 0;
+  gap: 8px;
+  padding: 12px 0;
+  border-color: var(--ofs-line);
+  background: rgb(249 251 255 / 92%);
+  backdrop-filter: blur(14px);
+}
+
+.ofs-app .software-section-nav a {
+  padding: 8px 12px;
+  border-radius: 999px;
+  color: var(--ofs-muted);
+  font-size: 12px;
+  transition: background .18s ease, color .18s ease;
+}
+
+.ofs-app .software-section-nav a:hover {
+  background: #e9effb;
+  color: #1749bd;
+}
+
+.ofs-app .ofs-hero {
+  min-height: 570px;
+  padding-block: 60px 76px;
+}
+
+.ofs-app .ofs-eyebrow,
+.ofs-app .hero-copy h1 span {
+  color: #146b54;
+}
+
+.ofs-app .hero-copy h1,
+.ofs-app .section-heading h2,
+.ofs-app .benefits-section h2,
+.ofs-app .final-cta h2 {
+  color: #182b2a;
+}
+
+.ofs-app .hero-copy > p,
+.ofs-app .section-heading > p,
+.ofs-app .product-card p,
+.ofs-app .service-card p {
+  color: #586c69;
+}
+
+.ofs-app .ofs-button.primary {
+  background: #146b54;
+  box-shadow: 0 10px 25px rgb(20 107 84 / 18%);
+}
+
+.ofs-app .ofs-button.primary:hover {
+  background: #0d503f;
+  box-shadow: 0 15px 29px rgb(20 107 84 / 24%);
+}
+
+.ofs-app .ofs-button.secondary {
+  border-color: #dce5df;
+  background: #fff;
+  color: #182b2a;
+}
+
+.ofs-app .ofs-button.secondary:hover {
+  background: #e8f0e9;
+  color: #0d503f;
+}
+
+.ofs-app .hero-assurance {
+  color: #586c69;
+}
+
+.ofs-app .hero-assurance > span,
+.ofs-app .hero-art-label > span {
+  background: #e8f0e9;
+  color: #146b54;
+}
+
+.ofs-app .hero-art::before {
+  position: absolute;
+  z-index: 0;
+  inset: 18px 8px 35px;
+  border: 1px solid rgb(220 229 223 / 75%);
+  border-radius: 28px;
+  background:
+    linear-gradient(140deg, rgb(247 249 246 / 42%), rgb(20 107 84 / 10%)),
+    url('/images/iages9.jpg') center / cover;
+  content: "";
+}
+
+.ofs-app .hero-art-glow {
+  z-index: 0;
+  background: radial-gradient(ellipse, rgb(95 160 129 / 22%), rgb(182 211 190 / 12%) 46%, transparent 74%);
+}
+
+.ofs-app .hero-dashboard,
+.ofs-app .hero-back-window {
+  box-shadow: 0 34px 74px rgb(24 43 42 / 14%), 0 3px 12px rgb(24 43 42 / 7%);
+}
+
+.ofs-app .hero-brand-mark,
+.ofs-app .hero-dashboard-nav i:first-child {
+  background: #146b54;
+  box-shadow: none;
+}
+
+.ofs-app .hero-chart path {
+  stroke: #398b6b;
+}
+
+.ofs-app .hero-phone b,
+.ofs-app .hero-phone em {
+  background: linear-gradient(145deg, #146b54, #73aa8b);
+}
+
+.ofs-app .hero-art-label {
+  border-color: #dce5df;
+  box-shadow: 0 14px 32px rgb(24 43 42 / 10%);
+}
+
+.ofs-app .content-section,
+.ofs-app .design-library-section {
+  scroll-margin-top: 72px;
+}
+
+.ofs-app .content-section {
+  padding-top: 72px;
+}
+
+.ofs-app .design-library-section {
+  padding-top: 72px;
+}
+
+.ofs-app .product-grid,
+.ofs-app .template-library-grid,
+.ofs-app .service-grid {
+  gap: 20px;
+}
+
+.ofs-app .product-card,
+.ofs-app .library-template-card,
+.ofs-app .service-card {
+  border-color: #dce5df;
+  border-radius: 18px;
+  background: #fff;
+  box-shadow: 0 10px 30px rgb(24 43 42 / 5%);
+}
+
+.ofs-app .product-card:hover,
+.ofs-app .library-template-card:hover {
+  border-color: rgb(20 107 84 / 38%);
+  box-shadow: 0 18px 40px rgb(24 43 42 / 10%);
+}
+
+.ofs-app .product-preview {
+  background-image:
+    linear-gradient(140deg, rgb(232 240 233 / 60%), rgb(247 249 246 / 82%)),
+    url('/images/iages9.jpg');
+  background-position: center;
+  background-size: cover;
+}
+
+.ofs-app .preview-mobile {
+  background-image:
+    linear-gradient(140deg, rgb(232 240 233 / 46%), rgb(247 249 246 / 68%)),
+    url('/images/iages8.png');
+}
+
+.ofs-app .product-category,
+.ofs-app .product-category svg,
+.ofs-app .product-card-footer button,
+.ofs-app .service-card > a {
+  color: #146b54;
+}
+
+.ofs-app .product-card h3,
+.ofs-app .service-card h3,
+.ofs-app .service-card > strong {
+  color: #182b2a;
+}
+
+.ofs-app .product-card-footer {
+  border-color: #dce5df;
+}
+
+.ofs-app .product-card-footer strong {
+  color: #182b2a;
+}
+
+.ofs-app .service-card {
+  background: linear-gradient(145deg, #fff, #f7f9f6);
+}
+
+.ofs-app .service-card::after {
+  border-color: rgb(20 107 84 / 15%);
+  box-shadow: 0 0 0 18px rgb(20 107 84 / 4%);
+}
+
+.ofs-app .service-icon,
+.ofs-app .benefits-section li > span,
+.ofs-app .process-grid li > span {
+  border-color: #dce5df;
+  background: #e8f0e9;
+  color: #146b54;
+}
+
+.ofs-app .benefits-section {
+  border-color: #dce5df;
+  background:
+    linear-gradient(105deg, rgb(247 249 246 / 94%), rgb(232 240 233 / 84%)),
+    url('/images/iages9.jpg') center / cover;
+}
+
+.ofs-app .benefits-section > div > p,
+.ofs-app .benefits-section li,
+.ofs-app .process-grid p {
+  color: #586c69;
+}
+
+.ofs-app .process-grid li::after {
+  border-color: rgb(20 107 84 / 30%);
+}
+
+.ofs-app .process-grid h3 {
+  color: #182b2a;
+}
+
+.ofs-app .final-cta {
+  border-color: rgb(20 107 84 / 18%);
+  background:
+    linear-gradient(112deg, rgb(16 62 48 / 94%), rgb(20 107 84 / 88%)),
+    url('/images/iages9.jpg') center / cover;
+  box-shadow: 0 22px 58px rgb(24 43 42 / 16%);
+}
+
+.ofs-app .final-cta .ofs-eyebrow {
+  color: #b8ddc8;
+}
+
+.ofs-app .final-cta .ofs-button.light {
+  color: #0d503f;
+}
+
+.ofs-app .final-cta .ofs-button.light:hover {
+  background: #e8f0e9;
+  color: #0d503f;
+}
+
+.ofs-app .template-category-filters button,
+.ofs-app .template-preview-tabs button {
+  border-color: #dce5df;
+  background: #fff;
+  color: #586c69;
+}
+
+.ofs-app .template-category-filters button.is-active,
+.ofs-app .template-preview-tabs button[aria-selected=true] {
+  border-color: #146b54;
+  background: #146b54;
+}
+
+.ofs-app .template-search {
+  border-color: #dce5df;
+  color: #586c69;
+}
+
+.ofs-app .template-search input {
+  color: #182b2a;
+}
+
+.ofs-app .template-empty-state {
+  border-color: #dce5df;
+  background: #fff;
+  color: #586c69;
+}
+
+.ofs-app .library-template-art {
+  background-position: center;
+  background-size: cover;
+}
+
+.ofs-app .library-template-window > span {
+  background: linear-gradient(135deg, rgb(20 107 84 / 22%), rgb(255 255 255 / 82%));
+}
+
+.ofs-app .template-enquiry-fab,
+.ofs-app .template-enquiry-total > a {
+  background: #146b54;
+  box-shadow: 0 10px 28px rgb(24 43 42 / 18%);
+}
+
+.ofs-app .template-enquiry-fab > span {
+  background: #0d503f;
+}
+
+.ofs-app .template-enquiry-total > a:hover {
+  background: #0d503f;
+}
+
+.ofs-app .template-enquiry-overlay,
+.ofs-app .template-library-preview-overlay {
+  background: rgb(16 34 29 / 62%);
+}
+
+.ofs-app .template-enquiry-drawer,
+.ofs-app .template-library-preview,
+.ofs-app .template-library-specs {
+  color: #182b2a;
+}
+
+.ofs-app .template-enquiry-heading h2,
+.ofs-app .template-enquiry-item > div > strong,
+.ofs-app .template-enquiry-item > strong,
+.ofs-app .template-enquiry-total > div strong,
+.ofs-app .template-library-specs h2,
+.ofs-app .template-library-preview-footer > span {
+  color: #182b2a;
+}
+
+.ofs-app .template-enquiry-heading p,
+.ofs-app .template-enquiry-item > div > span,
+.ofs-app .template-enquiry-total > p,
+.ofs-app .template-library-specs > p {
+  color: #586c69;
+}
+
+.ofs-app .template-library-preview-controls,
+.ofs-app .template-library-preview-toolbar,
+.ofs-app .template-library-preview-footer {
+  border-color: #dce5df;
+}
+
+.ofs-app .template-library-iframe-stage {
+  background: #f0f4f0;
+}
+
+.ofs-app .template-library-specs dl div,
+.ofs-app .template-tech-stack span {
+  border-color: #dce5df;
+  background: #f7f9f6;
+}
+
+.ofs-app .template-library-specs li svg {
+  color: #146b54;
+}
+
+.ofs-app .template-library-preview-footer button {
+  background: #146b54;
+}
+
+@media (max-width: 700px) {
+  .ofs-app .software-section-nav {
+    top: 0;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    margin-inline: calc(-1 * clamp(20px, 5vw, 72px));
+    padding: 10px clamp(20px, 5vw, 72px);
+    scrollbar-width: none;
+  }
+
+  .ofs-app .software-section-nav::-webkit-scrollbar {
+    display: none;
+  }
+
+  .ofs-app .software-section-nav a {
+    flex: none;
+    font-size: 11px;
+  }
+
+  .ofs-app .ofs-hero {
+    min-height: 0;
+    padding-block: 44px 48px;
+  }
+
+  .ofs-app .hero-art {
+    min-height: 350px;
+  }
+
+  .ofs-app .content-section,
+  .ofs-app .design-library-section {
+    padding-top: 52px;
+  }
+
+  .ofs-app .benefits-section {
+    gap: 28px;
+    margin-top: 52px;
+  }
+
+  .ofs-app .final-cta {
+    margin-top: 52px;
+  }
+}
+
+@media (max-width: 480px) {
+  .ofs-app .hero-art {
+    min-height: 285px;
+  }
+
+  .ofs-app .hero-dashboard {
+    top: 42px;
+    height: 240px;
+  }
+
+  .ofs-app .hero-back-window {
+    top: 12px;
+    height: 230px;
+  }
+
+  .ofs-app .hero-phone {
+    bottom: 7px;
+    width: 82px;
+    height: 158px;
+  }
+
+  .ofs-app .hero-art-label {
+    bottom: 8px;
+    padding: 8px 10px;
+  }
+}
+
+.ofs-app .ofs-eyebrow,
+.ofs-app .hero-copy h1 span,
+.ofs-app .product-category,
+.ofs-app .product-category svg,
+.ofs-app .product-card-footer button,
+.ofs-app .service-card > a,
+.ofs-app .template-library-specs li svg {
+  color: #1749bd;
+}
+
+.ofs-app .hero-copy h1,
+.ofs-app .section-heading h2,
+.ofs-app .benefits-section h2,
+.ofs-app .service-card h3,
+.ofs-app .process-grid h3 {
+  color: #101c3a;
+}
+
+.ofs-app .hero-copy > p,
+.ofs-app .hero-assurance,
+.ofs-app .section-heading > p,
+.ofs-app .product-card p,
+.ofs-app .service-card p,
+.ofs-app .benefits-section > div > p,
+.ofs-app .benefits-section li,
+.ofs-app .process-grid p,
+.ofs-app .catalog-note,
+.ofs-app .template-enquiry-heading p,
+.ofs-app .template-enquiry-total > p,
+.ofs-app .template-library-specs > p {
+  color: #5b6985;
+}
+
+.ofs-app .ofs-button.primary {
+  background: linear-gradient(120deg, #173b9a, #245bd9 58%, #168fbd);
+  box-shadow: 0 10px 25px rgb(31 79 181 / 18%);
+}
+
+.ofs-app .ofs-button.primary:hover {
+  background: linear-gradient(120deg, #102f80, #1d4fc1 58%, #117da9);
+  box-shadow: 0 15px 29px rgb(31 79 181 / 24%);
+}
+
+.ofs-app .ofs-button.secondary {
+  border-color: rgb(108 135 182 / 25%);
+  color: #1b2b4d;
+}
+
+.ofs-app .ofs-button.secondary:hover {
+  background: #fff;
+  color: #1749bd;
+}
+
+.ofs-app .software-section-nav a:hover {
+  background: #e9effb;
+  color: #1749bd;
+}
+
+.ofs-app .hero-assurance > span,
+.ofs-app .hero-art-label > span,
+.ofs-app .service-icon,
+.ofs-app .benefits-section li > span,
+.ofs-app .process-grid li > span {
+  border-color: rgb(137 157 191 / 24%);
+  background: #e9effb;
+  color: #1749bd;
+}
+
+.ofs-app .hero-art::before {
+  border-color: rgb(137 157 191 / 24%);
+  background:
+    linear-gradient(140deg, rgb(249 251 255 / 42%), rgb(36 87 214 / 12%)),
+    url('/images/iages9.jpg') center / cover;
+}
+
+.ofs-app .hero-art-glow {
+  background: radial-gradient(ellipse, rgb(91 151 255 / 22%), rgb(68 195 232 / 12%) 46%, transparent 74%);
+}
+
+.ofs-app .hero-dashboard,
+.ofs-app .hero-back-window {
+  box-shadow: 0 34px 74px rgb(13 32 76 / 14%), 0 3px 12px rgb(13 32 76 / 7%);
+}
+
+.ofs-app .hero-brand-mark,
+.ofs-app .hero-dashboard-nav i:first-child {
+  background: #2457d6;
+}
+
+.ofs-app .hero-chart path {
+  stroke: #2457d6;
+}
+
+.ofs-app .hero-phone b,
+.ofs-app .hero-phone em {
+  background: linear-gradient(145deg, #173b9a, #44c3e8);
+}
+
+.ofs-app .hero-art-label {
+  border-color: rgb(137 157 191 / 24%);
+  box-shadow: 0 14px 32px rgb(13 32 76 / 10%);
+}
+
+.ofs-app .product-card,
+.ofs-app .library-template-card,
+.ofs-app .service-card {
+  border-color: rgb(137 157 191 / 24%);
+  box-shadow: 0 10px 30px rgb(13 32 76 / 5%);
+}
+
+.ofs-app .product-card:hover,
+.ofs-app .library-template-card:hover {
+  border-color: rgb(36 87 214 / 38%);
+  box-shadow: 0 18px 40px rgb(13 32 76 / 10%);
+}
+
+.ofs-app .product-preview {
+  background-image:
+    linear-gradient(140deg, rgb(233 239 251 / 60%), rgb(244 247 252 / 82%)),
+    url('/images/iages9.jpg');
+}
+
+.ofs-app .preview-mobile {
+  background-image:
+    linear-gradient(140deg, rgb(233 239 251 / 46%), rgb(244 247 252 / 68%)),
+    url('/images/iages8.png');
+}
+
+.ofs-app .product-card h3,
+.ofs-app .service-card h3,
+.ofs-app .process-grid h3,
+.ofs-app .product-card-footer strong {
+  color: #101c3a;
+}
+
+.ofs-app .product-card-footer {
+  border-color: rgb(137 157 191 / 24%);
+}
+
+.ofs-app .service-card {
+  background: linear-gradient(145deg, #fff, #f4f7fc);
+}
+
+.ofs-app .service-card::after {
+  border-color: rgb(36 87 214 / 15%);
+  box-shadow: 0 0 0 18px rgb(36 87 214 / 4%);
+}
+
+.ofs-app .benefits-section {
+  border-color: rgb(137 157 191 / 24%);
+  background:
+    linear-gradient(105deg, rgb(244 247 252 / 94%), rgb(233 239 251 / 84%)),
+    url('/images/iages9.jpg') center / cover;
+}
+
+.ofs-app .process-grid li::after {
+  border-color: rgb(36 87 214 / 30%);
+}
+
+.ofs-app .final-cta {
+  border-color: rgb(36 87 214 / 18%);
+  background:
+    linear-gradient(112deg, rgb(7 27 73 / 94%), rgb(36 87 214 / 88%)),
+    url('/images/iages9.jpg') center / cover;
+  box-shadow: 0 22px 58px rgb(13 32 76 / 16%);
+}
+
+.ofs-app .final-cta .ofs-eyebrow {
+  color: #bce9f5;
+}
+
+.ofs-app .final-cta .ofs-button.light {
+  color: #173b9a;
+}
+
+.ofs-app .final-cta .ofs-button.light:hover {
+  background: #e9effb;
+  color: #173b9a;
+}
+
+.ofs-app .template-category-filters button,
+.ofs-app .template-preview-tabs button {
+  border-color: rgb(137 157 191 / 24%);
+  color: #5b6985;
+}
+
+.ofs-app .template-category-filters button.is-active,
+.ofs-app .template-preview-tabs button[aria-selected=true] {
+  border-color: #1749bd;
+  background: #1749bd;
+}
+
+.ofs-app .template-search {
+  border-color: rgb(137 157 191 / 24%);
+  color: #5b6985;
+}
+
+.ofs-app .template-search input {
+  color: #101c3a;
+}
+
+.ofs-app .library-template-window > span {
+  background: linear-gradient(135deg, rgb(36 87 214 / 22%), rgb(255 255 255 / 82%));
+}
+
+.ofs-app .template-enquiry-fab,
+.ofs-app .template-enquiry-total > a,
+.ofs-app .template-library-preview-footer button {
+  background: #1749bd;
+  box-shadow: 0 10px 28px rgb(13 32 76 / 18%);
+}
+
+.ofs-app .template-enquiry-fab > span {
+  background: #173b9a;
+}
+
+.ofs-app .template-enquiry-total > a:hover {
+  background: #173b9a;
+}
+
+.ofs-app .template-enquiry-overlay,
+.ofs-app .template-library-preview-overlay {
+  background: rgb(7 27 73 / 62%);
+}
+
+.ofs-app .template-enquiry-drawer,
+.ofs-app .template-library-preview,
+.ofs-app .template-library-specs {
+  color: #101c3a;
+}
+
+.ofs-app .template-enquiry-heading h2,
+.ofs-app .template-enquiry-item > div > strong,
+.ofs-app .template-enquiry-item > strong,
+.ofs-app .template-enquiry-total > div strong,
+.ofs-app .template-library-specs h2,
+.ofs-app .template-library-preview-footer > span {
+  color: #101c3a;
+}
+
+.ofs-app .template-library-preview-controls,
+.ofs-app .template-library-preview-toolbar,
+.ofs-app .template-library-preview-footer,
+.ofs-app .template-library-specs dl div,
+.ofs-app .template-tech-stack span {
+  border-color: rgb(137 157 191 / 24%);
+}
+
+.ofs-app .template-library-iframe-stage {
+  background: #f0f3f9;
+}
+
+.ofs-app .template-library-specs dl div,
+.ofs-app .template-tech-stack span {
+  background: #f4f7fc;
+}
 .ofs-app .template-preview-purchase-bar > a { display:inline-flex; min-height:37px; align-items:center; justify-content:center; gap:7px; padding:0 14px; border:0; border-radius:9px; background:var(--template-accent); color:#fff; font-size:10px; font-weight:750; text-decoration:none; white-space:nowrap; }
 @media(max-width:700px) { .ofs-app .template-preview-purchase-bar > a { min-height:35px; padding:0 10px; font-size:9px; } }
 @media(max-width:480px) { .ofs-app .template-preview-purchase-bar > a { width:100%; } }
