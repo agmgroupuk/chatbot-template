@@ -5,7 +5,7 @@ import { creditPlans } from './credit-config';
 import { currentUser } from './session';
 import { query, transaction } from './db';
 import { approvedPrice, managedPlan } from './subscription-catalog';
-import { findPlan } from './plans';
+import { findPlan, plans } from './plans';
 import { fulfillStripeEvent } from './stripe-fulfillment';
 import { siteUrl } from './site-url';
 import { expectedStripeLivemode, stripeObjectMatchesMode } from './billing-environment';
@@ -56,7 +56,7 @@ async function subscriptions(): Promise<Subscription[]> {
   const data = await stripe.subscriptions.list({ customer, status: 'all', limit: 100, expand: ['data.items.data.price.product'] });
   return data.data.map(sub => {
     const item = sub.items.data[0];
-    return { id: sub.id, status: sub.status === 'active' ? 'active' : sub.status === 'past_due' || sub.status === 'unpaid' ? 'past_due' : 'inactive',
+    return { id: sub.id, status: sub.status === 'active' ? 'active' : sub.status === 'trialing' ? 'trialing' : sub.status === 'past_due' || sub.status === 'unpaid' ? 'past_due' : 'inactive',
       price: priceView(item.price), product: productView(item.price.product as Stripe.Product),
       cancel_at_period_end: sub.cancel_at_period_end, canceled_at: sub.canceled_at ? new Date(sub.canceled_at * 1000).toISOString() : null,
       current_period_start: new Date(item.current_period_start * 1000).toISOString(), current_period_end: new Date(item.current_period_end * 1000).toISOString() };
@@ -105,11 +105,21 @@ export function createStripeBilling() {
   };
 }
 
-export async function schedulePlanChange(planKey: string) {
+export async function schedulePlanChange(planSelection: string) {
   const user=await currentUser();if(!user) throw new Error('Please sign in.');
+  const stripe=await verifiedStripe();
+  let planKey=plans.find(candidate=>candidate.key===planSelection)?.key;
+  if(!planKey) {
+    const selectedPrice=await stripe.prices.retrieve(planSelection);
+    const selectedPlan=managedPlan(selectedPrice);
+    if(!selectedPlan) throw new Error('Choose an available subscription plan.');
+    const approved=await approvedPrice(stripe,selectedPlan.key);
+    if(approved.id!==selectedPrice.id) throw new Error('This subscription price is no longer available.');
+    planKey=selectedPlan.key;
+  }
   const plan=findPlan(planKey),customer=await currentCustomer();
   if(!customer) throw new Error('No subscription found.');
-  const stripe=await verifiedStripe(),price=await approvedPrice(stripe,planKey);
+  const price=await approvedPrice(stripe,planKey);
   return transaction(async client=>{
     await client.query('select id from app_users where id=$1 for update',[user.id]);
     const list=await stripe.subscriptions.list({customer,status:'all',limit:100});
@@ -124,8 +134,8 @@ export async function schedulePlanChange(planKey: string) {
       await client.query('update billing_subscriptions set next_plan_key=null,next_plan_at=null where id=$1',[sub.id]);
       return new Date(item.current_period_end*1000).toISOString();
     }
-    const target=schedule||await stripe.subscriptionSchedules.create({from_subscription:sub.id,metadata:{app:'chatbot-template'}});
-    await stripe.subscriptionSchedules.update(target.id,{end_behavior:'release',proration_behavior:'none',phases:[
+    const target=schedule||await stripe.subscriptionSchedules.create({from_subscription:sub.id});
+    await stripe.subscriptionSchedules.update(target.id,{metadata:{app:'chatbot-template'},end_behavior:'release',proration_behavior:'none',phases:[
       {start_date:target.current_phase?.start_date||item.current_period_start,end_date:item.current_period_end,items:[{price:item.price.id,quantity:1}],proration_behavior:'none',...(sub.status==='trialing'?{trial_end:sub.trial_end!}:{})},
       {items:[{price:price.id,quantity:1}],duration:{interval:plan.interval,interval_count:1},proration_behavior:'none',metadata:{app:'chatbot-template',plan_key:plan.key}},
     ]});

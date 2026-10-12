@@ -6,6 +6,11 @@ import { ownedQuery, transaction } from '@/lib/db';
 import { availableModels, defaultModel, normalizeModel } from '@/lib/models';
 import { generateResponse, aiConfiguration, type AIImage } from '@/lib/ai';
 import { createBillingClient } from '@/lib/billing';
+import { currentCustomer } from '@/lib/stripe-billing';
+import { verifiedStripe } from '@/lib/stripe';
+import { managedPlan } from '@/lib/subscription-catalog';
+import { plans, priceLabel } from '@/lib/plans';
+import { stripeObjectMatchesMode } from '@/lib/billing-environment';
 import { encodedRedirect } from '@/utils/redirect';
 import { revalidatePath } from 'next/cache';
 import { redirect } from 'next/navigation';
@@ -38,97 +43,121 @@ export async function createCheckout(priceId:string) {
   if(result.error || !result.data.url) throw new Error(result.error?.message || 'Unable to create checkout.');
   redirect(result.data.url);
 }
-// Formats UTC date string to Month Day, Year
-function formatRenewalDate(dateString: string | null | undefined): string | null {
-  if (!dateString) return null;
-  try {
-    const date = new Date(dateString);
-    // Ensure the date is valid before formatting
-    if (isNaN(date.getTime())) {
-      console.warn("Invalid date string received:", dateString);
-      return null;
-    }
-    return date.toLocaleDateString('en-US', {
-      year: 'numeric',
-      month: 'long',
-      day: 'numeric',
-      timeZone: 'UTC' // Specify UTC to avoid local time zone shifts
-    });
-  } catch (e) {
-    console.error("Error formatting date:", e);
-    return null;
-  }
-}
-
 // Server Action to get detailed subscription status
 export async function getSubscriptionDetails(): Promise<{
   planName: string | null;
+  planKey: string | null;
   subscriptionId: string | null;
+  status: string | null;
+  priceLabel: string | null;
+  scheduledPlanKey: string | null;
+  scheduledPlanName: string | null;
+  scheduledPriceLabel: string | null;
+  scheduledDate: string | null;
   canUpgrade: boolean;
   renewalDate: string | null;
   isCancelled: boolean;
   error?: string;
 }> {
-  if(!process.env.STRIPE_SECRET_KEY) return {planName:null,subscriptionId:null,canUpgrade:false,renewalDate:null,isCancelled:false,error:'Payments are temporarily unavailable.'};
-  let planName: string | null = null;
-  let subscriptionId: string | null = null;
-  let canUpgrade = false;
-  let currentPrice = -1; 
-  let renewalDate: string | null = null;
-  let isCancelled = false;
-
+  const empty = {
+    planName: null,
+    planKey: null,
+    subscriptionId: null,
+    status: null,
+    priceLabel: null,
+    scheduledPlanKey: null,
+    scheduledPlanName: null,
+    scheduledPriceLabel: null,
+    scheduledDate: null,
+    canUpgrade: false,
+    renewalDate: null,
+    isCancelled: false,
+  };
   try {
-    const updateClient = await createBillingClient();
-    
-    // Fetch current subscription(s)
-    const { data: subData, error: subError } = await updateClient.billing.getSubscriptions();
+    const user = await currentUser();
+    if (!user) return { ...empty, error: 'Please sign in to view your plan.' };
+    const customerId = await currentCustomer();
+    if (!customerId) return empty;
 
-    if (subError) {
-      throw new Error("Unable to load subscription status.");
-    } else {
-      const activeSub = subData?.subscriptions?.find(
-        (sub) => sub.status === 'active'
+    const stripe = await verifiedStripe();
+    const subscriptions = await stripe.subscriptions.list({
+      customer: customerId,
+      status: 'all',
+      limit: 100,
+      expand: ['data.items.data.price'],
+    });
+    const activeSubscription = subscriptions.data
+      .filter((sub) => ['active', 'trialing', 'past_due', 'unpaid'].includes(sub.status))
+      .sort((a, b) => (b.created || 0) - (a.created || 0))[0];
+    if (!activeSubscription) return empty;
+    if (!stripeObjectMatchesMode(activeSubscription.livemode) ||
+        (activeSubscription.metadata.app && activeSubscription.metadata.app !== 'chatbot-template') ||
+        activeSubscription.items.data.length !== 1) {
+      throw new Error('Homepage subscription could not be verified.');
+    }
+
+    const currentItem = activeSubscription.items.data[0];
+    const currentPlan = managedPlan(currentItem.price);
+    let scheduledPlanKey: string | null = null;
+    let scheduledDate: string | null = null;
+    const scheduleId = typeof activeSubscription.schedule === 'string'
+      ? activeSubscription.schedule
+      : activeSubscription.schedule?.id;
+    if (scheduleId) {
+      const schedule = await stripe.subscriptionSchedules.retrieve(scheduleId);
+      if (schedule.metadata?.app && schedule.metadata.app !== 'chatbot-template') {
+        throw new Error('Subscription schedule is managed outside One Fin.');
+      }
+      const nextPhase = schedule.phases.find((phase) =>
+        phase.start_date >= currentItem.current_period_end &&
+        phase.items.some((item) => {
+          const id = typeof item.price === 'string' ? item.price : item.price.id;
+          return id !== currentItem.price.id;
+        }),
       );
-
-      if (activeSub) {
-        subscriptionId = activeSub.id;
-        planName = activeSub.product?.name ?? null; 
-        currentPrice = activeSub.price?.unit_amount ?? -1; 
-        // Format renewal date
-        renewalDate = formatRenewalDate(activeSub.current_period_end);
-        // Get cancellation status
-        isCancelled = activeSub.cancel_at_period_end;
-
-         if (!planName) {
-            console.warn("Active subscription found but product name is missing. Sub ID:", subscriptionId);
-         }
-      }
-    }
-
-    // Fetch all products to check for potential upgrades
-    const { data: prodData, error: prodError } = await updateClient.billing.getProducts();
-    if (prodError) {
-      console.error("Error fetching products:", prodError);
-    } else if (prodData?.products) {
-      if (currentPrice > -1) {
-         canUpgrade = prodData.products.some(product => 
-           product.prices?.some(price => 
-             price.unit_amount !== null && price.unit_amount > currentPrice
-           )
-         );
+      const nextItem = nextPhase?.items[0];
+      if (nextItem) {
+        const nextPrice = typeof nextItem.price === 'string'
+          ? await stripe.prices.retrieve(nextItem.price)
+          : nextItem.price;
+        if ('deleted' in nextPrice) {
+          scheduledPlanKey = null;
+          scheduledDate = null;
+        } else {
+          const nextPlan = managedPlan(nextPrice);
+          if (nextPlan) {
+            scheduledPlanKey = nextPlan.key;
+            scheduledDate = new Date(nextPhase!.start_date * 1000).toISOString();
+          } else {
+            scheduledPlanKey = null;
+            scheduledDate = null;
+          }
+        }
       } else {
-         canUpgrade = prodData.products.some(product => 
-           product.prices?.some(price => price.unit_amount !== null && price.unit_amount > 0)
-         );
+        scheduledPlanKey = null;
+        scheduledDate = null;
       }
     }
+    const scheduledPlan = plans.find((plan) => plan.key === scheduledPlanKey) || null;
+    const renewalDate = new Date(currentItem.current_period_end * 1000).toISOString();
 
-    return { planName, subscriptionId, canUpgrade, renewalDate, isCancelled };
-
+    return {
+      planName: currentPlan?.name || 'Homepage subscription',
+      planKey: currentPlan?.key || null,
+      subscriptionId: activeSubscription.id,
+      status: activeSubscription.status,
+      priceLabel: currentPlan ? priceLabel(currentPlan) : `${(currentItem.price.unit_amount || 0) / 100} ${currentItem.price.currency.toUpperCase()} / ${currentItem.price.recurring?.interval || 'billing period'}`,
+      scheduledPlanKey,
+      scheduledPlanName: scheduledPlan?.name || null,
+      scheduledPriceLabel: scheduledPlan ? priceLabel(scheduledPlan) : null,
+      scheduledDate,
+      canUpgrade: Boolean(currentPlan),
+      renewalDate,
+      isCancelled: activeSubscription.cancel_at_period_end,
+    };
   } catch (err) {
-    console.error("Unexpected error checking subscription details:", err);
-    // Return defaults including new fields
-    return { planName: null, subscriptionId: null, canUpgrade: false, renewalDate: null, isCancelled: false, error: "Subscription status is temporarily unavailable." };
+    console.error('Unexpected error checking subscription details:', err);
+    return { ...empty, error: 'Subscription status is temporarily unavailable.' };
   }
 }
 

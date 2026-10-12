@@ -79,7 +79,10 @@ export default function PricingContent({
       if (currentProductId && selected?.type !== 'one-time' && supportsPlanChanges) {
         const result = await changePlanAction(priceId);
         if (!result.success) throw new Error(result.error);
-        setActionSuccessMessage(`Plan change scheduled for ${new Date(result.date!).toLocaleDateString()}. Your current credits remain available until their expiry.`);
+        setActionSuccessMessage(`Plan change scheduled for ${new Date(result.date!).toLocaleDateString()}. Your current plan remains active until then.`);
+        window.dispatchEvent(new Event('homepage-subscription-updated'));
+        const details = await getSubscriptionDetails();
+        setSubscriptionDetails(details);
         setIsLoadingPriceId(null);
         return;
       }
@@ -102,6 +105,7 @@ export default function PricingContent({
         const details = await getSubscriptionDetails();
         setSubscriptionDetails(details);
         setActionSuccessMessage("Subscription cancellation scheduled.");
+        window.dispatchEvent(new Event('homepage-subscription-updated'));
       } else {
         setActionError(result.error || "Failed to cancel subscription.");
       }
@@ -124,6 +128,7 @@ export default function PricingContent({
         const details = await getSubscriptionDetails();
         setSubscriptionDetails(details);
         setActionSuccessMessage("Subscription reactivated successfully.");
+        window.dispatchEvent(new Event('homepage-subscription-updated'));
       } else {
         setActionError(result.error || "Failed to reactivate subscription.");
       }

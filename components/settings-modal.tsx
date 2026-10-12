@@ -15,6 +15,7 @@ import {
   updateUserModelSettings,
 } from '@/app/actions';
 import { PaymentMethodsPanel } from '@/components/payment-methods-panel';
+import { PlanSwitcher } from '@/components/plan-switcher';
 import { availableModels } from '@/lib/models';
 
 type DashboardData = Exclude<Awaited<ReturnType<typeof getAccountDashboardDataAction>>, { error: string }>;
@@ -70,11 +71,11 @@ export function SettingsModal({
   useEffect(() => {
     if (!isOpen) return;
     const onKey = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') onClose();
+      if (event.key === 'Escape') setIsOpen(false);
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [isOpen]);
+  }, [isOpen, setIsOpen]);
 
   if (!isOpen) return null;
 
@@ -82,7 +83,14 @@ export function SettingsModal({
   const subscription = data?.subscription as
     | {
         planName?: string | null;
+        planKey?: string | null;
         subscriptionId?: string | null;
+        status?: string | null;
+        priceLabel?: string | null;
+        scheduledPlanKey?: string | null;
+        scheduledPlanName?: string | null;
+        scheduledPriceLabel?: string | null;
+        scheduledDate?: string | null;
         canUpgrade?: boolean;
         renewalDate?: string | null;
         isCancelled?: boolean;
@@ -392,46 +400,77 @@ export function SettingsModal({
                 </div>
 
                 {subscription?.subscriptionId ? (
-                  <div className="settings-plan-card">
-                    <div>
-                      <p className="text-xs font-semibold uppercase tracking-[0.14em] text-teal-800">Current plan</p>
-                      <h4 className="text-xl font-semibold text-slate-900">{subscription.planName || 'Active plan'}</h4>
-                      <p className="muted text-sm">
-                        {subscription.isCancelled ? 'Cancels at period end' : 'Active subscription'}
-                      </p>
-                      {subscription.renewalDate ? (
-                        <p className="muted text-sm">
-                          {subscription.isCancelled ? 'Ends' : 'Renews'} {subscription.renewalDate}
+                  <>
+                    <div className="settings-plan-card">
+                      <div>
+                        <p className="settings-plan-eyebrow">Current plan</p>
+                        <h4 className="settings-plan-title">{subscription.planName || 'Active plan'}</h4>
+                        <p className="settings-plan-detail">
+                          Status: {subscription.status === 'trialing' ? 'Free trial' : subscription.status || 'Active'}
                         </p>
-                      ) : null}
+                        {subscription.priceLabel ? <p className="settings-plan-detail">{subscription.priceLabel}</p> : null}
+                        {subscription.renewalDate ? (
+                          <p className="settings-plan-detail">
+                            {subscription.isCancelled ? 'Access ends' : subscription.status === 'trialing' ? 'Trial ends' : 'Next renewal'}{' '}
+                            {new Date(subscription.renewalDate).toLocaleDateString()}
+                          </p>
+                        ) : null}
+                        {subscription.scheduledPlanKey && subscription.scheduledPlanName ? (
+                          <p className="settings-plan-scheduled" role="status">
+                            Scheduled: {subscription.scheduledPlanName}
+                            {subscription.scheduledPriceLabel ? ` · ${subscription.scheduledPriceLabel}` : ''}
+                            {subscription.scheduledDate ? ` · Effective ${new Date(subscription.scheduledDate).toLocaleDateString()}` : ''}
+                          </p>
+                        ) : null}
+                      </div>
+                      <div className="button-row">
+                        <Link className="button secondary" href="/dashboard/billing" onClick={onClose}>
+                          Plans & billing
+                        </Link>
+                        {!subscription.isCancelled ? (
+                          <Button type="button" variant="outline" disabled={canceling} onClick={() => void onCancelSubscription()}>
+                            {canceling ? 'Canceling…' : 'Cancel at period end'}
+                          </Button>
+                        ) : null}
+                      </div>
                     </div>
-                    <div className="button-row">
-                      <Link className="button secondary" href="/dashboard/billing" onClick={onClose}>
-                        Plans & billing
-                      </Link>
-                      <Link className="button secondary" href="/pricing" onClick={onClose}>
-                        Change plan
-                      </Link>
-                      {!subscription.isCancelled ? (
-                        <Button type="button" variant="outline" disabled={canceling} onClick={() => void onCancelSubscription()}>
-                          {canceling ? 'Canceling…' : 'Cancel at period end'}
-                        </Button>
-                      ) : null}
-                    </div>
-                  </div>
+                    {subscription.planKey &&
+                    !subscription.isCancelled &&
+                    ['active', 'trialing'].includes(subscription.status || '') ? (
+                      <PlanSwitcher
+                        currentPlanKey={subscription.planKey}
+                        currentPriceLabel={subscription.priceLabel}
+                        renewalDate={subscription.renewalDate}
+                        scheduledPlanKey={subscription.scheduledPlanKey}
+                        scheduledPlanName={subscription.scheduledPlanName}
+                        scheduledPriceLabel={subscription.scheduledPriceLabel}
+                        scheduledDate={subscription.scheduledDate}
+                        onScheduled={async () => {
+                          await load();
+                          await onSettingsChanged?.();
+                        }}
+                      />
+                    ) : null}
+                  </>
                 ) : (
                   <div className="settings-plan-card">
                     <div>
-                      <h4 className="text-lg font-semibold text-slate-900">No active homepage plan</h4>
+                      <h4 className="settings-plan-title">
+                        {subscription?.error ? 'Plan status unavailable' : 'No active homepage plan'}
+                      </h4>
                       <p className="muted text-sm">
-                        Choose a plan to continue using Home Page Chat Plus.
+                        {subscription?.error
+                          ? 'We could not verify your subscription with the billing provider. Please try again shortly.'
+                          : 'Choose a plan to continue using Home Page Chat Plus.'}
                       </p>
                       {subscription?.error ? <p className="text-sm text-amber-700">{subscription.error}</p> : null}
                     </div>
                     <div className="button-row">
-                      <Link className="button" href="/pricing" onClick={onClose}>
-                        View plans
-                      </Link>
+                      {!subscription?.error ? (
+                        <Link className="button" href="/pricing" onClick={onClose}>
+                          View plans
+                        </Link>
+                      ) : null}
                       <Link className="button secondary" href="/dashboard/billing" onClick={onClose}>
                         Open billing
                       </Link>

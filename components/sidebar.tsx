@@ -49,9 +49,10 @@ export interface SidebarProps {
   isAuthenticated: boolean;
   isAuthLoading: boolean;
   activePlanName: string | null;
+  activePlanStatus: 'loading' | 'loaded' | 'error';
 }
 
-export function SidebarComponent({ className, onToggleCollapse, collapsed = false, isAuthenticated, isAuthLoading, activePlanName }: SidebarProps) {
+export function SidebarComponent({ className, onToggleCollapse, collapsed = false, isAuthenticated, isAuthLoading, activePlanName, activePlanStatus }: SidebarProps) {
   const [isHistoryCollapsed, setIsHistoryCollapsed] = useState(false);
   const [showProfileMenu, setShowProfileMenu] = useState(false);
   const [historySearch, setHistorySearch] = useState('');
@@ -140,7 +141,7 @@ export function SidebarComponent({ className, onToggleCollapse, collapsed = fals
 
   // --- Define the callback for settings changes ---
   const handleSettingsChanged = () => {
-
+    window.dispatchEvent(new Event('homepage-subscription-updated'));
     router.refresh();
   };
 
@@ -367,7 +368,13 @@ export function SidebarComponent({ className, onToggleCollapse, collapsed = fals
                    <span>{isAuthLoading ? 'Account' : isAuthenticated ? 'Profile' : 'Welcome'}</span>
                    {!isAuthLoading && isAuthenticated && (
                      <span className="text-xs px-1.5 py-0.5 bg-stone-100 text-stone-500 rounded-full">
-                       {activePlanName ? capitalizeFirstLetter(activePlanName) : 'Free'}
+                       {activePlanName
+                         ? capitalizeFirstLetter(activePlanName)
+                         : activePlanStatus === 'loading'
+                           ? 'Loading…'
+                           : activePlanStatus === 'error'
+                             ? 'Unavailable'
+                             : 'Free'}
                      </span>
                    )}
                  </div>

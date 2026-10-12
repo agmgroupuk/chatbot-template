@@ -2,7 +2,7 @@ import { Suspense } from 'react';
 import Link from 'next/link';
 import { PaymentMethodsPanel } from '@/components/payment-methods-panel';
 import planIds from '@/billing/personal-plan-ids.json';
-import { findPlan, priceLabel } from '@/lib/plans';
+import { findPlan, plans, priceLabel } from '@/lib/plans';
 import { currentUser } from '@/lib/session';
 import { ownedQuery } from '@/lib/db';
 import { redirect } from 'next/navigation';
@@ -60,7 +60,11 @@ export default async function Billing({
       </div>
       <section className="stack">
         {subscriptions.length ? (
-          subscriptions.map((sub) => (
+          subscriptions.map((sub) => {
+            const currentPlanKey = Object.entries(planIds.prices).find(([, id]) => id === sub.price_id)?.[0] || null;
+            const currentPlan = plans.find((plan) => plan.key === currentPlanKey);
+            const nextPlan = plans.find((plan) => plan.key === sub.next_plan_key);
+            return (
             <article className="panel" key={sub.id}>
               <div className="flex justify-between gap-4">
                 <h2>{planTitle(sub.price_id)}</h2>
@@ -89,9 +93,19 @@ export default async function Billing({
               {['active', 'trialing', 'past_due'].includes(sub.status) && (
                 <PlanManagement id={sub.id} cancelled={sub.cancel_at_period_end} />
               )}
-              {['active', 'trialing'].includes(sub.status) && !sub.cancel_at_period_end && <PlanSwitcher />}
+              {['active', 'trialing'].includes(sub.status) && !sub.cancel_at_period_end && currentPlanKey ? (
+                <PlanSwitcher
+                  currentPlanKey={currentPlanKey}
+                  currentPriceLabel={currentPlan ? priceLabel(currentPlan) : null}
+                  renewalDate={sub.period_end}
+                  scheduledPlanKey={plans.some((plan) => plan.key === sub.next_plan_key) ? sub.next_plan_key : null}
+                  scheduledPlanName={nextPlan?.name || null}
+                  scheduledPriceLabel={nextPlan ? priceLabel(nextPlan) : null}
+                  scheduledDate={sub.next_plan_at}
+                />
+              ) : null}
             </article>
-          ))
+          )})
         ) : (
           <article className="panel empty-state">
             <h2>No homepage chat subscription recorded.</h2>

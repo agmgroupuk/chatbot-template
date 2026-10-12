@@ -8,10 +8,10 @@ import { fulfillStripeEvent } from '@/lib/stripe-fulfillment';
 import { expectedStripeLivemode, stripeObjectMatchesMode } from '@/lib/billing-environment';
 import type Stripe from 'stripe';
 
-export async function changePlanAction(priceId: string): Promise<{ success: boolean; error?: string; date?: string }> {
+export async function changePlanAction(planSelection: string): Promise<{ success: boolean; error?: string; date?: string }> {
   if (process.env.BILLING_PROVIDER !== 'stripe') return { success: false, error: 'Plan changes are unavailable with this billing provider.' };
   try {
-    const date = await schedulePlanChange(priceId);
+    const date = await schedulePlanChange(planSelection);
     revalidatePath('/account');
     revalidatePath('/pricing');
     revalidatePath('/dashboard/billing');

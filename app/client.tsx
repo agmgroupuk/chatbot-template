@@ -21,27 +21,40 @@ function ClientLayoutContent({ children }: ClientLayoutProps) {
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [activePlanName, setActivePlanName] = useState<string | null>(null);
+  const [activePlanStatus, setActivePlanStatus] = useState<'loading' | 'loaded' | 'error'>('loading');
 
   useEffect(() => {
     let active = true;
 
     if (!isHomePage || !isAuthenticated) {
       setActivePlanName(null);
+      setActivePlanStatus('loaded');
       return () => {
         active = false;
       };
     }
 
-    getSubscriptionDetails()
-      .then((details) => {
-        if (active) setActivePlanName(details.planName);
-      })
-      .catch((error: unknown) => {
+    const loadSubscription = async () => {
+      setActivePlanStatus('loading');
+      try {
+        const details = await getSubscriptionDetails();
+        if (!active) return;
+        setActivePlanName(details.planName);
+        setActivePlanStatus(details.error ? 'error' : 'loaded');
+      } catch (error: unknown) {
         console.error('Error fetching subscription status:', error);
-        if (active) setActivePlanName(null);
-      });
+        if (active) {
+          setActivePlanName(null);
+          setActivePlanStatus('error');
+        }
+      }
+    };
+    const refreshSubscription = () => void loadSubscription();
+    void loadSubscription();
+    window.addEventListener('homepage-subscription-updated', refreshSubscription);
     return () => {
       active = false;
+      window.removeEventListener('homepage-subscription-updated', refreshSubscription);
     };
   }, [isAuthenticated, isHomePage]);
 
@@ -78,6 +91,7 @@ function ClientLayoutContent({ children }: ClientLayoutProps) {
             collapsed={isSidebarCollapsed}
             onToggleCollapse={toggleSidebarCollapse}
             activePlanName={activePlanName}
+            activePlanStatus={activePlanStatus}
           />
           {isMobileSidebarOpen && (
             <button

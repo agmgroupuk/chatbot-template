@@ -186,3 +186,28 @@ test('card-first trials, retry recovery, cross-account card claims, paid access 
  await db.query("update membership_access set expires_at=now()-interval '1 second'");await assert.rejects(credits.reserveWorkspaceCredits(first),/Insufficient credits/);
  }finally{await db.close();}
 });
+test('trial plan changes create a Stripe schedule without forbidden creation metadata',async()=>{
+ const {db,adapter}=await fixture();try{
+  const user=randomUUID();await db.query("insert into app_users(id,email,password_hash,email_verified_at) values($1,'schedule@example.test','fixture',now())",[user]);
+  await db.query('insert into billing_customers(user_id,customer_id) values($1,$2)',[user,'cus_schedule']);
+  const mode={expectedStripeLivemode:()=>false,stripeObjectMatchesMode:livemode=>!livemode};
+  const planCatalog=load('lib/plans.ts');
+  const prices=planCatalog.plans.filter(plan=>plan.key!=='custom').map(plan=>({id:`price_${plan.key}`,lookup_key:planCatalog.lookupKey(plan.key),active:true,livemode:false,currency:'usd',unit_amount:plan.amount,recurring:{interval:plan.interval,interval_count:1},metadata:{app:'chatbot-template'}}));
+  const now=Math.floor(Date.now()/1000),trialEnd=now+86400;
+  const subscription={id:'sub_schedule',customer:'cus_schedule',livemode:false,status:'trialing',metadata:{app:'chatbot-template'},cancel_at_period_end:false,trial_end:trialEnd,schedule:null,items:{data:[{price:prices.find(price=>price.id==='price_monthly'),quantity:1,current_period_start:now,current_period_end:trialEnd}]}};
+  let scheduleCreateParams,scheduledUpdate;
+  const stripe={prices:{list:async({lookup_keys})=>({data:prices.filter(price=>lookup_keys.includes(price.lookup_key))})},subscriptions:{list:async()=>({data:[subscription],has_more:false})},subscriptionSchedules:{create:async params=>{scheduleCreateParams=params;return{id:'sched_trial',current_phase:null};},update:async(_id,params)=>{scheduledUpdate=params;}}};
+  const catalog=load('lib/subscription-catalog.ts',{'./plans':planCatalog,'./billing-environment':mode});
+  const billing=load('lib/stripe-billing.ts',{'./db':adapter,'./stripe':{verifiedStripe:async()=>stripe},'./session':{currentUser:async()=>({id:user,email:'schedule@example.test'})},'./subscription-catalog':catalog,'./plans':planCatalog,'./stripe-fulfillment':{},'./credit-config':{},'./site-url':{},'./billing-environment':mode});
+  const effectiveDate=await billing.schedulePlanChange('weekly');
+  assert.equal(scheduleCreateParams.from_subscription,subscription.id);
+  assert.deepEqual(Object.keys(scheduleCreateParams),['from_subscription']);
+  assert.equal(scheduledUpdate.metadata.app,'chatbot-template');
+  assert.equal(scheduledUpdate.proration_behavior,'none');
+  assert.equal(scheduledUpdate.phases[0].end_date,trialEnd);
+  assert.equal(scheduledUpdate.phases[0].trial_end,trialEnd);
+  assert.equal(scheduledUpdate.phases[1].items[0].price,'price_weekly');
+  assert.equal(scheduledUpdate.phases[1].duration.interval,'week');
+  assert.equal(new Date(effectiveDate).getTime(),trialEnd*1000);
+ }finally{await db.close();}
+});
