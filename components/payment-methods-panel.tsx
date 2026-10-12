@@ -146,8 +146,8 @@ export function PaymentMethodsPanel({ compact = false }: { compact?: boolean }) 
     <div className={compact ? 'stack gap-3' : 'stack gap-4'}>
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h3 className="text-base font-semibold text-slate-900">Payment methods</h3>
-          <p className="muted text-sm">Add, update, or choose the default card used for plans and renewals.</p>
+          <h3 className="text-base font-semibold text-slate-900">Home Page Chat Plus payment methods</h3>
+          <p className="muted text-sm">Manage cards used for Home Page Chat Plus plans and renewals.</p>
         </div>
         <Button type="button" variant="outline" onClick={() => void startAddCard()}>
           {clientSecret ? 'Refresh card form' : 'Add payment method'}

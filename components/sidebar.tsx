@@ -13,7 +13,6 @@ import {
   ChevronRight,
   ChevronDown,
   Plus,
-  Mail,
   Settings,
   LogOut,
   LogIn,
@@ -21,8 +20,6 @@ import {
   User,
   MoreHorizontal,
   Search,
-  MessageSquare,
-  LayoutDashboard,
   Blocks,
   BookOpen,
   CircleHelp,
@@ -194,7 +191,6 @@ export function SidebarComponent({ className, onToggleCollapse, collapsed = fals
           </Link>
           <Button variant="ghost" size="icon" className="sidebar-rail-button" onClick={() => { setIsHistoryCollapsed(false); setIsSearchOpen(true); handleCollapseClick(); }} aria-label="Search conversations" title="Search conversations"><Search className="h-5 w-5" /></Button>
           <Button variant="ghost" size="icon" className="sidebar-rail-button" onClick={() => router.push('/')} aria-label="New chat" title="New chat"><Plus className="h-5 w-5" /></Button>
-          <Link className="sidebar-rail-link" href="/dashboard" aria-label="Dashboard" title="Dashboard"><LayoutDashboard className="h-5 w-5" /></Link>
           <Link className="sidebar-rail-link" href="/workspace" aria-label="Workspace" title="Workspace"><Blocks className="h-5 w-5" /></Link>
           <Link className="sidebar-rail-link" href="/context" aria-label="Context" title="Context"><BookOpen className="h-5 w-5" /></Link>
           <div className="sidebar-rail-spacer" />
@@ -204,15 +200,11 @@ export function SidebarComponent({ className, onToggleCollapse, collapsed = fals
             </Button>
             {showProfileMenu && (
               <div ref={profileMenuRef} className="sidebar-rail-menu" role="region" aria-label="Profile and application menu">
-                <Link href="/" onClick={() => setShowProfileMenu(false)}><MessageSquare /><span>Homepage chat</span></Link>
-                <Link href="/dashboard" onClick={() => setShowProfileMenu(false)}><LayoutDashboard /><span>Dashboard</span></Link>
-                <Link href="/workspace" onClick={() => setShowProfileMenu(false)}><Blocks /><span>Workspace</span></Link>
+                <div className="px-2 pb-1 pt-1 text-xs font-semibold uppercase tracking-wide text-blue-200">One Free</div>
+                <Link href="/workspace" onClick={() => setShowProfileMenu(false)}><Blocks /><span>Workspace app</span></Link>
                 <Link href="/context" onClick={() => setShowProfileMenu(false)}><BookOpen /><span>Context</span></Link>
-                                <button type="button" onClick={() => { setShowProfileMenu(false); setSettingsTab('account'); setIsSettingsModalOpen(true); }}>
-                  <User /><span>Account settings</span>
-                </button>
-                <Link href="/account" onClick={() => setShowProfileMenu(false)}><Blocks /><span>Workspace setup</span></Link>
-                <Link href="/pricing" onClick={() => setShowProfileMenu(false)}><Settings /><span>Chat plans</span></Link>
+                <Link href="/account" onClick={() => setShowProfileMenu(false)}><User /><span>Account</span></Link>
+                <Link href="/pricing" onClick={() => setShowProfileMenu(false)}><Settings /><span>Plan</span></Link>
                 <Link href="/support" onClick={() => setShowProfileMenu(false)}><CircleHelp /><span>Help center</span></Link>
                 <Link href="/about" onClick={() => setShowProfileMenu(false)}><Info /><span>About One Fin</span></Link>
                 {!isAuthLoading && (isAuthenticated ? (
@@ -393,13 +385,7 @@ export function SidebarComponent({ className, onToggleCollapse, collapsed = fals
                    role="region"
                    aria-label="Profile and application menu"
                  >
-                   <div className="px-3 pb-1 pt-2 text-xs font-semibold uppercase tracking-wide text-stone-500">Workspace</div>
-                   <Link className="flex w-full items-center gap-3 px-4 py-2 text-sm text-stone-700 hover:bg-stone-100" href="/" onClick={() => setShowProfileMenu(false)}>
-                     <Plus className="h-4 w-4" /><span>Homepage chat</span>
-                   </Link>
-                   <Link className="flex w-full items-center gap-3 px-4 py-2 text-sm text-stone-700 hover:bg-stone-100" href="/dashboard" onClick={() => setShowProfileMenu(false)}>
-                     <LayoutDashboard className="h-4 w-4" /><span>Dashboard</span>
-                   </Link>
+                   <div className="px-3 pb-1 pt-2 text-xs font-semibold uppercase tracking-wide text-stone-500">One Free</div>
                    <Link className="flex w-full items-center gap-3 px-4 py-2 text-sm text-stone-700 hover:bg-stone-100" href="/workspace" onClick={() => setShowProfileMenu(false)}>
                      <Blocks className="h-4 w-4" /><span>Workspace app</span>
                    </Link>
@@ -410,13 +396,10 @@ export function SidebarComponent({ className, onToggleCollapse, collapsed = fals
                      <User className="h-4 w-4" /><span>Account</span>
                    </Link>
                    <Link className="flex w-full items-center gap-3 px-4 py-2 text-sm text-stone-700 hover:bg-stone-100" href="/pricing" onClick={() => setShowProfileMenu(false)}>
-                     <Settings className="h-4 w-4" /><span>Chat plans</span>
+                     <Settings className="h-4 w-4" /><span>Plan</span>
                    </Link>
                    <Link className="flex w-full items-center gap-3 px-4 py-2 text-sm text-stone-700 hover:bg-stone-100" href="/support" onClick={() => setShowProfileMenu(false)}>
                      <CircleHelp className="h-4 w-4" /><span>Help center</span>
-                   </Link>
-                   <Link className="flex w-full items-center gap-3 px-4 py-2 text-sm text-stone-700 hover:bg-stone-100" href="/contact" onClick={() => setShowProfileMenu(false)}>
-                     <Mail className="h-4 w-4" /><span>Contact</span>
                    </Link>
                    <Link className="flex w-full items-center gap-3 px-4 py-2 text-sm text-stone-700 hover:bg-stone-100" href="/about" onClick={() => setShowProfileMenu(false)}>
                      <Info className="h-4 w-4" /><span>Company information</span>

@@ -151,19 +151,15 @@ export function SettingsModal({
         className="settings-modal-panel"
         role="dialog"
         aria-modal="true"
-        aria-label="Account settings"
+        aria-label="Home Page Chat Plus settings"
         onClick={(event) => event.stopPropagation()}
       >
         <div className="settings-modal-header">
           <div>
-            <p className="settings-kicker">User dashboard</p>
+            <p className="settings-kicker">Home Page Chat Plus</p>
             <h2>Settings</h2>
             <p className="muted text-sm">
-              Manage personal account details, modules, subscriptions, and payment methods here. Workspace setup stays on{' '}
-              <Link href="/account" className="text-link" onClick={onClose}>
-                /account
-              </Link>
-              .
+              Manage your Home Page Chat Plus profile, AI models, plan, and subscription payment methods.
             </p>
           </div>
           <button type="button" className="settings-close" onClick={onClose} aria-label="Close settings">
@@ -183,11 +179,11 @@ export function SettingsModal({
             </TabsTrigger>
             <TabsTrigger value="modules" className="settings-tab">
               <Puzzle className="h-4 w-4" />
-              Modules
+              AI models
             </TabsTrigger>
             <TabsTrigger value="subscriptions" className="settings-tab">
               <CreditCard className="h-4 w-4" />
-              Subscriptions
+              Plan & billing
             </TabsTrigger>
           </TabsList>
 
@@ -196,7 +192,7 @@ export function SettingsModal({
               <section className="settings-section">
                 <div className="settings-section-head">
                   <h3>Profile</h3>
-                  <p className="muted text-sm">Personal details used across One Fin account screens.</p>
+                  <p className="muted text-sm">Profile and billing details for your Home Page Chat Plus account.</p>
                 </div>
                 <form action={onSaveProfile} className="settings-form-grid">
                   <label className="field">
@@ -343,9 +339,9 @@ export function SettingsModal({
             <TabsContent value="modules" className="settings-tab-content">
               <section className="settings-section">
                 <div className="settings-section-head">
-                  <h3>Modules</h3>
+                  <h3>AI models</h3>
                   <p className="muted text-sm">
-                    Enable chat models available in your experience. Disabled modules stay hidden from selectors.
+                    Choose which AI models are available in Home Page Chat Plus. Disabled models stay hidden from chat selectors.
                   </p>
                 </div>
                 <ul className="settings-module-list">
@@ -382,7 +378,7 @@ export function SettingsModal({
                 </ul>
                 <div className="button-row mt-4">
                   <Button type="button" onClick={() => void onSaveModules()} disabled={savingModules || enabledModels.length === 0}>
-                    {savingModules ? 'Saving…' : 'Save modules'}
+                    {savingModules ? 'Saving…' : 'Save AI models'}
                   </Button>
                 </div>
               </section>
@@ -391,7 +387,7 @@ export function SettingsModal({
             <TabsContent value="subscriptions" className="settings-tab-content">
               <section className="settings-section">
                 <div className="settings-section-head">
-                  <h3>Homepage chat subscription</h3>
+                  <h3>Home Page Chat Plus plan</h3>
                   <p className="muted text-sm">Current plan, renewal status, and billing shortcuts.</p>
                 </div>
 
@@ -428,7 +424,7 @@ export function SettingsModal({
                     <div>
                       <h4 className="text-lg font-semibold text-slate-900">No active homepage plan</h4>
                       <p className="muted text-sm">
-                        Choose a Monthly or Yearly plan for unlimited homepage chat. Workspace credits are managed separately.
+                        Choose a plan to continue using Home Page Chat Plus.
                       </p>
                       {subscription?.error ? <p className="text-sm text-amber-700">{subscription.error}</p> : null}
                     </div>
