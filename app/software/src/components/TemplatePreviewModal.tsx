@@ -1,4 +1,5 @@
 import { useEffect, useRef } from 'react';
+import Link from 'next/link';
 import { ArrowRight, Check, X } from 'lucide-react';
 import type { SoftwareProduct } from '../data/catalog';
 
@@ -146,10 +147,10 @@ export function TemplatePreviewModal({
             <span>Indicative price</span>
             <strong>{product.priceLabel}</strong>
           </div>
-          <p>Contact our team to discuss this design and your requirements.</p>
-          <a href={`/contact?category=general&subject=${encodeURIComponent(`${product.name} enquiry`)}`}>
-            Discuss this design <ArrowRight size={15} aria-hidden="true" />
-          </a>
+          <p>Choose a payment amount from $5 up to the listed USD price to start your inquiry.</p>
+          <Link href={`/software/checkout?kind=software&id=${encodeURIComponent(product.id)}`}>
+            Send inquiry <ArrowRight size={15} aria-hidden="true" />
+          </Link>
         </div>
       </section>
     </div>

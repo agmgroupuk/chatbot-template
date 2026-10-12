@@ -1138,7 +1138,7 @@ export const STOREFRONT_TEMPLATES: TemplateProduct[] = HTML_TEMPLATE_FILES.map((
     pagesCount: 'Full-page preview',
     fileSize: 'HTML',
     updatedAt: 'Oct 2026',
-    description: `Preview the complete ${name} template and contact our team to discuss your project.`,
+    description: `Preview the complete ${name} template and choose a payment amount to start your project inquiry.`,
     features: [],
     techStack: ['HTML', 'CSS', 'JavaScript'],
     accentColor: categoryColors[category],

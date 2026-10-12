@@ -1,5 +1,6 @@
 import { stripeClient, verifiedStripe } from '@/lib/stripe';
 import { fulfillStripeEvent } from '@/lib/stripe-fulfillment';
+import { fulfillSoftwareStorefrontPayment } from '@/lib/software-storefront-fulfillment';
 import { stripeObjectMatchesMode } from '@/lib/billing-environment';
 import Stripe from 'stripe';
 
@@ -31,7 +32,9 @@ export async function POST(request: Request) {
     'customer.subscription.trial_will_end',
   ].includes(event.type)) return Response.json({ received: true });
   try {
-    await fulfillStripeEvent(await verifiedStripe(), event);
+    const stripe = await verifiedStripe();
+    await fulfillSoftwareStorefrontPayment(stripe, event);
+    await fulfillStripeEvent(stripe, event);
     return Response.json({ received: true });
   } catch {
     // A non-2xx response lets Stripe retry; grants are idempotent across deliveries.

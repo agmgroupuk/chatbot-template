@@ -21,6 +21,7 @@ test('webhook rejects missing, modified, stale signatures and every Live Mode ev
   const { POST } = load('app/api/stripe/webhook/route.ts', {
     '@/lib/stripe': { stripeClient: () => stripe, verifiedStripe: async () => stripe },
     '@/lib/stripe-fulfillment': { fulfillStripeEvent: async (_stripe, event) => { forwarded.push(event.type); } },
+    '@/lib/software-storefront-fulfillment': { fulfillSoftwareStorefrontPayment: async () => {} },
     '@/lib/billing-environment': { stripeObjectMatchesMode: livemode => livemode === (env.STRIPE_MODE === 'live') },
   }, env);
   const payload = JSON.stringify({ id: 'evt_test', type: 'invoice.paid', livemode: false, data: { object: { id: 'in_test' } } });

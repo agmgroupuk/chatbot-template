@@ -376,6 +376,11 @@
 .ofs-app .ofs-hero {
   min-height: 570px;
   padding-block: 60px 76px;
+  background-color: #f7f9ff;
+  background-image: linear-gradient(90deg, rgb(248 246 252 / 78%), rgb(248 246 252 / 46%)), url('/images/background-section.jpg');
+  background-position: center;
+  background-repeat: no-repeat;
+  background-size: cover;
 }
 
 .ofs-app .ofs-eyebrow,

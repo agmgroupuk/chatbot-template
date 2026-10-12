@@ -29,7 +29,7 @@ const formatUsd = (amount: number) =>
   new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(amount);
 
 const templateInquiryHref = (template: TemplateProduct) =>
-  `/contact?category=general&subject=${encodeURIComponent(`${template.name} template enquiry - ${formatUsd(template.price)} USD`)}`;
+  `/software/checkout?kind=template&id=${encodeURIComponent(template.id)}`;
 
 const productIcons = {
   agency: Blocks,
@@ -179,7 +179,7 @@ export default function App() {
         <section className="design-library-section" id="design-library">
           <div className="section-heading">
             <div><span className="ofs-eyebrow">INTERACTIVE DESIGN COLLECTION</span><h2>Explore the template library</h2></div>
-            <p>Search and filter the collection, inspect a live responsive preview, and send selected designs to our team as an enquiry.</p>
+            <p>Search and filter the collection, inspect a live responsive preview, and choose a payment amount to start your request.</p>
           </div>
           <div className="design-library-controls">
             <div className="template-category-filters" role="group" aria-label="Filter templates by category">
@@ -259,13 +259,13 @@ export default function App() {
               ))}
             </div>
           )}
-          <p className="template-enquiry-note">Each template has a fixed USD price. Send an inquiry to discuss your selection with our team.</p>
+          <p className="template-enquiry-note">Prices are shown in USD. Choose an amount from $5 up to the listed price to submit a paid inquiry.</p>
         </section>
 
         <section className="content-section" id="templates">
           <div className="section-heading">
             <div><span className="ofs-eyebrow">SOFTWARE STARTING POINTS</span><h2>Explore the software catalog</h2></div>
-            <p>Preview available directions and contact our team to discuss fit, customization, and next steps.</p>
+            <p>Preview available directions and choose an amount to start a paid inquiry for a selected product.</p>
           </div>
           <div className="product-grid">
             {softwareCatalog.map((product) => (
@@ -276,7 +276,7 @@ export default function App() {
               />
             ))}
           </div>
-          <p className="catalog-note">Prices are indicative. Payments and project setup will be handled through a separately integrated workflow.</p>
+          <p className="catalog-note">All catalog prices are shown in USD. Custom development is quoted separately in USD.</p>
         </section>
 
         <section className="content-section services-section" id="services">
@@ -292,7 +292,7 @@ export default function App() {
                 <h3>{name}</h3>
                 <p>{description}</p>
                 <strong>{priceLabel}</strong>
-                <Link href={`/contact?category=general&subject=${encodeURIComponent(`${name} enquiry`)}`}>Discuss your project <ArrowRight size={15} aria-hidden="true" /></Link>
+                <Link href={`/contact?category=general&subject=${encodeURIComponent(`${name} enquiry`)}`}>Request a USD quote <ArrowRight size={15} aria-hidden="true" /></Link>
               </article>
             ))}
           </div>
@@ -370,7 +370,7 @@ export default function App() {
                 <ul>{previewTemplate.features.map((feature) => <li key={feature}><Check size={15} aria-hidden="true" />{feature}</li>)}</ul>
                 <h3>Technology</h3>
                 <div className="template-tech-stack">{previewTemplate.techStack.map((technology) => <span key={technology}>{technology}</span>)}</div>
-                <p className="template-enquiry-note">This preview is not a payment or file download. Send an inquiry to continue with the team.</p>
+                <p className="template-enquiry-note">Select a payment amount from $5 up to the listed USD price to submit a paid inquiry.</p>
               </div>
             )}
             <footer className="template-library-preview-footer">
