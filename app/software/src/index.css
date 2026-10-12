@@ -1083,6 +1083,10 @@
   color: #101c3a;
 }
 
+.ofs-app .template-library-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
 @media (max-width: 480px) {
   .ofs-app .template-library-preview-footer {
     align-items: flex-start;
@@ -1090,6 +1094,12 @@
 
   .ofs-app .template-library-preview-actions {
     min-width: 120px;
+  }
+}
+
+@media (max-width: 700px) {
+  .ofs-app .template-library-grid {
+    grid-template-columns: 1fr;
   }
 }
 .ofs-app .template-preview-purchase-bar > a { display:inline-flex; min-height:37px; align-items:center; justify-content:center; gap:7px; padding:0 14px; border:0; border-radius:9px; background:var(--template-accent); color:#fff; font-size:10px; font-weight:750; text-decoration:none; white-space:nowrap; }

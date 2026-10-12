@@ -1,7 +1,8 @@
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
+import { HTML_TEMPLATE_FILES } from '../../src/data/htmlTemplateFiles';
 
-const TEMPLATE_FILES = new Set(['accessories_eyewear.html', 'pawprint_palace.html']);
+const TEMPLATE_FILES = new Set<string>(HTML_TEMPLATE_FILES);
 
 export async function GET(
   _request: Request,

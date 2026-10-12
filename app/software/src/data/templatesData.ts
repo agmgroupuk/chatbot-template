@@ -1,3 +1,5 @@
+import { HTML_TEMPLATE_FILES } from './htmlTemplateFiles';
+
 export interface TemplateProduct {
   id: string;
   name: string;
@@ -1087,49 +1089,64 @@ export const TEMPLATES: TemplateProduct[] = [
   }
 ];
 
-export const STOREFRONT_TEMPLATES: TemplateProduct[] = [
-  ...TEMPLATES
-    .filter((template) => template.id !== 'atelier')
-    .map((template) => ({ ...template, price: 49 })),
-  {
-    id: 'lumen-lens',
-    name: 'Lumen & Lens Eyewear',
-    subtitle: 'Luxury eyewear and accessories storefront',
+function templateNameFromFilename(filename: string) {
+  const stem = filename.replace(/\.html$/i, '');
+  const landingPageNumber = stem.match(/^landing_page(?:\((\d+)\))?$/);
+  if (landingPageNumber) return `Landing Page${landingPageNumber[1] ? ` ${landingPageNumber[1]}` : ''}`;
+
+  return stem
+    .replace(/\((\d+)\)$/, ' $1')
+    .replace(/[_-]+/g, ' ')
+    .replace(/\b\w/g, (character) => character.toUpperCase());
+}
+
+function templateCategory(filename: string): TemplateProduct['category'] {
+  if (/pawprint|landing_page\(20\)|local_personal_services/.test(filename)) return 'mobile';
+  if (/landing_page\((11|12)\)/.test(filename)) return 'dashboard';
+  if (/landing_page\((10|13|14)\)|atlas_haul_freight|electronics_technology/.test(filename)) return 'saas';
+  if (/eyewear|fashion|books|botanica|bakery|burger|electronics|footwear|kornerstone|living|harvest|landing_page\((6|7|8|18|19)\)|velvet_bean|nomad_compass/.test(filename)) return 'commerce';
+  return 'website';
+}
+
+const categoryLabels: Record<TemplateProduct['category'], string> = {
+  website: 'Website',
+  dashboard: 'Dashboard',
+  commerce: 'Commerce',
+  mobile: 'Mobile UI',
+  saas: 'SaaS',
+};
+
+const categoryColors: Record<TemplateProduct['category'], string> = {
+  website: '#2457d6',
+  dashboard: '#1749bd',
+  commerce: '#9a623c',
+  mobile: '#3b6e52',
+  saas: '#0284c7',
+};
+
+export const STOREFRONT_TEMPLATES: TemplateProduct[] = HTML_TEMPLATE_FILES.map((filename) => {
+  const category = templateCategory(filename);
+  const name = templateNameFromFilename(filename);
+  return {
+    id: filename,
+    name,
+    subtitle: `${categoryLabels[category]} template`,
     price: 49,
-    category: 'commerce',
-    categoryLabel: 'E-Commerce',
-    format: 'Responsive HTML / CSS / JS',
-    pagesCount: 'Complete Storefront',
-    fileSize: '24 KB',
+    category,
+    categoryLabel: categoryLabels[category],
+    format: 'HTML template',
+    pagesCount: 'Full-page preview',
+    fileSize: 'HTML',
     updatedAt: 'Oct 2026',
-    description: 'A complete luxury eyewear storefront featuring handcrafted frames, accessories, and a refined product-led shopping experience.',
-    features: ['Responsive product and collection sections', 'Luxury editorial brand presentation', 'Standalone HTML preview'],
-    techStack: ['HTML5', 'CSS', 'JavaScript', 'Responsive'],
-    accentColor: '#7b4c37',
-    filename: 'accessories_eyewear.html',
+    description: `Preview the complete ${name} template and contact our team to discuss your project.`,
+    features: [],
+    techStack: ['HTML', 'CSS', 'JavaScript'],
+    accentColor: categoryColors[category],
+    filename,
     htmlSource: '',
-    previewUrl: '/software/template-preview/accessories_eyewear.html',
-  },
-  {
-    id: 'pawprint-mobile',
-    name: 'Pawprint Palace Mobile Experience',
-    subtitle: 'Responsive pet care and wellness storefront',
-    price: 49,
-    category: 'mobile',
-    categoryLabel: 'Mobile UI',
-    format: 'Responsive HTML / CSS / JS',
-    pagesCount: 'Complete Mobile-Ready Page',
-    fileSize: '26 KB',
-    updatedAt: 'Oct 2026',
-    description: 'A warm, mobile-ready pet care experience with service details, wellness offerings, and a polished storefront layout.',
-    features: ['Responsive mobile-first layout', 'Pet wellness and service sections', 'Standalone HTML preview'],
-    techStack: ['HTML5', 'CSS', 'JavaScript', 'Responsive'],
-    accentColor: '#9a623c',
-    filename: 'pawprint_palace.html',
-    htmlSource: '',
-    previewUrl: '/software/template-preview/pawprint_palace.html',
-  },
-];
+    previewUrl: `/software/template-preview/${encodeURIComponent(filename)}`,
+  };
+});
 
 export function generateMasterLandingHtml(): string {
   // Generates the complete standalone single-file HTML bundle of the entire PixelForge Storefront
