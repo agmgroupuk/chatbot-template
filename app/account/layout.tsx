@@ -1,39 +1,28 @@
 import { currentUser } from '@/lib/session';
 import { redirect } from 'next/navigation';
-import { PageHeading } from '@/components/page-heading';
-import { AccountNavigation } from '@/components/account-navigation';
 import Link from 'next/link';
+import styles from './account-hub.module.css';
 
 export const metadata = {
-  title: 'Workspace setup',
+  title: 'Account Settings',
   robots: { index: false, follow: false },
 };
 
 export default async function AccountLayout({ children }: { children: React.ReactNode }) {
   const user = await currentUser();
-  if (!user) redirect('/sign-in');
+  if (!user) redirect('/sign-in?next=%2Faccount');
 
   return (
     <div className="page-wrap">
-      <div className="flex flex-wrap items-start justify-between gap-5">
-        <PageHeading
-          eyebrow="WORKSPACE SETUP"
-          title="Configure your Workspace."
-          description="Manage Workspace billing details, credit balance, payment methods, and preferences. Homepage subscription billing remains separate."
-        />
-        <div className="button-row">
-          <Link className="button secondary" href="/">
-            Open chat & Settings
-          </Link>
-          <Link className="button" href="/workspace">
-            Open Workspace
-          </Link>
+      <header className={styles.pageHeader}>
+        <div>
+          <p className="eyebrow">ONE FIN ACCOUNT</p>
+          <h1>Account Settings</h1>
+          <p className="muted">Security, activity, billing, and an overview of your One Fin products.</p>
         </div>
-      </div>
-      <div className="account-shell">
-        <AccountNavigation />
-        <div className="account-main stack">{children}</div>
-      </div>
+        <Link className={`button secondary ${styles.headerAction}`} href="/">Open Home Page Chat Plus</Link>
+      </header>
+      {children}
     </div>
   );
 }
