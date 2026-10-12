@@ -34,7 +34,7 @@ export async function prepareEnrollment(userId:string, key:string, mode:'trial'|
       on conflict(user_id) do update set request_id=gen_random_uuid(),plan_key=$2,mode=$3,price_id=$4,setup_id=null,subscription_id=null,trial_end=null,consent_at=null,created_at=now() returning *`,[userId,key,mode,price.id]);
     return result.rows[0];
   });
-  const setup=enrollment.setup_id?await stripe.setupIntents.retrieve(enrollment.setup_id):await stripe.setupIntents.create({customer:customer!,usage:'off_session',payment_method_types:['card'],metadata:{app:'chatbot-template',user_id:userId,request_id:enrollment.request_id}},{idempotencyKey:`onefin-setup:${enrollment.request_id}`});
+  const setup=enrollment.setup_id?await stripe.setupIntents.retrieve(enrollment.setup_id):await stripe.setupIntents.create({customer:customer!,usage:'off_session',allowed_payment_method_types:['card'],metadata:{app:'chatbot-template',user_id:userId,request_id:enrollment.request_id}},{idempotencyKey:`onefin-setup:${enrollment.request_id}`});
   if(!stripeObjectMatchesMode(setup.livemode) || objectId(setup.customer)!==customer || !setup.client_secret) throw new Error('Card setup unavailable.');
   await query('update billing_enrollments set setup_id=$1 where user_id=$2 and request_id=$3',[setup.id,userId,enrollment.request_id]);
   return {clientSecret:setup.client_secret,setupId:setup.id};

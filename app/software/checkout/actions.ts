@@ -75,7 +75,7 @@ export async function createSoftwarePaymentIntent(input: {
         currency: 'usd',
         customer,
         receipt_email: user.email,
-        payment_method_types: ['card'],
+        allowed_payment_method_types: ['card'],
         ...(input.savePaymentMethod ? { setup_future_usage: 'off_session' as const } : {}),
         description: `${item.name} software storefront payment`,
         metadata: {
@@ -242,7 +242,7 @@ export async function prepareSoftwareCardUpdate() {
     const setup = await stripe.setupIntents.create({
       customer,
       usage: 'off_session',
-      payment_method_types: ['card'],
+      allowed_payment_method_types: ['card'],
       metadata: { app: 'onefin-software-store', billing_scope: 'software', flow: 'software-card', user_id: user.id },
     }, { idempotencyKey: `software-card:${user.id}:${randomUUID()}` });
     if (!setup.client_secret || !stripeObjectMatchesMode(setup.livemode)) throw new Error('Software card setup unavailable.');

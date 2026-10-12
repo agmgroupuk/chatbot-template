@@ -12,7 +12,7 @@ export async function verifiedStripe() {
   const stripe = stripeClient();
   const expected = process.env.STRIPE_EXPECTED_ACCOUNT_ID;
   if (!expected) throw new Error('STRIPE_EXPECTED_ACCOUNT_ID is required.');
-  const [account, balance] = await Promise.all([stripe.accounts.retrieve(), stripe.balance.retrieve()]);
+  const [account, balance] = await Promise.all([stripe.accounts.retrieve(expected), stripe.balance.retrieve()]);
   if (account.id !== expected || balance.livemode !== expectedStripeLivemode()) throw new Error('Stripe account or mode does not match this application.');
   return stripe;
 }
