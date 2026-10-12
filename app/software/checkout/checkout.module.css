@@ -117,6 +117,43 @@
   font-weight: 700;
 }
 
+.page :global(.software-checkout-save-card) {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  color: #5f576c;
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+.page :global(.software-checkout-save-card input) {
+  flex: none;
+  margin-top: 2px;
+  accent-color: #392b52;
+}
+
+.page :global(.software-checkout-payment) {
+  display: grid;
+  gap: 12px;
+}
+
+.page :global(.software-checkout-secure-note) {
+  margin: 0;
+  color: #625777;
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.page :global(.software-checkout-cancel) {
+  min-height: 38px;
+  border: 1px solid #e5e0eb;
+  border-radius: 9px;
+  background: #fff;
+  color: #655b74;
+  cursor: pointer;
+  font-size: 12px;
+}
+
 .page :global(.software-checkout-form > p) {
   margin: 0 0 7px;
   color: #797284;

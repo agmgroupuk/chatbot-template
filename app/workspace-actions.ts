@@ -308,7 +308,7 @@ export async function prepareWorkspaceCardUpdate() {
     const setup = await stripe.setupIntents.create({
       customer,
       usage: 'off_session',
-      allowed_payment_method_types: ['card'],
+      payment_method_types: ['card'],
       metadata: { app: 'chatbot-template', flow: 'workspace-credit-card', user_id: user.id },
     }, { idempotencyKey: `workspace-card:${user.id}:${randomUUID()}` });
     if (!setup.client_secret) throw new Error('Card setup is unavailable.');

@@ -65,6 +65,7 @@ test('Workspace billing profiles, preferences, and Stripe customer mappings stay
   await db.query("insert into app_users(id,email,password_hash,email_verified_at) values($1,'scope@example.test','fixture',now())",[user]);
   const account=load('lib/account-service.ts',{'./db':adapter,'./account-preferences':load('lib/account-preferences.ts')});
   const workspaceProfile=load('lib/workspace-billing-profile.ts',{'./db':adapter});
+  const softwareProfile=load('lib/software-billing-profile.ts',{'./db':adapter,'@/lib/db':adapter});
   await account.updateProfileDetails(user,{fullName:'Subscription Name',billingLine1:'Subscription Street',billingCountry:'US'});
   await workspaceProfile.updateWorkspaceBillingProfile(user,{
    fullName:'Workspace Name',phone:'555-0200',companyName:'Workspace Co',
@@ -74,12 +75,24 @@ test('Workspace billing profiles, preferences, and Stripe customer mappings stay
    shippingCity:'London',shippingState:'',shippingPostal:'W1B',shippingCountry:'GB',
    shippingSameAsBilling:false,
   });
+  await softwareProfile.updateSoftwareBillingProfile(user,{
+   fullName:'Software Name',phone:'555-0300',companyName:'Software Co',
+   billingName:'Software Billing',billingLine1:'Software Street',billingLine2:'',
+   billingCity:'Toronto',billingState:'ON',billingPostal:'M5H',billingCountry:'CA',
+   shippingName:'Software Recipient',shippingLine1:'Software Shipping Street',shippingLine2:'',
+   shippingCity:'Toronto',shippingState:'ON',shippingPostal:'M5J',shippingCountry:'CA',
+   shippingSameAsBilling:false,
+  });
   const subscriptionAddress=(await db.query('select full_name,billing_line1,billing_country from app_users where id=$1',[user])).rows[0];
   const savedWorkspace=await workspaceProfile.readWorkspaceBillingProfile(user);
+  const savedSoftware=await softwareProfile.readSoftwareBillingProfile(user);
   assert.deepEqual(subscriptionAddress,{full_name:'Subscription Name',billing_line1:'Subscription Street',billing_country:'US'});
   assert.equal(savedWorkspace.fullName,'Workspace Name');
   assert.equal(savedWorkspace.billingLine1,'Workspace Street');
   assert.equal(savedWorkspace.shippingLine1,'Workspace Shipping Street');
+  assert.equal(savedSoftware.fullName,'Software Name');
+  assert.equal(savedSoftware.billingLine1,'Software Street');
+  assert.equal(savedSoftware.shippingLine1,'Software Shipping Street');
   const prefs={theme:'dark',timezone:'Europe/London',enter_to_send:false,spellcheck:true,context_enabled:false,product_updates:true};
   await account.writePreferences(user,{...prefs,theme:'light'});
   await account.writeWorkspacePreferences(user,prefs);
@@ -96,6 +109,8 @@ test('Workspace billing profiles, preferences, and Stripe customer mappings stay
   assert.equal(await workspaceStripe.workspaceCustomer(user,true),'cus_workspace_separate');
   assert.equal((await db.query('select customer_id from billing_customers where user_id=$1',[user])).rows[0].customer_id,'cus_subscription_separate');
   assert.equal((await db.query('select customer_id from workspace_billing_customers where user_id=$1',[user])).rows[0].customer_id,'cus_workspace_separate');
+  await db.query('insert into software_billing_customers(user_id,customer_id) values($1,$2)',[user,'cus_software_separate']);
+  assert.equal((await db.query('select customer_id from software_billing_customers where user_id=$1',[user])).rows[0].customer_id,'cus_software_separate');
   assert.equal(created[0].metadata.billing_scope,'workspace');
   assert.equal(created[0].name,'Workspace Billing');
   assert.equal(created[0].address.line1,'Workspace Street');

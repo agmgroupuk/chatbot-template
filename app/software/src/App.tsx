@@ -141,6 +141,7 @@ export default function App() {
           <a href="#templates">Software catalog</a>
           <a href="#services">Custom development</a>
           <a href="#process">How it works</a>
+          <Link href="/software/account">My Software account</Link>
         </nav>
         <section className="ofs-hero" id="home">
           <div className="hero-copy">

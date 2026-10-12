@@ -116,7 +116,9 @@ export async function fulfillStripeEvent(stripe: Stripe, event: Stripe.Event) {
       await grant(user, `checkout:${session.id}:${item.id}`, item.price.id, item.quantity || 0);
     }
   } else if (event.type === 'invoice.paid') {
-    const invoice = await stripe.invoices.retrieve(event.data.object.id);
+    const invoiceId = (event.data.object as Stripe.Invoice).id;
+    if (!invoiceId) throw new Error('Missing invoice ID.');
+    const invoice = await stripe.invoices.retrieve(invoiceId);
     if (invoice.parent?.subscription_details?.metadata?.app !== 'chatbot-template') return;
     if (!stripeObjectMatchesMode(invoice.livemode) || invoice.status !== 'paid' || invoice.currency !== 'usd') throw new Error('Unexpected invoice.');
     const user = await owner(invoice.customer);
@@ -130,7 +132,7 @@ export async function fulfillStripeEvent(stripe: Stripe, event: Stripe.Event) {
       // The zero-dollar trial invoice is not a paid membership. Read invoice
       // lines, not the latest subscription period, when handling delayed events.
       if(invoice.amount_paid<=0 || invoice.amount_remaining!==0 || sub.status==='canceled') return;
-      for await(const line of stripe.invoices.listLineItems(invoice.id,{limit:100})) {
+      for await(const line of stripe.invoices.listLineItems(invoiceId,{limit:100})) {
         if(line.parent?.subscription_item_details?.proration || line.amount<=0 || line.quantity!==1) continue;
         const source=line.pricing?.price_details?.price;
         const price=typeof source==='string'?await stripe.prices.retrieve(source):source;
@@ -139,7 +141,7 @@ export async function fulfillStripeEvent(stripe: Stripe, event: Stripe.Event) {
         await query(`insert into membership_access(subscription_id,user_id,plan_key,expires_at) values($1,$2,$3,$4)
           on conflict(subscription_id) do update set plan_key=case when excluded.expires_at>=membership_access.expires_at then excluded.plan_key else membership_access.plan_key end,expires_at=greatest(membership_access.expires_at,excluded.expires_at),updated_at=now()`,[sub.id,user,paidPlan.key,new Date(line.period.end*1000).toISOString()]);
       }
-      await queueBillingNotice(`paid:${invoice.id}`,user,'Payment received',`Payment of ${(invoice.amount_paid/100).toFixed(2)} ${invoice.currency.toUpperCase()} received. Review your plan and renewal at https://onefinsolution.online/dashboard/billing.`);
+      await queueBillingNotice(`paid:${invoiceId}`,user,'Payment received',`Payment of ${(invoice.amount_paid/100).toFixed(2)} ${invoice.currency.toUpperCase()} received. Review your plan and renewal at https://onefinsolution.online/dashboard/billing.`);
       return;
     }
     return;
@@ -151,10 +153,12 @@ export async function fulfillStripeEvent(stripe: Stripe, event: Stripe.Event) {
     await recordSubscription(user,sub);
     if(event.type==='customer.subscription.trial_will_end' && sub.status==='trialing') await queueBillingNotice(`trial-ending:${sub.id}:${sub.trial_end}`,user,'Your trial is ending',`Your trial ends ${new Date(sub.trial_end!*1000).toISOString()}. Your saved card will be charged automatically unless you cancel. Review the price or cancel at https://onefinsolution.online/dashboard/billing.`);
   } else if(['invoice.payment_failed','invoice.payment_action_required'].includes(event.type)) {
-    const invoice=await stripe.invoices.retrieve((event.data.object as Stripe.Invoice).id);
+    const invoiceId=(event.data.object as Stripe.Invoice).id;
+    if(!invoiceId) throw new Error('Missing invoice ID.');
+    const invoice=await stripe.invoices.retrieve(invoiceId);
     if(invoice.parent?.subscription_details?.metadata?.app!=='chatbot-template') return;
     const user=await owner(invoice.customer);
-    await queueBillingNotice(`${event.type}:${invoice.id}`,user,'Your payment needs attention','We could not complete your payment. Access will not extend until payment is confirmed. Open https://onefinsolution.online/dashboard/billing to update your card or authenticate the payment.');
+    await queueBillingNotice(`${event.type}:${invoiceId}`,user,'Your payment needs attention','We could not complete your payment. Access will not extend until payment is confirmed. Open https://onefinsolution.online/dashboard/billing to update your card or authenticate the payment.');
   }
   // Failed/cancelled checkout, unpaid invoice and cancelled subscriptions grant nothing.
 }

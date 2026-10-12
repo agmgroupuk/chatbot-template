@@ -18,6 +18,7 @@ export default defineRailway(() => {
       EMAIL_FROM_AUTH: preserve(),
       EMAIL_FROM_BILLING: preserve(),
       EMAIL_REPLY_TO: preserve(),
+      SOFTWARE_INQUIRY_EMAIL: preserve(),
       PORT: preserve(),
       SESSION_COOKIE_DOMAIN: preserve(),
       BILLING_PROVIDER: preserve(),
