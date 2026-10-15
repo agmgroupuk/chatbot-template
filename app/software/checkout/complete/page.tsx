@@ -58,7 +58,7 @@ export default async function SoftwareCheckoutCompletePage({
           type: intent.status === 'succeeded' ? 'payment_intent.succeeded' : 'payment_intent.canceled',
           livemode: intent.livemode,
           data: { object: intent },
-        } as Stripe.Event);
+        } as unknown as Stripe.Event);
       } catch (error) {
         console.error('Unable to fulfill Software payment return:', error);
         confirmationIssue = true;
