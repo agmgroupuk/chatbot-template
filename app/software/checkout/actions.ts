@@ -267,7 +267,7 @@ export async function softwarePurchaseStatus(purchaseId: string) {
         type: intent.status === 'succeeded' ? 'payment_intent.succeeded' : 'payment_intent.canceled',
         livemode: intent.livemode,
         data: { object: intent },
-      } as Stripe.Event);
+      } as unknown as Stripe.Event);
       revalidatePath('/software/account');
 
       const [fresh] = await query<{
