@@ -171,7 +171,9 @@ test('card-first trials, retry recovery, cross-account card claims, paid access 
  current=first;
  assert.equal(verificationIntents,0,'A successful SetupIntent must not create a separate authorization hold.');
  const billing=load('lib/stripe-billing.ts',{'./db':adapter,'./stripe':{verifiedStripe:async()=>stripe},'./session':{currentUser:async()=>({id:first,email:'one@example.test'})},'./subscription-catalog':catalog,'./plans':plans,'./stripe-fulfillment':fulfillment,'./credit-config':{},'./site-url':{},'./billing-environment':mode});
+ stripe.subscriptionSchedules.create=async params=>{assert.equal(Object.hasOwn(params,'metadata'),false,'Stripe rejects metadata alongside from_subscription.');return {id:'sched_1',current_phase:null};};
  await billing.schedulePlanChange('weekly');assert.equal(capturedSchedule.proration_behavior,'none');assert.equal(capturedSchedule.phases[0].trial_end,subs.get('sub_1').trial_end);assert.equal(capturedSchedule.phases[1].duration.interval,'week');assert.equal(capturedSchedule.phases[1].trial_end,undefined);
+ assert.equal(capturedSchedule.metadata.app,'chatbot-template');
  const credits=load('lib/credits.ts',{'./db':adapter,'./credit-config':{signupCredits:()=>0,workspaceCreditCost:()=>1}});
  await db.query("select grant_credits($1,$2,1)",[second,'fixture:workspace-credit']);
  const use=await credits.reserveWorkspaceCredits(second);await credits.finishWorkspaceCredits(second,use,true);
