@@ -20,7 +20,7 @@ export async function POST(request: NextRequest) {
 
   let reservation: string | undefined;
   try {
-    await throttle(user.id, 'workspace-agent');
+    await throttle(`workspace:${user.id}`, 60);
     const body = await request.json();
     const conversationId =
       typeof body?.conversationId === 'string' && body.conversationId
