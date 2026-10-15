@@ -30,11 +30,13 @@ export default async function SoftwareAccountPage() {
       amount_paid_cents: number;
       total_price_cents: number;
       currency: string;
-      status: 'pending' | 'paid' | 'failed';
+      status: string;
+      inquiry_status: string;
       created_at: string;
       paid_at: string | null;
     }>(
-      `select id,item_name,amount_paid_cents,total_price_cents,currency,status,created_at::text,paid_at::text
+      `select id,item_name,amount_paid_cents,total_price_cents,currency,status,inquiry_status,
+              created_at::text,paid_at::text
        from software_storefront_purchases where user_id=$1 order by created_at desc limit 100`,
       [user.id],
     ),
@@ -60,21 +62,36 @@ export default async function SoftwareAccountPage() {
 
       <section className={styles.section}>
         <h2>Software payment history</h2>
-        <p>Payments and inquiry status recorded for your Software account only.</p>
+        <p>Agreed project price, payments applied, remaining balance, and project status (payment status stays separate).</p>
         {purchases.length ? (
           <div className={styles.tableWrap}>
             <table className={styles.table}>
-              <thead><tr><th>Item</th><th>Payment</th><th>Listed total</th><th>Remaining</th><th>Status</th><th>Date</th></tr></thead>
+              <thead><tr><th>Product / ref</th><th>Total paid</th><th>Agreed total</th><th>Remaining</th><th>Payment / project</th><th>Date</th></tr></thead>
               <tbody>
                 {purchases.map((purchase) => {
-                  const paidAmount = purchase.status === 'paid' ? purchase.amount_paid_cents : 0;
+                  const paidAmount = Math.max(0, purchase.amount_paid_cents || 0);
+                  const remaining = Math.max(0, purchase.total_price_cents - paidAmount);
+                  const paymentLabel =
+                    purchase.status === 'paid'
+                      ? 'Fully paid'
+                      : purchase.status === 'partially_paid'
+                        ? 'Partially paid'
+                        : purchase.status === 'failed'
+                          ? 'Failed'
+                          : 'Pending';
                   return (
                     <tr key={purchase.id}>
-                      <td>{purchase.item_name}</td>
-                      <td>{purchase.status === 'paid' ? usd(paidAmount) : '—'}</td>
+                      <td>
+                        <div>{purchase.item_name}</div>
+                        <div className={styles.muted}>Ref {purchase.id.slice(0, 8)}</div>
+                      </td>
+                      <td>{usd(paidAmount)}</td>
                       <td>{usd(purchase.total_price_cents)}</td>
-                      <td>{usd(Math.max(0, purchase.total_price_cents - paidAmount))}</td>
-                      <td>{purchase.status}</td>
+                      <td>{usd(remaining)}</td>
+                      <td>
+                        <div>{paymentLabel}</div>
+                        <div className={styles.muted}>Project: {purchase.inquiry_status || 'inquiry'}</div>
+                      </td>
                       <td>{new Date(purchase.paid_at || purchase.created_at).toLocaleDateString('en-US')}</td>
                     </tr>
                   );

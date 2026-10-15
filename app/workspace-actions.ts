@@ -9,6 +9,10 @@ import { query } from '@/lib/db';
 import { ensureSignupCredits } from '@/lib/credits';
 import { workspaceCreditCost } from '@/lib/credit-config';
 import { workspaceCreditPack } from '@/lib/workspace-credit-pack';
+import {
+  readWorkspaceAutoReloadSettings,
+  type WorkspaceAutoReloadSettings,
+} from '@/lib/workspace-auto-reload';
 import { creditPlans } from '@/lib/credit-config';
 import { fulfillStripeEvent } from '@/lib/stripe-fulfillment';
 import { throttle } from '@/lib/auth-service';
@@ -52,6 +56,7 @@ export async function getWorkspaceBillingData() {
       usage: usage.map((item) => ({ ...item, credits: item.status === 'completed' ? workspaceCreditCost() : 0 })),
       transactions,
       card: card[0] || null,
+      autoReload: await readWorkspaceAutoReloadSettings(user.id),
     } as const;
   } catch (error) {
     console.error('Unable to load Workspace billing data:', error);
@@ -312,6 +317,60 @@ export async function prepareWorkspaceCardUpdate() {
   } catch (error) {
     console.error('Unable to prepare Workspace card setup:', error);
     return { error: 'Unable to prepare secure card setup. Please try again.' } as const;
+  }
+}
+
+export async function setWorkspaceAutoReloadSettings(input: {
+  enabled: boolean;
+  threshold?: number;
+}): Promise<{ ok?: true; error?: string; autoReload?: WorkspaceAutoReloadSettings }> {
+  const user = await currentUser();
+  if (!user) return { error: 'Please sign in to manage Workspace auto-reload.' };
+  if (!input || typeof input.enabled !== 'boolean') {
+    return { error: 'Invalid auto-reload settings.' };
+  }
+
+  const threshold =
+    input.threshold == null || input.threshold === undefined
+      ? 1
+      : Math.floor(Number(input.threshold));
+  if (!Number.isSafeInteger(threshold) || threshold < 0 || threshold > 1_000_000) {
+    return { error: 'Choose a valid auto-reload threshold.' };
+  }
+
+  try {
+    const [card] = await query<{ payment_method_id: string | null }>(
+      'select payment_method_id from workspace_credit_settings where user_id=$1',
+      [user.id],
+    );
+    if (input.enabled && !card?.payment_method_id) {
+      return { error: 'Save a Workspace card before enabling auto-reload.' };
+    }
+
+    await query(
+      `insert into workspace_credit_settings(
+         user_id, auto_reload_enabled, auto_reload_threshold, updated_at
+       ) values ($1,$2,$3,now())
+       on conflict (user_id) do update set
+         auto_reload_enabled=excluded.auto_reload_enabled,
+         auto_reload_threshold=excluded.auto_reload_threshold,
+         updated_at=now()`,
+      [user.id, input.enabled, threshold],
+    );
+
+    revalidatePath('/workspace');
+    return {
+      ok: true as const,
+      autoReload: await readWorkspaceAutoReloadSettings(user.id),
+    };
+  } catch (error) {
+    console.error('Unable to update Workspace auto-reload settings:', error);
+    return {
+      error:
+        error instanceof Error && /auto_reload/i.test(error.message)
+          ? 'Auto-reload is not available until database migration 015 is applied.'
+          : 'Unable to update auto-reload settings. Please try again.',
+    };
   }
 }
 

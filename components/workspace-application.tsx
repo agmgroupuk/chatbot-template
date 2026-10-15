@@ -5,7 +5,12 @@ import Link from 'next/link';
 import Image from 'next/image';
 import { useRouter } from 'next/navigation';
 import { ArrowUp, ChevronLeft, ChevronRight, CreditCard, FileText, History, LayoutGrid, Plus, Settings, Wallet, UserRound, X } from 'lucide-react';
-import { getWorkspaceBillingData, saveWorkspaceCard, workspaceCreditPurchaseStatus } from '@/app/workspace-actions';
+import {
+  getWorkspaceBillingData,
+  saveWorkspaceCard,
+  setWorkspaceAutoReloadSettings,
+  workspaceCreditPurchaseStatus,
+} from '@/app/workspace-actions';
 import { ConversationTools, exportConversation } from './conversation-tools';
 import { MessageContent } from './message-content';
 import { getMessagesForChat } from '@/app/actions';
@@ -18,6 +23,13 @@ type WorkspaceData =
       usage: { id: string; status: string; created_at: string; credits: number }[];
       transactions: { id: string; amount: number; currency: string; credits: number; created_at: string }[];
       card: { card_brand: string | null; card_last4: string | null; card_exp_month: number | null; card_exp_year: number | null } | null;
+      autoReload?: {
+        enabled: boolean;
+        threshold: number;
+        hasPaymentMethod: boolean;
+        lastError: string | null;
+        lastAt: string | null;
+      };
     }
   | { error: string };
 type WorkspaceMessage = { id?: string; sender: 'user' | 'ai'; content: string };
@@ -73,6 +85,11 @@ export function WorkspaceApplication({
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState('');
   const [error, setError] = useState('');
+  const initialAutoReload = !('error' in initialData) ? initialData.autoReload : undefined;
+  const [autoReloadEnabled, setAutoReloadEnabled] = useState(Boolean(initialAutoReload?.enabled));
+  const [autoReloadThreshold, setAutoReloadThreshold] = useState(initialAutoReload?.threshold ?? 1);
+  const [autoReloadBusy, setAutoReloadBusy] = useState(false);
+  const [autoReloadLastError, setAutoReloadLastError] = useState(initialAutoReload?.lastError || null);
   const [accessPrompt, setAccessPrompt] = useState<'signin' | 'credits' | null>(null);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
@@ -84,6 +101,7 @@ export function WorkspaceApplication({
   const transactions = 'transactions' in data ? data.transactions : [];
   const usage = 'usage' in data ? data.usage : [];
   const card = 'card' in data ? data.card : null;
+  const autoReload = 'autoReload' in data ? data.autoReload : undefined;
 
   const refreshData = useCallback(async () => {
     setLoading(true);
@@ -91,7 +109,14 @@ export function WorkspaceApplication({
     setData(next);
     setLoading(false);
     if ('error' in next) setError(next.error || 'Workspace billing data is temporarily unavailable.');
-    else setError('');
+    else {
+      setError('');
+      if (next.autoReload) {
+        setAutoReloadEnabled(Boolean(next.autoReload.enabled));
+        setAutoReloadThreshold(next.autoReload.threshold ?? 1);
+        setAutoReloadLastError(next.autoReload.lastError || null);
+      }
+    }
   }, []);
 
   useEffect(() => {
@@ -432,8 +457,91 @@ export function WorkspaceApplication({
           </section>
 
           <section className="workspace-panel workspace-reload-panel">
-            <div><p className="workspace-eyebrow">CREDIT RELOADS</p><h2>Automatic reloads are currently off</h2><p>One-time credit purchases are available now. Automatic and scheduled reloads will require separate confirmation, billing safeguards, and clear spending controls before being enabled.</p></div>
-            <span className="workspace-status-pill">Not enabled</span>
+            <div>
+              <p className="workspace-eyebrow">CREDIT RELOADS</p>
+              <h2>{autoReloadEnabled ? 'Automatic reloads are on' : 'Automatic reloads are off'}</h2>
+              <p>
+                When your balance falls to the threshold, Workspace can charge your saved Workspace card
+                off-session for a {workspaceCreditPack.credits}-credit pack (${(workspaceCreditPack.amount / 100).toFixed(2)}).
+                Subscription cards are never used.
+              </p>
+              {isAuthenticated ? (
+                <div className="workspace-auto-reload-controls" style={{ display: 'grid', gap: 12, marginTop: 16 }}>
+                  <label style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+                    <input
+                      type="checkbox"
+                      checked={autoReloadEnabled}
+                      disabled={autoReloadBusy || (!card && !autoReloadEnabled)}
+                      onChange={(event) => {
+                        void (async () => {
+                          setAutoReloadBusy(true);
+                          setError('');
+                          const result = await setWorkspaceAutoReloadSettings({
+                            enabled: event.target.checked,
+                            threshold: autoReloadThreshold,
+                          });
+                          setAutoReloadBusy(false);
+                          if (result.error) {
+                            setError(result.error);
+                            return;
+                          }
+                          if (result.autoReload) {
+                            setAutoReloadEnabled(result.autoReload.enabled);
+                            setAutoReloadThreshold(result.autoReload.threshold);
+                            setNotice(
+                              result.autoReload.enabled
+                                ? 'Auto-reload enabled for low Workspace balances.'
+                                : 'Auto-reload disabled.',
+                            );
+                            void refreshData();
+                          }
+                        })();
+                      }}
+                    />
+                    <span>Enable low-balance auto-reload</span>
+                  </label>
+                  <label style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+                    <span>Threshold</span>
+                    <input
+                      type="number"
+                      min={0}
+                      max={1000000}
+                      value={autoReloadThreshold}
+                      disabled={autoReloadBusy}
+                      onChange={(event) =>
+                        setAutoReloadThreshold(Math.max(0, Math.floor(Number(event.target.value) || 0)))
+                      }
+                      onBlur={() => {
+                        void (async () => {
+                          setAutoReloadBusy(true);
+                          const result = await setWorkspaceAutoReloadSettings({
+                            enabled: autoReloadEnabled,
+                            threshold: autoReloadThreshold,
+                          });
+                          setAutoReloadBusy(false);
+                          if (result.error) setError(result.error);
+                          else if (result.autoReload) {
+                            setAutoReloadEnabled(result.autoReload.enabled);
+                            setAutoReloadThreshold(result.autoReload.threshold);
+                          }
+                        })();
+                      }}
+                      style={{ width: 88 }}
+                    />
+                    <span className="workspace-muted-copy">credits remaining</span>
+                  </label>
+                  {!card ? (
+                    <p className="workspace-empty-copy">Save a Workspace card before enabling auto-reload.</p>
+                  ) : null}
+                  {autoReloadLastError ? (
+                    <p className="workspace-empty-copy">Last auto-reload issue: {autoReloadLastError}</p>
+                  ) : null}
+                </div>
+              ) : (
+                <p className="workspace-empty-copy">Sign in to manage automatic credit reloads.</p>
+              )}
+            </div>
+            <span className="workspace-status-pill">{autoReloadEnabled ? 'Enabled' : 'Not enabled'}</span>
           </section>
         </div>
       </main>

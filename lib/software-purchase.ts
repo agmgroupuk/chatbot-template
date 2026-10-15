@@ -3,11 +3,27 @@ import { STOREFRONT_TEMPLATES } from '@/app/software/src/data/templatesData';
 
 export type SoftwarePurchaseKind = 'template' | 'software';
 
+/** Payment status only — never conflated with inquiry/project status. */
+export type SoftwarePaymentStatus = 'pending' | 'partially_paid' | 'paid' | 'failed';
+
+export type SoftwarePaymentAttemptStatus = 'pending' | 'succeeded' | 'failed' | 'canceled';
+
 export interface SoftwarePurchaseItem {
   kind: SoftwarePurchaseKind;
   id: string;
   name: string;
+  /** Default agreed project price (catalog). */
   priceCents: number;
+  /** Configurable estimate band (min–max). Defaults to catalog price when no band exists. */
+  estimatedMinCents: number;
+  estimatedMaxCents: number;
+}
+
+export interface SoftwarePurchaseTotals {
+  /** Agreed project price — drives accounting. */
+  agreedPriceCents: number;
+  /** Sum of successfully verified payments only. */
+  amountPaidCents: number;
 }
 
 export function getSoftwarePurchaseItem(
@@ -18,28 +34,120 @@ export function getSoftwarePurchaseItem(
 
   if (kind === 'template') {
     const template = STOREFRONT_TEMPLATES.find((item) => item.id === id);
-    return template ? {
+    if (!template) return null;
+    const priceCents = template.price * 100;
+    return {
       kind,
       id: template.id,
       name: template.name,
-      priceCents: template.price * 100,
-    } : null;
+      priceCents,
+      estimatedMinCents: priceCents,
+      estimatedMaxCents: priceCents,
+    };
   }
 
   const product = softwareCatalog.find((item) => item.id === id);
-  return product ? {
+  if (!product) return null;
+  const priceCents = product.priceUsd * 100;
+  return {
     kind,
     id: product.id,
     name: product.name,
-    priceCents: product.priceUsd * 100,
-  } : null;
+    priceCents,
+    estimatedMinCents: priceCents,
+    estimatedMaxCents: priceCents,
+  };
 }
 
-export function parseSoftwarePaymentAmount(value: string, maximumCents: number): number | null {
+/**
+ * Flexible installment / deposit amount.
+ * Allows configured minimum (floor), custom amount, or full agreed price up to maxCents.
+ */
+export function parseSoftwarePaymentAmount(
+  value: string,
+  maximumCents: number,
+  minimumCents = 500,
+): number | null {
   if (!/^\d{1,7}(?:\.\d{1,2})?$/.test(value)) return null;
   const [dollars, cents = ''] = value.split('.');
   const amountCents = Number(dollars) * 100 + Number(cents.padEnd(2, '0'));
-  return Number.isSafeInteger(amountCents) && amountCents >= 500 && amountCents <= maximumCents
-    ? amountCents
-    : null;
+  if (!Number.isSafeInteger(amountCents)) return null;
+  if (amountCents < minimumCents || amountCents > maximumCents) return null;
+  return amountCents;
+}
+
+/** Remaining balance never goes negative; only successful payments reduce it. */
+export function remainingBalanceCents(totals: SoftwarePurchaseTotals): number {
+  return Math.max(0, totals.agreedPriceCents - Math.max(0, totals.amountPaidCents));
+}
+
+export function isFullyPaid(totals: SoftwarePurchaseTotals): boolean {
+  return totals.agreedPriceCents > 0 && remainingBalanceCents(totals) === 0;
+}
+
+/**
+ * Derive payment status from agreed price + successful totals.
+ * A deposit alone never yields `paid` unless remaining is zero.
+ */
+export function paymentStatusFromTotals(
+  totals: SoftwarePurchaseTotals,
+  fallback: SoftwarePaymentStatus = 'pending',
+): SoftwarePaymentStatus {
+  const paid = Math.max(0, totals.amountPaidCents);
+  const agreed = Math.max(0, totals.agreedPriceCents);
+
+  if (agreed <= 0) return fallback;
+  if (paid <= 0) return fallback === 'failed' ? 'failed' : 'pending';
+  if (paid >= agreed) return 'paid';
+  return 'partially_paid';
+}
+
+/**
+ * Recompute purchase payment fields after a ledger change.
+ * `successfulPaymentCents` must be the sum of succeeded rows only.
+ */
+export function recomputePurchasePaymentFields(input: {
+  agreedPriceCents: number;
+  successfulPaymentCents: number;
+  previousStatus?: SoftwarePaymentStatus;
+}): {
+  amountPaidCents: number;
+  remainingCents: number;
+  status: SoftwarePaymentStatus;
+  fullyPaid: boolean;
+  paidAt: 'set' | 'clear' | 'keep';
+} {
+  const agreedPriceCents = Math.max(0, input.agreedPriceCents);
+  const amountPaidCents = Math.max(0, input.successfulPaymentCents);
+  const remainingCents = remainingBalanceCents({
+    agreedPriceCents,
+    amountPaidCents,
+  });
+  const fullyPaid = isFullyPaid({ agreedPriceCents, amountPaidCents });
+  const previous = input.previousStatus || 'pending';
+
+  let status: SoftwarePaymentStatus;
+  if (fullyPaid) status = 'paid';
+  else if (amountPaidCents > 0) status = 'partially_paid';
+  else if (previous === 'failed') status = 'failed';
+  else status = 'pending';
+
+  return {
+    amountPaidCents,
+    remainingCents,
+    status,
+    fullyPaid,
+    paidAt: fullyPaid ? 'set' : amountPaidCents > 0 ? 'clear' : previous === 'paid' ? 'clear' : 'keep',
+  };
+}
+
+/** Max chargeable now = remaining balance (installments cannot exceed outstanding). */
+export function maxPayableCents(totals: SoftwarePurchaseTotals): number {
+  return remainingBalanceCents(totals);
+}
+
+export function assertPositiveAgreedPrice(agreedPriceCents: number): void {
+  if (!Number.isSafeInteger(agreedPriceCents) || agreedPriceCents <= 0) {
+    throw new Error('Agreed project price must be a positive amount.');
+  }
 }

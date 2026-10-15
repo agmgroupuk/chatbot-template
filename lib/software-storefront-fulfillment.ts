@@ -2,120 +2,238 @@ import 'server-only';
 import Stripe from 'stripe';
 import { query, transaction } from '@/lib/db';
 import { sendBillingEmail } from '@/lib/email';
-import { getSoftwarePurchaseItem } from '@/lib/software-purchase';
+import {
+  getSoftwarePurchaseItem,
+  paymentStatusFromTotals,
+  recomputePurchasePaymentFields,
+  remainingBalanceCents,
+  type SoftwarePaymentStatus,
+} from '@/lib/software-purchase';
 import { stripeObjectMatchesMode } from '@/lib/billing-environment';
 
-export async function fulfillSoftwareStorefrontPayment(stripe: Stripe, event: Stripe.Event) {
-  if (!['payment_intent.succeeded', 'payment_intent.payment_failed', 'payment_intent.canceled'].includes(event.type)) return;
-  const eventIntent = event.data.object as Stripe.PaymentIntent;
-  if (eventIntent.metadata?.app !== 'onefin-software-store' || eventIntent.metadata.billing_scope !== 'software') return;
+type PurchaseRow = {
+  id: string;
+  user_id: string;
+  item_kind: string;
+  item_id: string;
+  item_name: string;
+  amount_paid_cents: number;
+  total_price_cents: number;
+  status: SoftwarePaymentStatus;
+  inquiry_status: string;
+  currency: string;
+  stripe_payment_intent_id: string | null;
+};
 
-  const intent = await stripe.paymentIntents.retrieve(eventIntent.id, { expand: ['payment_method'] });
+function stripeId(value: string | { id: string } | null | undefined): string | null {
+  if (!value) return null;
+  return typeof value === 'string' ? value : value.id || null;
+}
+
+function paymentAttemptStatus(
+  eventType: string,
+  intentStatus: string,
+): 'succeeded' | 'failed' | 'canceled' | 'pending' {
+  if (eventType === 'payment_intent.succeeded' || intentStatus === 'succeeded') return 'succeeded';
+  if (eventType === 'payment_intent.canceled' || intentStatus === 'canceled') return 'canceled';
+  if (eventType === 'payment_intent.payment_failed' || intentStatus === 'requires_payment_method') {
+    return 'failed';
+  }
+  return 'pending';
+}
+
+/**
+ * Apply a software storefront PaymentIntent to the purchase ledger and recompute totals.
+ * Only succeeded payments reduce remaining balance. Duplicate PI events are idempotent.
+ */
+export async function fulfillSoftwareStorefrontPayment(stripe: Stripe, event: Stripe.Event) {
+  if (
+    !['payment_intent.succeeded', 'payment_intent.payment_failed', 'payment_intent.canceled'].includes(
+      event.type,
+    )
+  ) {
+    return;
+  }
+
+  const eventIntent = event.data.object as Stripe.PaymentIntent;
+  if (
+    eventIntent.metadata?.app !== 'onefin-software-store' ||
+    eventIntent.metadata.billing_scope !== 'software'
+  ) {
+    return;
+  }
+
+  const intent = await stripe.paymentIntents.retrieve(eventIntent.id, { expand: ['latest_charge'] });
   const metadata = intent.metadata;
   const item = getSoftwarePurchaseItem(metadata.item_kind, metadata.item_id);
-  const amount = intent.amount_received || intent.amount;
-  if (!item || !stripeObjectMatchesMode(intent.livemode) ||
-      intent.currency !== 'usd' || amount < 500 || amount > item.priceCents ||
-      Number(metadata.full_price_cents) !== item.priceCents ||
-      !metadata.user_id || !metadata.purchase_id ||
-      !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(metadata.user_id) ||
-      !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(metadata.purchase_id)) {
+  const attemptAmount = intent.amount_received || intent.amount;
+  const uuid =
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+  if (
+    !item ||
+    !stripeObjectMatchesMode(intent.livemode) ||
+    intent.currency !== 'usd' ||
+    attemptAmount < 500 ||
+    !metadata.user_id ||
+    !metadata.purchase_id ||
+    !uuid.test(metadata.user_id) ||
+    !uuid.test(metadata.purchase_id)
+  ) {
     throw new Error('Unexpected software storefront payment details.');
   }
 
-  const stripeCustomerId = typeof intent.customer === 'string' ? intent.customer : intent.customer?.id;
+  const stripeCustomerId = stripeId(intent.customer);
   if (!stripeCustomerId) throw new Error('Software payment is missing its billing customer.');
+
   const [mapping] = await query<{ user_id: string }>(
     'select user_id from software_billing_customers where customer_id=$1',
     [stripeCustomerId],
   );
-  if (!mapping || mapping.user_id !== metadata.user_id) throw new Error('Software payment customer ownership mismatch.');
+  if (!mapping || mapping.user_id !== metadata.user_id) {
+    throw new Error('Software payment customer ownership mismatch.');
+  }
 
-  const [purchase] = await query<{
-    id: string;
-    user_id: string;
-    item_kind: string;
-    item_id: string;
-    amount_paid_cents: number;
-    total_price_cents: number;
-    status: 'pending' | 'paid' | 'failed';
-  }>(
-    `select id,user_id,item_kind,item_id,amount_paid_cents,total_price_cents,status
-     from software_storefront_purchases where id=$1 and stripe_payment_intent_id=$2`,
-    [metadata.purchase_id, intent.id],
+  // Locate purchase by id (installments may use a different PI than the original deposit PI).
+  const [purchase] = await query<PurchaseRow>(
+    `select id,user_id,item_kind,item_id,item_name,amount_paid_cents,total_price_cents,status,
+            inquiry_status,currency,stripe_payment_intent_id
+     from software_storefront_purchases
+     where id=$1`,
+    [metadata.purchase_id],
   );
-  if (!purchase || purchase.user_id !== metadata.user_id || purchase.item_kind !== item.kind ||
-      purchase.item_id !== item.id || purchase.amount_paid_cents !== intent.amount ||
-      purchase.total_price_cents !== item.priceCents) {
+
+  if (
+    !purchase ||
+    purchase.user_id !== metadata.user_id ||
+    purchase.item_kind !== item.kind ||
+    purchase.item_id !== item.id
+  ) {
     throw new Error('Software storefront purchase record does not match Stripe.');
   }
 
-  if (event.type === 'payment_intent.succeeded') {
-    if (intent.status !== 'succeeded' || intent.amount_received !== intent.amount) {
-      throw new Error('Software payment is not fully captured.');
-    }
-    if (metadata.save_payment_method === 'true') {
-      const method = intent.payment_method;
-      const methodCustomer = typeof method === 'object' && method
-        ? typeof method.customer === 'string' ? method.customer : method.customer?.id
-        : null;
-      if (!method || typeof method === 'string' || methodCustomer !== stripeCustomerId || method.type !== 'card') {
-        throw new Error('Saved Software payment method ownership could not be verified.');
-      }
-      await stripe.customers.update(stripeCustomerId, {
-        invoice_settings: { default_payment_method: method.id },
-      });
-    }
-    await query(
-      `update software_storefront_purchases set status='paid',paid_at=coalesce(paid_at,now())
-       where id=$1 and user_id=$2 and status<>'paid'`,
-      [purchase.id, purchase.user_id],
-    );
-  } else if (purchase.status !== 'paid') {
-    await query(
-      `update software_storefront_purchases set status='failed'
-       where id=$1 and user_id=$2 and status='pending'`,
-      [purchase.id, purchase.user_id],
-    );
-    return;
+  // Agreed price is authoritative on the purchase row (not overwritten by installment amount).
+  const agreedPriceCents = purchase.total_price_cents;
+  if (!Number.isSafeInteger(agreedPriceCents) || agreedPriceCents <= 0) {
+    throw new Error('Software purchase is missing an agreed project price.');
+  }
+  if (Number(metadata.full_price_cents) && Number(metadata.full_price_cents) !== agreedPriceCents) {
+    throw new Error('Software payment agreed-price metadata does not match the purchase.');
+  }
+  if (attemptAmount > agreedPriceCents) {
+    throw new Error('Software payment exceeds the agreed project price.');
   }
 
-  if (event.type !== 'payment_intent.succeeded') return;
-  const recipient = process.env.SOFTWARE_INQUIRY_EMAIL?.trim() || process.env.EMAIL_REPLY_TO?.trim();
-  if (!recipient) throw new Error('Configure SOFTWARE_INQUIRY_EMAIL or EMAIL_REPLY_TO to notify the team of storefront payments.');
+  const attemptStatus = paymentAttemptStatus(event.type, intent.status);
+  const chargeId = stripeId(intent.latest_charge as string | { id: string } | null);
+  const initiatedBy = metadata.initiated_by === 'company' ? 'company' : 'customer';
+  const failureMessage =
+    attemptStatus === 'failed'
+      ? intent.last_payment_error?.message || 'Payment failed.'
+      : attemptStatus === 'canceled'
+        ? 'Payment canceled.'
+        : null;
 
-  const customerEmail = typeof intent.receipt_email === 'string'
-    ? intent.receipt_email
-    : typeof intent.customer === 'object' && intent.customer && !intent.customer.deleted
-      ? intent.customer.email || ''
-      : '';
   await transaction(async (client) => {
-    await client.query('select pg_advisory_xact_lock(hashtext($1))', [intent.id]);
-    const { rows } = await client.query<{ team_notified_at: Date | null }>(
-      'select team_notified_at from software_storefront_purchases where id=$1 for update',
-      [purchase.id],
-    );
-    const saved = rows[0];
-    if (!saved) throw new Error('Software storefront purchase record unavailable.');
-    if (saved.team_notified_at) return;
-
-    await sendBillingEmail(
-      recipient,
-      'New software storefront payment',
-      [
-        `Product: ${item.name}`,
-        `Type: ${item.kind}`,
-        `Customer: ${customerEmail || 'Not provided'}`,
-        `Amount paid: $${(intent.amount_received / 100).toFixed(2)} USD`,
-        `Listed price: $${(item.priceCents / 100).toFixed(2)} USD`,
-        `Stripe PaymentIntent: ${intent.id}`,
-        `Customer dashboard: https://onefinsolution.online/software/account`,
-      ].join('\n'),
-      `software-storefront:${intent.id}`,
-    );
+    // Idempotent ledger upsert keyed by Stripe PaymentIntent id.
     await client.query(
-      'update software_storefront_purchases set team_notified_at=now() where id=$1',
+      `insert into software_storefront_payments (
+         purchase_id, user_id, amount_cents, currency, status,
+         stripe_payment_intent_id, stripe_charge_id, initiated_by,
+         failure_message, created_at, succeeded_at, updated_at
+       ) values (
+         $1,$2,$3,$4,$5,
+         $6,$7,$8,
+         $9,now(),$10,now()
+       )
+       on conflict (stripe_payment_intent_id) do update set
+         status = excluded.status,
+         amount_cents = excluded.amount_cents,
+         stripe_charge_id = coalesce(excluded.stripe_charge_id, software_storefront_payments.stripe_charge_id),
+         failure_message = excluded.failure_message,
+         succeeded_at = case
+           when excluded.status = 'succeeded'
+             then coalesce(software_storefront_payments.succeeded_at, excluded.succeeded_at, now())
+           else software_storefront_payments.succeeded_at
+         end,
+         updated_at = now()`,
+      [
+        purchase.id,
+        purchase.user_id,
+        attemptAmount,
+        intent.currency,
+        attemptStatus,
+        intent.id,
+        chargeId,
+        initiatedBy,
+        failureMessage,
+        attemptStatus === 'succeeded' ? new Date() : null,
+      ],
+    );
+
+    // Only succeeded rows count toward total paid (prevents double-count and failed deposits).
+    const sumResult = await client.query<{ total: string | number }>(
+      `select coalesce(sum(amount_cents), 0) as total
+       from software_storefront_payments
+       where purchase_id=$1 and status='succeeded'`,
       [purchase.id],
     );
+    const successfulPaymentCents = Number(sumResult.rows[0]?.total || 0);
+
+    const recomputed = recomputePurchasePaymentFields({
+      agreedPriceCents,
+      successfulPaymentCents,
+      previousStatus: purchase.status,
+    });
+
+    // Never treat a deposit as full payment unless remaining is zero.
+    if (recomputed.fullyPaid && successfulPaymentCents < agreedPriceCents) {
+      throw new Error('Fully paid requires successful payments to cover the agreed project price.');
+    }
+
+    await client.query(
+      `update software_storefront_purchases set
+         amount_paid_cents=$2,
+         status=$3,
+         paid_at=case
+           when $3='paid' then coalesce(paid_at, now())
+           else null
+         end,
+         stripe_payment_intent_id=coalesce(stripe_payment_intent_id, $4)
+       where id=$1`,
+      [purchase.id, recomputed.amountPaidCents, recomputed.status, intent.id],
+    );
+
+    // Keep inquiry/project status independent of payment status.
+    // (No automatic inquiry_status change on payment — product workflow owns that.)
   });
+
+  if (attemptStatus === 'succeeded') {
+    const remaining = remainingBalanceCents({
+      agreedPriceCents,
+      amountPaidCents: Number(
+        (
+          await query<{ amount_paid_cents: number }>(
+            'select amount_paid_cents from software_storefront_purchases where id=$1',
+            [purchase.id],
+          )
+        )[0]?.amount_paid_cents || 0,
+      ),
+    });
+    const paymentStatus = paymentStatusFromTotals({
+      agreedPriceCents,
+      amountPaidCents: agreedPriceCents - remaining,
+    });
+
+    await sendBillingEmail(metadata.user_id, 'software-storefront-payment', {
+      itemName: purchase.item_name || item.name,
+      amountPaid: (attemptAmount / 100).toFixed(2),
+      agreedTotal: (agreedPriceCents / 100).toFixed(2),
+      remainingBalance: (remaining / 100).toFixed(2),
+      paymentStatus,
+      fullyPaid: remaining === 0,
+      purchaseId: purchase.id,
+      paymentIntentId: intent.id,
+    }).catch(() => undefined);
+  }
 }

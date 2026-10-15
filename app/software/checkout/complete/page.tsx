@@ -31,9 +31,11 @@ export default async function SoftwareCheckoutCompletePage({
     item_name: string;
     amount_paid_cents: number;
     currency: string;
-    status: 'pending' | 'paid' | 'failed';
+    status: 'pending' | 'partially_paid' | 'paid' | 'failed';
+    total_price_cents: number;
+    inquiry_status: string;
   }>(
-    `select stripe_payment_intent_id,item_name,amount_paid_cents,currency,status
+    `select stripe_payment_intent_id,item_name,amount_paid_cents,total_price_cents,currency,status,inquiry_status
      from software_storefront_purchases where id=$1 and user_id=$2`,
     [purchaseId, user.id],
   );
@@ -55,14 +57,14 @@ export default async function SoftwareCheckoutCompletePage({
           id: `software-purchase-return:${intent.id}`,
           type: intent.status === 'succeeded' ? 'payment_intent.succeeded' : 'payment_intent.canceled',
           livemode: intent.livemode,
-          data: { object: { id: intent.id } },
+          data: { object: intent },
         } as Stripe.Event);
       } catch (error) {
         console.error('Unable to fulfill Software payment return:', error);
         confirmationIssue = true;
       }
       const [updated] = await query<typeof record>(
-        `select stripe_payment_intent_id,item_name,amount_paid_cents,currency,status
+        `select stripe_payment_intent_id,item_name,amount_paid_cents,total_price_cents,currency,status,inquiry_status
          from software_storefront_purchases where id=$1 and user_id=$2`,
         [purchaseId, user.id],
       );
@@ -70,29 +72,55 @@ export default async function SoftwareCheckoutCompletePage({
     }
   }
 
-  const paid = purchase.status === 'paid';
+  const paidAmount = Math.max(0, purchase.amount_paid_cents || 0);
+  const agreedTotal = Math.max(0, purchase.total_price_cents || 0);
+  const remainingBalance = Math.max(0, agreedTotal - paidAmount);
+  const fullyPaid = purchase.status === 'paid' && remainingBalance === 0;
+  const partiallyPaid =
+    purchase.status === 'partially_paid' || (paidAmount > 0 && remainingBalance > 0 && purchase.status !== 'paid');
+  const failed = purchase.status === 'failed';
+
+  const eyebrow = fullyPaid
+    ? 'FULLY PAID'
+    : partiallyPaid
+      ? 'PAYMENT RECEIVED'
+      : failed
+        ? 'PAYMENT NOT COMPLETED'
+        : 'PAYMENT PROCESSING';
+  const title = fullyPaid
+    ? 'Your project is fully paid.'
+    : partiallyPaid
+      ? 'Your payment was received.'
+      : failed
+        ? 'Your payment was not completed.'
+        : 'We are confirming your payment.';
+  const intro = fullyPaid
+    ? `Your payments totaling $${(paidAmount / 100).toFixed(2)} ${purchase.currency.toUpperCase()} cover the agreed project price for ${purchase.item_name}. Our team will follow up at ${user.email}.`
+    : partiallyPaid
+      ? `A successful payment of $${(paidAmount / 100).toFixed(2)} ${purchase.currency.toUpperCase()} was applied to ${purchase.item_name}. Remaining balance: $${(remainingBalance / 100).toFixed(2)}. This deposit is not full payment.`
+      : failed
+        ? `The payment for ${purchase.item_name} did not complete. No successful payment was applied to the balance.`
+        : confirmationIssue
+          ? `Stripe returned a payment status for ${purchase.item_name}, but we could not finish processing. Please contact support with reference ${purchaseId}.`
+          : `The payment for ${purchase.item_name} is still being confirmed. Only verified successful payments reduce the remaining balance.`;
+
   return (
-    <div className={styles.page}>
+    <div className={styles.shell}>
       <section className={styles.card} aria-live="polite">
-        <span className={styles.eyebrow}>{paid ? 'PAYMENT CONFIRMED' : purchase.status === 'failed' ? 'PAYMENT NOT COMPLETED' : 'PAYMENT PROCESSING'}</span>
-        <h1>{paid ? 'Your inquiry is on its way.' : purchase.status === 'failed' ? 'Your payment was not completed.' : 'We are confirming your payment.'}</h1>
-        <p className={styles.intro}>
-          {paid
-            ? `Your payment of $${(purchase.amount_paid_cents / 100).toFixed(2)} ${purchase.currency.toUpperCase()} for ${purchase.item_name} was confirmed. Our team will follow up at ${user.email}.`
-            : purchase.status === 'failed'
-              ? `The payment for ${purchase.item_name} did not complete. No successful payment was recorded.`
-              : confirmationIssue
-                ? `Stripe has returned a payment status for ${purchase.item_name}, but we could not finish processing the inquiry. Please contact support and include reference ${purchaseId}.`
-                : `The payment for ${purchase.item_name} is still being confirmed. This inquiry will only be marked paid after Stripe verifies it.`}
-        </p>
+        <span className={styles.eyebrow}>{eyebrow}</span>
+        <h1>{title}</h1>
+        <p className={styles.intro}>{intro}</p>
         <div className={styles.summary}>
           <span>Software purchase</span>
           <strong>{purchase.item_name}</strong>
-          <div><span>Payment</span><b>${(purchase.amount_paid_cents / 100).toFixed(2)} USD</b></div>
-          <div><span>Status</span><b>{purchase.status}</b></div>
+          <div><span>Agreed total</span><b>${(agreedTotal / 100).toFixed(2)} USD</b></div>
+          <div><span>Total paid</span><b>${(paidAmount / 100).toFixed(2)} USD</b></div>
+          <div><span>Remaining</span><b>${(remainingBalance / 100).toFixed(2)} USD</b></div>
+          <div><span>Payment status</span><b>{purchase.status}</b></div>
+          <div><span>Project status</span><b>{purchase.inquiry_status || 'inquiry'}</b></div>
         </div>
         <div className="button-row">
-          <Link className={styles.back} href="/software/account">Open Software account →</Link>
+          <Link className={styles.back} href="/software/account">Open Software account</Link>
           <Link className={styles.back} href="/software">Return to software catalog</Link>
         </div>
       </section>
