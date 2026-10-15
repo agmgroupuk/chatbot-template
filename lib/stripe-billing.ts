@@ -3,6 +3,7 @@ import Stripe from 'stripe';
 import { verifiedStripe } from './stripe';
 import { creditPlans } from './credit-config';
 import { currentUser } from './session';
+import { assertCustomerMatchesScope, billingCustomerMetadata } from './billing-scope';
 import { query, transaction } from './db';
 import { approvedPrice, managedPlan } from './subscription-catalog';
 import { findPlan, plans } from './plans';
@@ -21,11 +22,18 @@ function productView(product: Stripe.Product): Product {
 export async function currentCustomer(create=false) {
   const user=await currentUser();
   if(!user) throw new Error('Please sign in.');
-  const [mapping]=await query<{customer_id:string}>('select customer_id from billing_customers where user_id=$1',[user.id]);
-  if(mapping) return mapping.customer_id;
-  if(!create) return null;
   const stripe=await verifiedStripe();
-  const customer=await stripe.customers.create({email:user.email,metadata:{app:'chatbot-template',billing_scope:'subscription',user_id:user.id}},{idempotencyKey:`chatbot-customer:${user.id}`});
+  const [mapping]=await query<{customer_id:string}>('select customer_id from billing_customers where user_id=$1',[user.id]);
+  if(mapping) {
+    const existing = await stripe.customers.retrieve(mapping.customer_id);
+    assertCustomerMatchesScope(existing, 'subscription', user.id);
+    return mapping.customer_id;
+  }
+  if(!create) return null;
+  const customer=await stripe.customers.create({
+    email:user.email,
+    metadata: billingCustomerMetadata('subscription', user.id),
+  });
   await query('insert into billing_customers(user_id,customer_id) values($1,$2) on conflict(user_id) do nothing',[user.id,customer.id]);
   const [saved]=await query('select customer_id from billing_customers where user_id=$1',[user.id]);
   if(saved?.customer_id!==customer.id) throw new Error('Billing account conflict.');

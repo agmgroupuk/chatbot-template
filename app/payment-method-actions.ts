@@ -3,6 +3,12 @@
 import { currentUser } from '@/lib/session';
 import { currentCustomer } from '@/lib/stripe-billing';
 import { verifiedStripe } from '@/lib/stripe';
+import {
+  assertCustomerMatchesScope,
+  assertSetupIntentOwnedByCustomer,
+  requireOwnedPaymentMethod,
+  stripePaymentMethodId,
+} from '@/lib/billing-scope';
 import { throttle } from '@/lib/auth-service';
 import { randomUUID } from 'node:crypto';
 import { fulfillStripeEvent } from '@/lib/stripe-fulfillment';
@@ -28,17 +34,17 @@ export type SavedPaymentMethod = {
   isDefault: boolean;
 };
 
-function stripePaymentMethodId(paymentMethod: string | Stripe.PaymentMethod | null) {
-  return typeof paymentMethod === 'string' ? paymentMethod : paymentMethod?.id || null;
-}
-
 export async function listPaymentMethodsAction(): Promise<
   { methods: SavedPaymentMethod[]; customerId: string } | { error: string }
 > {
   try {
     const { user, customer, stripe } = await context();
     const customerObj = await stripe.customers.retrieve(customer);
-    if (customerObj.deleted || !stripeObjectMatchesMode(customerObj.livemode)) return { error: 'Billing customer is no longer available.' };
+    try {
+      assertCustomerMatchesScope(customerObj, 'subscription', user.id);
+    } catch (error) {
+      return { error: error instanceof Error ? error.message : 'Billing customer is no longer available.' };
+    }
     const defaultId =
       typeof customerObj.invoice_settings?.default_payment_method === 'string'
         ? customerObj.invoice_settings.default_payment_method
@@ -111,18 +117,13 @@ export async function finishCardUpdate(setupId: string) {
   try {
     const { user, customer, stripe } = await context();
     const setup = await stripe.setupIntents.retrieve(setupId);
-    if (
-      !stripeObjectMatchesMode(setup.livemode) ||
-      setup.customer !== customer ||
-      setup.status !== 'succeeded' ||
-      setup.metadata?.purpose !== 'update-card' ||
-      setup.metadata.user_id !== user.id
-    ) {
-      throw new Error();
+    assertSetupIntentOwnedByCustomer(setup, customer);
+    if (setup.metadata?.purpose !== 'update-card' || setup.metadata.user_id !== user.id) {
+      throw new Error('Unable to save this card. Please retry verification.');
     }
-    const method =
-      typeof setup.payment_method === 'string' ? setup.payment_method : setup.payment_method?.id;
-    if (!method) throw new Error();
+    const method = stripePaymentMethodId(setup.payment_method);
+    if (!method) throw new Error('Unable to save this card. Please retry verification.');
+    await requireOwnedPaymentMethod(stripe, customer, method);
     await stripe.customers.update(customer, {
       invoice_settings: { default_payment_method: method },
     });
@@ -137,12 +138,11 @@ export async function finishCardUpdate(setupId: string) {
   }
 }
 
+
 export async function setDefaultPaymentMethodAction(paymentMethodId: string) {
   try {
-    if (!paymentMethodId.startsWith('pm_')) return { error: 'Invalid payment method.' };
     const { customer, stripe } = await context();
-    const pm = await stripe.paymentMethods.retrieve(paymentMethodId);
-    if (pm.customer !== customer) return { error: 'That card is not on your account.' };
+    await requireOwnedPaymentMethod(stripe, customer, paymentMethodId);
     await stripe.customers.update(customer, {
       invoice_settings: { default_payment_method: paymentMethodId },
     });
@@ -159,12 +159,11 @@ export async function setDefaultPaymentMethodAction(paymentMethodId: string) {
   }
 }
 
+
 export async function detachPaymentMethodAction(paymentMethodId: string) {
   try {
-    if (!paymentMethodId.startsWith('pm_')) return { error: 'Invalid payment method.' };
     const { customer, stripe } = await context();
-    const pm = await stripe.paymentMethods.retrieve(paymentMethodId);
-    if (pm.customer !== customer) return { error: 'That card is not on your account.' };
+    await requireOwnedPaymentMethod(stripe, customer, paymentMethodId);
 
     const customerObj = await stripe.customers.retrieve(customer);
     if (!customerObj.deleted) {
@@ -185,6 +184,7 @@ export async function detachPaymentMethodAction(paymentMethodId: string) {
     };
   }
 }
+
 
 export async function retrySubscriptionPayment(subscriptionId: string) {
   try {

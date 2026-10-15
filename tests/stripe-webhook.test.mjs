@@ -10,37 +10,241 @@ function load(file, dependencies, env = {}) {
   const { outputText } = ts.transpileModule(readFileSync(new URL(`../${file}`, import.meta.url), 'utf8'), {
     compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020 },
   });
-  runInNewContext(outputText, { exports, require: name => dependencies[name] || {}, process: { env }, Response, Request, console });
+  runInNewContext(outputText, {
+    exports,
+    require: (name) => dependencies[name] || {},
+    process: { env },
+    Response,
+    Request,
+    console,
+  });
   return exports;
 }
+
 const secret = 'whsec_unit_test_only';
 const stripe = new Stripe('sk_test_unit_test_only');
+
+function baseDeps(env, extras = {}) {
+  const forwarded = extras.forwarded || [];
+  const ledger = extras.ledger || {
+    claims: [],
+    processed: [],
+    failed: [],
+  };
+  const claimImpl =
+    extras.claim ||
+    (async (event) => {
+      ledger.claims.push(event.id);
+      return { action: 'process', attempts: 1 };
+    });
+
+  return {
+    deps: {
+      '@/lib/stripe': { stripeClient: () => stripe, verifiedStripe: async () => stripe },
+      '@/lib/stripe-fulfillment': {
+        fulfillStripeEvent: async (_stripe, event) => {
+          if (extras.fulfillError) throw extras.fulfillError;
+          forwarded.push(event.type);
+        },
+      },
+      '@/lib/software-storefront-fulfillment': {
+        fulfillSoftwareStorefrontPayment: async () => {
+          if (extras.softwareError) throw extras.softwareError;
+        },
+      },
+      '@/lib/billing-environment': {
+        stripeObjectMatchesMode: (livemode) => livemode === (env.STRIPE_MODE === 'live'),
+      },
+      '@/lib/stripe-webhook-ledger': {
+        claimStripeWebhookEvent: claimImpl,
+        markStripeWebhookEventProcessed: async (eventId) => {
+          ledger.processed.push(eventId);
+        },
+        markStripeWebhookEventFailed: async (eventId, error) => {
+          ledger.failed.push({ eventId, message: error instanceof Error ? error.message : String(error) });
+        },
+      },
+    },
+    forwarded,
+    ledger,
+  };
+}
+
 test('webhook rejects missing, modified, stale signatures and every Live Mode event', async () => {
-  const forwarded = [];
-  const env = { STRIPE_MODE: 'test', STRIPE_SECRET_KEY: 'sk_test_unit_test_only', STRIPE_WEBHOOK_SECRET: secret };
-  const { POST } = load('app/api/stripe/webhook/route.ts', {
-    '@/lib/stripe': { stripeClient: () => stripe, verifiedStripe: async () => stripe },
-    '@/lib/stripe-fulfillment': { fulfillStripeEvent: async (_stripe, event) => { forwarded.push(event.type); } },
-    '@/lib/software-storefront-fulfillment': { fulfillSoftwareStorefrontPayment: async () => {} },
-    '@/lib/billing-environment': { stripeObjectMatchesMode: livemode => livemode === (env.STRIPE_MODE === 'live') },
-  }, env);
-  const payload = JSON.stringify({ id: 'evt_test', type: 'invoice.paid', livemode: false, data: { object: { id: 'in_test' } } });
-  const sign = (value, timestamp) => stripe.webhooks.generateTestHeaderString({ payload: value, secret, timestamp });
-  for (const [body, signature] of [[payload, ''], [payload + ' ', sign(payload)], [payload, sign(payload, 1)]]) {
-    const response = await POST(new Request('https://example.test/api/stripe/webhook', { method: 'POST', body, headers: { 'stripe-signature': signature } }));
-    assert.equal(response.status,400);
+  const env = {
+    STRIPE_MODE: 'test',
+    STRIPE_SECRET_KEY: 'sk_test_unit_test_only',
+    STRIPE_WEBHOOK_SECRET: secret,
+  };
+  const { deps, forwarded, ledger } = baseDeps(env);
+  const { POST } = load('app/api/stripe/webhook/route.ts', deps, env);
+  const payload = JSON.stringify({
+    id: 'evt_test',
+    type: 'invoice.paid',
+    livemode: false,
+    data: { object: { id: 'in_test' } },
+  });
+  const sign = (value, timestamp) =>
+    stripe.webhooks.generateTestHeaderString({ payload: value, secret, timestamp });
+
+  for (const [body, signature] of [
+    [payload, ''],
+    [payload + ' ', sign(payload)],
+    [payload, sign(payload, 1)],
+  ]) {
+    const response = await POST(
+      new Request('https://example.test/api/stripe/webhook', {
+        method: 'POST',
+        body,
+        headers: { 'stripe-signature': signature },
+      }),
+    );
+    assert.equal(response.status, 400);
   }
-  const live = payload.replace('"livemode":false','"livemode":true');
-  assert.equal((await POST(new Request('https://example.test/api/stripe/webhook', { method: 'POST', body: live, headers: { 'stripe-signature': sign(live) } }))).status,400);
-  for (const type of ['invoice.paid','invoice.payment_failed','invoice.payment_action_required']) {
-    const event = JSON.stringify({ id: `evt_${type}`, type, livemode: false, data: { object: { id: 'in_test' } } });
-    assert.equal((await POST(new Request('https://example.test/api/stripe/webhook', { method: 'POST', body: event, headers: { 'stripe-signature': sign(event) } }))).status,200);
+  assert.equal(ledger.claims.length, 0);
+
+  const live = payload.replace('"livemode":false', '"livemode":true');
+  assert.equal(
+    (
+      await POST(
+        new Request('https://example.test/api/stripe/webhook', {
+          method: 'POST',
+          body: live,
+          headers: { 'stripe-signature': sign(live) },
+        }),
+      )
+    ).status,
+    400,
+  );
+
+  for (const type of ['invoice.paid', 'invoice.payment_failed', 'invoice.payment_action_required']) {
+    const event = JSON.stringify({
+      id: `evt_${type}`,
+      type,
+      livemode: false,
+      data: { object: { id: 'in_test' } },
+    });
+    assert.equal(
+      (
+        await POST(
+          new Request('https://example.test/api/stripe/webhook', {
+            method: 'POST',
+            body: event,
+            headers: { 'stripe-signature': sign(event) },
+          }),
+        )
+      ).status,
+      200,
+    );
   }
-  assert.deepEqual(forwarded, ['invoice.paid','invoice.payment_failed','invoice.payment_action_required']);
+  assert.deepEqual(forwarded, ['invoice.paid', 'invoice.payment_failed', 'invoice.payment_action_required']);
+  assert.equal(ledger.processed.length, 3);
+
   env.STRIPE_MODE = 'live';
-  assert.equal((await POST(new Request('https://example.test/api/stripe/webhook', { method: 'POST', body: live, headers: { 'stripe-signature': sign(live) } }))).status,200);
+  assert.equal(
+    (
+      await POST(
+        new Request('https://example.test/api/stripe/webhook', {
+          method: 'POST',
+          body: live,
+          headers: { 'stripe-signature': sign(live) },
+        }),
+      )
+    ).status,
+    200,
+  );
   assert.deepEqual(forwarded.at(-1), 'invoice.paid');
 });
+
+test('duplicate processed events skip fulfillment and return 200', async () => {
+  const env = {
+    STRIPE_MODE: 'test',
+    STRIPE_SECRET_KEY: 'sk_test_unit_test_only',
+    STRIPE_WEBHOOK_SECRET: secret,
+  };
+  const { deps, forwarded, ledger } = baseDeps(env, {
+    claim: async () => ({ action: 'skip_processed' }),
+  });
+  const { POST } = load('app/api/stripe/webhook/route.ts', deps, env);
+  const payload = JSON.stringify({
+    id: 'evt_dup',
+    type: 'payment_intent.succeeded',
+    livemode: false,
+    data: { object: { id: 'pi_1' } },
+  });
+  const signature = stripe.webhooks.generateTestHeaderString({ payload, secret });
+  const response = await POST(
+    new Request('https://example.test/api/stripe/webhook', {
+      method: 'POST',
+      body: payload,
+      headers: { 'stripe-signature': signature },
+    }),
+  );
+  assert.equal(response.status, 200);
+  assert.deepEqual(forwarded, []);
+  assert.deepEqual(ledger.processed, []);
+  assert.deepEqual(ledger.failed, []);
+});
+
+test('in-flight events return retryable 503 without fulfillment', async () => {
+  const env = {
+    STRIPE_MODE: 'test',
+    STRIPE_SECRET_KEY: 'sk_test_unit_test_only',
+    STRIPE_WEBHOOK_SECRET: secret,
+  };
+  const { deps, forwarded } = baseDeps(env, {
+    claim: async () => ({ action: 'skip_in_flight' }),
+  });
+  const { POST } = load('app/api/stripe/webhook/route.ts', deps, env);
+  const payload = JSON.stringify({
+    id: 'evt_busy',
+    type: 'invoice.paid',
+    livemode: false,
+    data: { object: { id: 'in_busy' } },
+  });
+  const signature = stripe.webhooks.generateTestHeaderString({ payload, secret });
+  const response = await POST(
+    new Request('https://example.test/api/stripe/webhook', {
+      method: 'POST',
+      body: payload,
+      headers: { 'stripe-signature': signature },
+    }),
+  );
+  assert.equal(response.status, 503);
+  assert.deepEqual(forwarded, []);
+});
+
+test('fulfillment failures are recorded and return retryable 503', async () => {
+  const env = {
+    STRIPE_MODE: 'test',
+    STRIPE_SECRET_KEY: 'sk_test_unit_test_only',
+    STRIPE_WEBHOOK_SECRET: secret,
+  };
+  const { deps, ledger } = baseDeps(env, {
+    fulfillError: new Error('forced fulfillment failure'),
+  });
+  const { POST } = load('app/api/stripe/webhook/route.ts', deps, env);
+  const payload = JSON.stringify({
+    id: 'evt_fail',
+    type: 'invoice.paid',
+    livemode: false,
+    data: { object: { id: 'in_fail' } },
+  });
+  const signature = stripe.webhooks.generateTestHeaderString({ payload, secret });
+  const response = await POST(
+    new Request('https://example.test/api/stripe/webhook', {
+      method: 'POST',
+      body: payload,
+      headers: { 'stripe-signature': signature },
+    }),
+  );
+  assert.equal(response.status, 503);
+  assert.deepEqual(ledger.processed, []);
+  assert.equal(ledger.failed.length, 1);
+  assert.equal(ledger.failed[0].eventId, 'evt_fail');
+  assert.equal(ledger.failed[0].message, 'forced fulfillment failure');
+});
+
 test('only paid standalone packs allocate Workspace credits; subscription invoices grant chat access only', async () => {
   const grants = new Map();
   const { fulfillStripeEvent } = load('lib/stripe-fulfillment.ts', {

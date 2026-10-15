@@ -10,6 +10,12 @@ import { verifiedStripe } from '@/lib/stripe';
 import { softwareCustomer } from '@/lib/software-stripe';
 import { getSoftwarePurchaseItem, parseSoftwarePaymentAmount } from '@/lib/software-purchase';
 import { stripeObjectMatchesMode } from '@/lib/billing-environment';
+import {
+  assertCustomerMatchesScope,
+  assertSetupIntentOwnedByCustomer,
+  requireOwnedPaymentMethod,
+  stripePaymentMethodId,
+} from '@/lib/billing-scope';
 import { updateSoftwareBillingProfile as persistSoftwareBillingProfile, type SoftwareBillingProfile } from '@/lib/software-billing-profile';
 import { syncSoftwareCustomerProfile } from '@/lib/software-stripe';
 import { fulfillSoftwareStorefrontPayment } from '@/lib/software-storefront-fulfillment';
@@ -206,10 +212,7 @@ export async function listSoftwarePaymentMethods() {
     if (!customer) return { methods: [] as Array<{ id: string; brand: string; last4: string; expMonth: number; expYear: number; isDefault: boolean }> } as const;
     const stripe = await verifiedStripe();
     const record = await stripe.customers.retrieve(customer);
-    if (record.deleted || !stripeObjectMatchesMode(record.livemode) ||
-        record.metadata.app !== 'onefin-software-store' ||
-        record.metadata.billing_scope !== 'software' ||
-        record.metadata.user_id !== user.id) throw new Error('Software billing customer is unavailable.');
+    assertCustomerMatchesScope(record, 'software', user.id);
     const defaultValue = record.invoice_settings?.default_payment_method;
     const defaultId = typeof defaultValue === 'string' ? defaultValue : defaultValue?.id;
     const methods = [];
@@ -260,18 +263,21 @@ export async function saveSoftwareCard(setupIntentId: string) {
   try {
     const customer = await softwareCustomer(user.id);
     const stripe = await verifiedStripe();
+    if (!customer) throw new Error('Software card verification failed.');
     const setup = await stripe.setupIntents.retrieve(setupIntentId, { expand: ['payment_method'] });
-    const method = setup.payment_method;
+    assertSetupIntentOwnedByCustomer(setup, customer);
     const setupMetadata = setup.metadata || {};
-    if (!customer || !stripeObjectMatchesMode(setup.livemode) ||
-        stripeId(setup.customer) !== customer || setup.status !== 'succeeded' ||
-        setupMetadata.app !== 'onefin-software-store' ||
-        setupMetadata.billing_scope !== 'software' ||
-        setupMetadata.flow !== 'software-card' ||
-        setupMetadata.user_id !== user.id ||
-        !method || typeof method === 'string' || stripeId(method.customer) !== customer) throw new Error('Software card verification failed.');
-    const savedMethod = method;
-    if (!savedMethod || stripeId(savedMethod.customer) !== customer) throw new Error('Software card verification failed.');
+    if (
+      setupMetadata.app !== 'onefin-software-store' ||
+      setupMetadata.billing_scope !== 'software' ||
+      setupMetadata.flow !== 'software-card' ||
+      setupMetadata.user_id !== user.id
+    ) {
+      throw new Error('Software card verification failed.');
+    }
+    const methodId = stripePaymentMethodId(setup.payment_method);
+    if (!methodId) throw new Error('Software card verification failed.');
+    const savedMethod = await requireOwnedPaymentMethod(stripe, customer, methodId);
     await stripe.customers.update(customer, { invoice_settings: { default_payment_method: savedMethod.id } });
     revalidatePath('/software/account');
     return { success: true } as const;
@@ -289,21 +295,18 @@ export async function setSoftwareDefaultPaymentMethod(paymentMethodIdValue: stri
     const customer = await softwareCustomer(user.id);
     if (!customer) return { error: 'No software payment method is saved.' } as const;
     const stripe = await verifiedStripe();
-    const [record, method] = await Promise.all([
-      stripe.customers.retrieve(customer),
-      stripe.paymentMethods.retrieve(paymentMethodIdValue),
-    ]);
-    if (record.deleted || !stripeObjectMatchesMode(record.livemode) ||
-        record.metadata.billing_scope !== 'software' || record.metadata.user_id !== user.id ||
-        stripeId(method.customer) !== customer) return { error: 'That card is not saved in Software billing.' } as const;
+    const record = await stripe.customers.retrieve(customer);
+    assertCustomerMatchesScope(record, 'software', user.id);
+    const method = await requireOwnedPaymentMethod(stripe, customer, paymentMethodIdValue);
     await stripe.customers.update(customer, { invoice_settings: { default_payment_method: method.id } });
     revalidatePath('/software/account');
-    return { success: true, message: 'Default Software payment method updated.' } as const;
+    return { success: true, message: 'Default software payment method updated.' } as const;
   } catch (error) {
-    console.error('Unable to update default software payment method:', error);
-    return { error: 'Unable to update the default card.' } as const;
+    console.error('Unable to set software default payment method:', error);
+    return { error: error instanceof Error ? error.message : 'Unable to update the default card.' } as const;
   }
 }
+
 
 export async function removeSoftwarePaymentMethod(paymentMethodIdValue: string) {
   const user = await currentUser();
@@ -313,13 +316,9 @@ export async function removeSoftwarePaymentMethod(paymentMethodIdValue: string) 
     const customer = await softwareCustomer(user.id);
     if (!customer) return { error: 'No software payment method is saved.' } as const;
     const stripe = await verifiedStripe();
-    const [record, method] = await Promise.all([
-      stripe.customers.retrieve(customer),
-      stripe.paymentMethods.retrieve(paymentMethodIdValue),
-    ]);
-    if (record.deleted || !stripeObjectMatchesMode(record.livemode) ||
-        record.metadata.billing_scope !== 'software' || record.metadata.user_id !== user.id ||
-        stripeId(method.customer) !== customer) return { error: 'That card is not saved in Software billing.' } as const;
+    const record = await stripe.customers.retrieve(customer);
+    assertCustomerMatchesScope(record, 'software', user.id);
+    const method = await requireOwnedPaymentMethod(stripe, customer, paymentMethodIdValue);
     const defaultValue = record.invoice_settings?.default_payment_method;
     const defaultId = typeof defaultValue === 'string' ? defaultValue : defaultValue?.id;
     if (defaultId === method.id) return { error: 'Set another default card before removing this one.' } as const;
@@ -328,6 +327,7 @@ export async function removeSoftwarePaymentMethod(paymentMethodIdValue: string) 
     return { success: true, message: 'Software payment method removed.' } as const;
   } catch (error) {
     console.error('Unable to remove software payment method:', error);
-    return { error: 'Unable to remove this card.' } as const;
+    return { error: error instanceof Error ? error.message : 'Unable to remove this card.' } as const;
   }
 }
+

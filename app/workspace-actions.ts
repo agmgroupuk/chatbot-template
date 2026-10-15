@@ -14,10 +14,16 @@ import { fulfillStripeEvent } from '@/lib/stripe-fulfillment';
 import { throttle } from '@/lib/auth-service';
 import { revalidatePath } from 'next/cache';
 import { expectedStripeLivemode, stripeObjectMatchesMode } from '@/lib/billing-environment';
+import {
+  assertCustomerMatchesScope,
+  assertSetupIntentOwnedByCustomer,
+  requireOwnedPaymentMethod,
+  stripeCustomerId as scopedStripeCustomerId,
+  stripePaymentMethodId,
+} from '@/lib/billing-scope';
 
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-const stripeCustomerId = (customer: string | Stripe.Customer | Stripe.DeletedCustomer | null) =>
-  typeof customer === 'string' ? customer : customer?.id || null;
+const stripeCustomerId = scopedStripeCustomerId;
 
 export async function getWorkspaceBillingData() {
   const user = await currentUser();
@@ -89,9 +95,7 @@ export async function listWorkspacePaymentMethods() {
     if (!customer) return { methods: [] as WorkspaceSavedPaymentMethod[] } as const;
     const stripe = await verifiedStripe();
     const customerRecord = await stripe.customers.retrieve(customer);
-    if (customerRecord.deleted || !stripeObjectMatchesMode(customerRecord.livemode)) {
-      throw new Error('Workspace billing customer is unavailable.');
-    }
+    assertCustomerMatchesScope(customerRecord, 'workspace', user.id);
     const defaultValue = customerRecord.invoice_settings?.default_payment_method;
     const defaultId = typeof defaultValue === 'string' ? defaultValue : defaultValue?.id || null;
     const methods: WorkspaceSavedPaymentMethod[] = [];
@@ -99,7 +103,7 @@ export async function listWorkspacePaymentMethods() {
       methods.push({
         id: method.id,
         brand: method.card?.brand || 'card',
-        last4: method.card?.last4 || '••••',
+        last4: method.card?.last4 || 'â€¢â€¢â€¢â€¢',
         expMonth: method.card?.exp_month ?? null,
         expYear: method.card?.exp_year ?? null,
         isDefault: method.id === defaultId,
@@ -121,13 +125,7 @@ export async function setWorkspaceDefaultPaymentMethod(paymentMethodId: string) 
     const customer = await workspaceCustomer(user.id);
     if (!customer) return { error: 'No Workspace payment method is saved yet.' } as const;
     const stripe = await verifiedStripe();
-    const [customerRecord, method] = await Promise.all([
-      stripe.customers.retrieve(customer),
-      stripe.paymentMethods.retrieve(paymentMethodId),
-    ]);
-    if (customerRecord.deleted || !stripeObjectMatchesMode(customerRecord.livemode) || stripeCustomerId(method.customer) !== customer) {
-      return { error: 'That card is not saved in your Workspace.' } as const;
-    }
+    const method = await requireOwnedPaymentMethod(stripe, customer, paymentMethodId);
     await stripe.customers.update(customer, { invoice_settings: { default_payment_method: method.id } });
     await saveWorkspaceCardSummary(user.id, method);
     revalidatePath('/workspace');
@@ -147,11 +145,9 @@ export async function removeWorkspacePaymentMethod(paymentMethodId: string) {
     const customer = await workspaceCustomer(user.id);
     if (!customer) return { error: 'No Workspace payment method is saved yet.' } as const;
     const stripe = await verifiedStripe();
-    const [customerRecord, method] = await Promise.all([
-      stripe.customers.retrieve(customer),
-      stripe.paymentMethods.retrieve(paymentMethodId),
-    ]);
-    if (customerRecord.deleted || !stripeObjectMatchesMode(customerRecord.livemode) || stripeCustomerId(method.customer) !== customer) {
+    const method = await requireOwnedPaymentMethod(stripe, customer, paymentMethodId);
+    const customerRecord = await stripe.customers.retrieve(customer);
+    if (customerRecord.deleted || !stripeObjectMatchesMode(customerRecord.livemode)) {
       return { error: 'That card is not saved in your Workspace.' } as const;
     }
     const defaultValue = customerRecord.invoice_settings?.default_payment_method;
@@ -326,15 +322,21 @@ export async function saveWorkspaceCard(setupIntentId: string) {
   try {
     const customer = await workspaceCustomer(user.id);
     const stripe = await verifiedStripe();
+    if (!customer) throw new Error('Card verification failed.');
     const setup = await stripe.setupIntents.retrieve(setupIntentId, { expand: ['payment_method'] });
-    const method = setup.payment_method;
+    assertSetupIntentOwnedByCustomer(setup, customer);
     const metadata = setup.metadata || {};
-    if (!customer || !stripeObjectMatchesMode(setup.livemode) || stripeCustomerId(setup.customer) !== customer || setup.status !== 'succeeded' ||
-        metadata.app !== 'chatbot-template' || metadata.flow !== 'workspace-credit-card' ||
-        metadata.user_id !== user.id || !method || typeof method === 'string' || method.type !== 'card' ||
-        stripeCustomerId(method.customer) !== customer || !method.card) {
+    if (
+      metadata.app !== 'chatbot-template' ||
+      metadata.flow !== 'workspace-credit-card' ||
+      metadata.user_id !== user.id
+    ) {
       throw new Error('Card verification failed.');
     }
+    const methodId = stripePaymentMethodId(setup.payment_method);
+    if (!methodId) throw new Error('Card verification failed.');
+    const method = await requireOwnedPaymentMethod(stripe, customer, methodId);
+    if (method.type !== 'card' || !method.card) throw new Error('Card verification failed.');
     await query(
       `insert into workspace_credit_settings(user_id,payment_method_id,card_brand,card_last4,card_exp_month,card_exp_year,updated_at)
        values($1,$2,$3,$4,$5,$6,now())

@@ -2,6 +2,7 @@ import 'server-only';
 import Stripe from 'stripe';
 import { query } from '@/lib/db';
 import { verifiedStripe } from '@/lib/stripe';
+import { assertCustomerMatchesScope, billingCustomerMetadata } from '@/lib/billing-scope';
 import { readSoftwareBillingProfile, type SoftwareBillingProfile } from '@/lib/software-billing-profile';
 import { stripeObjectMatchesMode } from '@/lib/billing-environment';
 
@@ -32,7 +33,12 @@ export async function softwareCustomer(userId: string, create = false): Promise<
     'select customer_id from software_billing_customers where user_id=$1',
     [userId],
   );
-  if (mapping) return mapping.customer_id;
+  if (mapping) {
+    const stripe = await verifiedStripe();
+    const existing = await stripe.customers.retrieve(mapping.customer_id);
+    assertCustomerMatchesScope(existing, 'software', userId);
+    return mapping.customer_id;
+  }
   if (!create) return null;
 
   const [user] = await query<{ email: string }>('select email from app_users where id=$1', [userId]);
@@ -50,7 +56,7 @@ export async function softwareCustomer(userId: string, create = false): Promise<
       shipping: !profile.shippingSameAsBilling && Object.values(shipping).some(Boolean)
         ? { name: profile.shippingName || profile.fullName || 'Software customer', address: shipping }
         : undefined,
-      metadata: { app: 'onefin-software-store', billing_scope: 'software', user_id: userId },
+      metadata: billingCustomerMetadata('software', userId),
     },
     { idempotencyKey: `software-customer:${userId}` },
   );

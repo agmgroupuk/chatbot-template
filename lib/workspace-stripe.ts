@@ -1,6 +1,7 @@
 import 'server-only';
 import { query } from './db';
 import { verifiedStripe } from './stripe';
+import { assertCustomerMatchesScope, billingCustomerMetadata } from './billing-scope';
 import { readWorkspaceBillingProfile, type WorkspaceBillingProfile } from './workspace-billing-profile';
 
 function billingAddress(profile: WorkspaceBillingProfile) {
@@ -30,7 +31,12 @@ export async function workspaceCustomer(userId: string, create = false): Promise
     'select customer_id from workspace_billing_customers where user_id=$1',
     [userId],
   );
-  if (mapping) return mapping.customer_id;
+  if (mapping) {
+    const stripe = await verifiedStripe();
+    const existing = await stripe.customers.retrieve(mapping.customer_id);
+    assertCustomerMatchesScope(existing, 'workspace', userId);
+    return mapping.customer_id;
+  }
   if (!create) return null;
 
   const [user] = await query<{ email: string }>('select email from app_users where id=$1', [userId]);
@@ -56,7 +62,7 @@ export async function workspaceCustomer(userId: string, create = false): Promise
             address: shipping,
           }
         : undefined,
-      metadata: { app: 'chatbot-template', billing_scope: 'workspace', user_id: userId },
+      metadata: billingCustomerMetadata('workspace', userId),
     },
     { idempotencyKey: `workspace-customer:${userId}` },
   );

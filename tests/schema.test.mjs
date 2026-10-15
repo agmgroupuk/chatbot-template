@@ -20,3 +20,45 @@ test('native Railway schema isolates profiles, contexts and chat messages with R
   assert.equal((await db.query('select * from messages')).rows.length,1);
  } finally {await db.close();}
 });
+
+
+test('stripe webhook event ledger migration is backward-compatible and unique on event_id', async () => {
+  const db = new PGlite();
+  try {
+    await db.exec(
+      readFileSync(new URL('../migrations/railway/013_stripe_webhook_events.sql', import.meta.url), 'utf8'),
+    );
+    await db.query(
+      `insert into stripe_webhook_events (event_id, event_type, livemode, status)
+       values ('evt_1', 'invoice.paid', false, 'processing')`,
+    );
+    await assert.rejects(
+      db.query(
+        `insert into stripe_webhook_events (event_id, event_type, livemode, status)
+         values ('evt_1', 'invoice.paid', false, 'processing')`,
+      ),
+      /duplicate key|unique/i,
+    );
+    await assert.rejects(
+      db.query(
+        `insert into stripe_webhook_events (event_id, event_type, livemode, status)
+         values ('evt_2', 'invoice.paid', false, 'done')`,
+      ),
+      /check/i,
+    );
+    await assert.rejects(
+      db.query(
+        `insert into stripe_webhook_events (event_id, event_type, livemode, status, processed_at)
+         values ('evt_3', 'invoice.paid', false, 'processed', null)`,
+      ),
+      /check/i,
+    );
+    await db.query(
+      `insert into stripe_webhook_events (event_id, event_type, livemode, status, processed_at)
+       values ('evt_4', 'invoice.paid', false, 'processed', now())`,
+    );
+    assert.equal((await db.query('select * from stripe_webhook_events')).rows.length, 2);
+  } finally {
+    await db.close();
+  }
+});

@@ -8,6 +8,11 @@ import { findPlan } from './plans';
 import { privateHash } from './abuse-identity';
 import { fulfillStripeEvent } from './stripe-fulfillment';
 import { expectedStripeLivemode, stripeObjectMatchesMode } from './billing-environment';
+import {
+  assertSetupIntentOwnedByCustomer,
+  requireOwnedPaymentMethod,
+  stripePaymentMethodId,
+} from './billing-scope';
 
 type Enrollment = { user_id:string; request_id:string; plan_key:string; mode:'trial'|'paid'; setup_id:string|null; subscription_id:string|null; price_id:string|null; trial_end:string|null; consent_at:Date|null; created_at:Date };
 const objectId = (object: string | { id?:string } | null) => typeof object === 'string' ? object : object?.id;
@@ -52,9 +57,12 @@ export async function completeEnrollment(userId: string, setupId: string, consen
     throw new Error('Finish card verification before starting your subscription.');
   }
 
-  const paymentMethod = await stripe.paymentMethods.retrieve(objectId(setup.payment_method)!);
-  if (paymentMethod.type !== 'card' || !paymentMethod.card?.fingerprint || objectId(paymentMethod.customer) !== customer) {
-    throw new Error('A verified card is required.');
+  assertSetupIntentOwnedByCustomer(setup, customer!);
+  const paymentMethodId = stripePaymentMethodId(setup.payment_method);
+  if (!paymentMethodId) throw new Error('Unable to verify the card for this subscription.');
+  const paymentMethod = await requireOwnedPaymentMethod(stripe, customer!, paymentMethodId);
+  if (paymentMethod.type !== 'card' || !paymentMethod.card?.fingerprint) {
+    throw new Error('Unable to verify the card for this subscription.');
   }
 
   const price = await approvedPrice(stripe, initial.plan_key), plan = findPlan(initial.plan_key);
