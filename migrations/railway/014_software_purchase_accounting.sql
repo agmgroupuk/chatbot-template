@@ -110,6 +110,15 @@ where amount_paid_cents > 0
   and amount_paid_cents >= total_price_cents
   and status <> 'paid';
 
+-- Legacy purchases predate user_id (added nullable in 013). Backfill from the buyer email.
+update software_storefront_purchases p
+set user_id = u.id
+from app_users u
+where p.user_id is null
+  and p.customer_email is not null
+  and p.customer_email <> ''
+  and lower(u.email) = lower(p.customer_email);
+
 -- Seed ledger from legacy single-PI purchases so history is not empty after migrate.
 insert into software_storefront_payments (
   purchase_id,
@@ -144,6 +153,7 @@ select
 from software_storefront_purchases p
 where p.stripe_payment_intent_id is not null
   and p.amount_paid_cents > 0
+  and p.user_id is not null
 on conflict (stripe_payment_intent_id) do nothing;
 
 commit;
