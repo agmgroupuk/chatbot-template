@@ -225,15 +225,27 @@ export async function fulfillSoftwareStorefrontPayment(stripe: Stripe, event: St
       amountPaidCents: agreedPriceCents - remaining,
     });
 
-    await sendBillingEmail(metadata.user_id, 'software-storefront-payment', {
-      itemName: purchase.item_name || item.name,
-      amountPaid: (attemptAmount / 100).toFixed(2),
-      agreedTotal: (agreedPriceCents / 100).toFixed(2),
-      remainingBalance: (remaining / 100).toFixed(2),
-      paymentStatus,
-      fullyPaid: remaining === 0,
-      purchaseId: purchase.id,
-      paymentIntentId: intent.id,
-    }).catch(() => undefined);
+    const [buyer] = await query<{ email: string }>(
+      'select email from app_users where id=$1',
+      [metadata.user_id],
+    );
+    if (buyer?.email) {
+      const amountPaidLabel = (attemptAmount / 100).toFixed(2);
+      const agreedLabel = (agreedPriceCents / 100).toFixed(2);
+      const remainingLabel = (remaining / 100).toFixed(2);
+      const itemLabel = purchase.item_name || item.name;
+      const subject = remaining === 0
+        ? 'Software purchase paid in full'
+        : 'Software payment received';
+      const body = remaining === 0
+        ? `Payment received for ${itemLabel} (purchase ${purchase.id}). Status: ${paymentStatus}. Agreed total ${agreedLabel}; paid in full.`
+        : `Payment received for ${itemLabel} (purchase ${purchase.id}). Amount paid this time: ${amountPaidLabel}. Agreed total: ${agreedLabel}. Remaining balance: ${remainingLabel}. Status: ${paymentStatus}.`;
+      await sendBillingEmail(
+        buyer.email,
+        subject,
+        body,
+        `software-storefront-payment:${intent.id}`,
+      ).catch(() => undefined);
+    }
   }
 }
